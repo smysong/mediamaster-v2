@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}服务控制{% endblock %}
+{% block content %}
+<h3>服务控制面板</h3>
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th scope="col">服务名称</th>
+            <th scope="col">操作</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>扫描媒体库</td>
+            <td>
+                <button class="btn btn-sm btn-primary" onclick="runService('scan_media')">运行</button>
+                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('scan_media')">实时日志</button>
+            </td>
+        </tr>
+        <tr>
+            <td>获取豆瓣订阅</td>
+            <td>
+                <button class="btn btn-sm btn-primary" onclick="runService('rss')">运行</button>
+                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('rss')">实时日志</button>
+            </td>
+        </tr>
+        <tr>
+            <td>刷新正在订阅</td>
+            <td>
+                <button class="btn btn-sm btn-primary" onclick="runService('check_rss')">运行</button>
+                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('check_rss')">实时日志</button>
+            </td>
+        </tr>
+        <tr>
+            <td>刷新TMDB ID</td>
+            <td>
+                <button class="btn btn-sm btn-primary" onclick="runService('tmdb_id')">运行</button>
+                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('tmdb_id')">实时日志</button>
+            </td>
+        </tr>
+        <tr>
+            <td>剧集检索下载</td>
+            <td>
+                <button class="btn btn-sm btn-primary" onclick="runService('tvshow_downloader')">运行</button>
+                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('tvshow_downloader')">实时日志</button>
+            </td>
+        </tr>
+        <tr>
+            <td>电影检索下载</td>
+            <td>
+                <button class="btn btn-sm btn-primary" onclick="runService('movie_downloader')">运行</button>
+                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('movie_downloader')">实时日志</button>
+            </td>
+        </tr>
+        <tr>
+            <td>演职人员更新</td>
+            <td>
+                <button class="btn btn-sm btn-primary" onclick="runService('actor_nfo')">运行</button>
+                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('actor_nfo')">实时日志</button>
+            </td>
+        </tr>
+        <tr>
+            <td>目录监控服务</td>
+            <td>
+                <button class="btn btn-sm btn-primary" disabled>运行</button>
+                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('sync')">实时日志</button>
+            </td>
+        </tr>
+    </tbody>
+</table>
+
+<!-- Modal for Real-time Log -->
+<div class="modal fade" id="realTimeLogModal" tabindex="-1" aria-labelledby="realTimeLogModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="InfoCard-header d-flex justify-content-between align-items-center">
+                <h5 class="InfoCard-title" id="realTimeLogModalLabel">实时日志</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-header">
+                <div class="modal-body" id="realTimeLogContent">
+                    <!-- 实时日志内容将显示在这里 -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast for Notifications -->
+<div class="toast" role="alert" aria-live="assertive" aria-atomic="true" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1060;">
+    <div class="toast-header">
+        <strong class="me-auto">系统提示</strong>
+        <small>现在</small>
+        <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+    <div class="toast-body" id="toastMessage" style="text-align: center;">
+        默认消息
+    </div>
+</div>
+
+<script>
+function runService(serviceName) {
+    fetch('/run_service', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ service: serviceName })
+    })
+    .then(response => response.json())
+    .then(data => {
+        document.getElementById('toastMessage').innerText = data.message;
+        const toastElement = document.querySelector('.toast');
+        const toast = new bootstrap.Toast(toastElement, { delay: 2000 });
+        toast.show();
+    })
+    .catch((error) => {
+        console.error('Error:', error);
+        document.getElementById('toastMessage').innerText = '发生错误，请检查控制台。';
+        const toastElement = document.querySelector('.toast');
+        const toast = new bootstrap.Toast(toastElement, { delay: 2000 });
+        toast.show();
+    });
+}
+
+function viewRealTimeLog(serviceName) {
+    const logContent = document.getElementById('realTimeLogContent');
+    logContent.innerHTML = '';  // 清空现有内容
+
+    const logModal = new bootstrap.Modal(document.getElementById('realTimeLogModal'));
+    logModal.show();
+
+    const logUrl = `/realtime_log/${serviceName}`;
+    const eventSource = new EventSource(logUrl);
+
+    eventSource.onmessage = function(event) {
+        const logLine = event.data.trim();
+
+        // 创建DocumentFragment对象
+        const fragment = document.createDocumentFragment();
+
+        // 根据消息内容构建DOM节点
+        const lines = logLine.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const p = document.createElement('p');
+
+            // 设置文字大小和margin-bottom距离
+            p.style.fontSize = 'clamp(10px, 1.2vw, 14px)';
+            p.style.marginBottom = '6px';
+            // 添加 overflow-wrap 和 word-break 样式
+            p.style.overflowWrap = 'break-word';
+            p.style.wordBreak = 'break-all';
+            p.textContent = line;
+            fragment.appendChild(p);
+        }
+
+        // 将DocumentFragment添加到logContent中
+        logContent.appendChild(fragment);
+    };
+
+    eventSource.onerror = function() {
+        eventSource.close();
+    };
+}
+
+// 显示Toast消息的辅助函数
+function showToaster() {
+    const toastElement = document.querySelector('.toast');
+    const toast = new bootstrap.Toast(toastElement, { delay: 2000 });
+    toast.show();
+}
+</script>
+{% endblock %}

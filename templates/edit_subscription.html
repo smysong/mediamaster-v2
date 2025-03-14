@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}编辑订阅{% endblock %}
+{% block content %}
+<h3>编辑订阅</h3>
+<form action="{{ url_for('edit_subscription', type=type, id=subscription['id']) }}" method="POST">
+    <div class="mb-3">
+        <label for="title" class="form-label">标题</label>
+        <input type="text" class="form-control" id="title" name="title" value="{{ subscription['title'] }}" required>
+    </div>
+    {% if type == 'movie' %}
+    <div class="mb-3">
+        <label for="year" class="form-label">年份</label>
+        <input type="text" class="form-control" id="year" name="year" value="{{ subscription['year'] }}" required>
+    </div>
+    {% elif type == 'tv' %}
+    <div class="mb-3">
+        <label for="season" class="form-label">季</label>
+        <input type="text" class="form-control" id="season" name="season" value="{{ subscription['season'] }}" required>
+    </div>
+    <div class="mb-3">
+        <label for="missing_episodes" class="form-label">缺失的集</label>
+        <input type="text" class="form-control" id="missing_episodes" name="missing_episodes" value="{{ subscription['missing_episodes'] }}" required>
+    </div>
+    {% endif %}
+    <button type="submit" class="btn btn-primary">保存</button>
+</form>
+{% endblock %}

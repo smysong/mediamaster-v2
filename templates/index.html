@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block head %}
+{{ super() }}
+{% endblock %}
+{% block title %}媒体库{% endblock %}
+{% block content %}
+{% if media_type == 'movies' %}
+    <h3>电影库&emsp;&emsp;共计 {{ total_movies }} 部影片</h3>
+    <div class="poster-wall-container">
+        <div class="poster-wall" id="movieWall">
+            {% for movie in movies %}
+            <div class="poster-item" onclick="showMediaDetails(this)" data-title="{{ movie['title'] }}" data-year="{{ movie['year'] }}">
+                <img src="/static/img/no-image.png" alt="海报不可用" class="movie-poster" data-tmdb-id="{{ movie['tmdb_id'] }}">
+                <span class="rating">暂无评分</span> <!-- 显示评分 -->
+                <div class="info">
+                    <h5>{{ movie['title'] }} ({{ movie['year'] }})</h5>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+{% elif media_type == 'tvs' %}
+    <h3>电视剧库&emsp;&emsp;共计 {{ total_tvs }} 部剧集</h3>
+    <div class="poster-wall-container">
+        <div class="poster-wall" id="tvWall">
+            {% for tv in tv_data %}
+            <div class="poster-item" onclick="showMediaDetails(this)" data-title="{{ tv.title }}" data-year="{{ tv.year }}" data-total-episodes="{{ tv.total_episodes }}">
+                <img src="/static/img/no-image.png" alt="海报不可用" class="tv-poster" data-tmdb-id="{{ tv.tmdb_id }}">
+                <span class="rating">暂无评分</span> <!-- 显示评分 -->
+                <span class="episode-count">{{ tv.total_episodes }} 集</span> <!-- 显示总集数 -->
+                <div class="info">
+                    <h5>{{ tv.title }} ({{ tv.year }})</h5>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+{% endif %}
+<div class="spacer"></div>
+<div id="pagination">
+    <a href="?page={{ page - 1 if page > 1 else 1 }}&type={{ media_type }}" class="btn btn-primary" id="prevPage">上一页</a>
+    <a href="?page={{ page + 1 if page < (total_movies if media_type == 'movies' else total_tvs) // per_page + 1 else page }}&type={{ media_type }}" class="btn btn-primary" id="nextPage">下一页</a>
+</div>
+
+<!-- Modal -->
+<div id="mediaDetailsModal" class="modal fade" tabindex="-1" aria-labelledby="InfoCardLabel">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="InfoCard-header d-flex justify-content-between align-items-center">
+                <h5 class="InfoCard-title" id="InfoCardLabel">影片简介</h5>
+                <button type="button" class="btn-close text-reset" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-header">
+                    <div class="modal-poster">
+                        <img id="modalPoster" src="" alt="海报">
+                    </div>
+                    <div class="modal-details">
+                        <h3 id="modalTitle"></h3>
+                        <p id="modalEpisodeCount"></p>
+                        <p id="modalYear"></p>
+                        <p id="modalOverview"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const apiKey = '{{ tmdb_api_key }}';
+    const baseUrl = 'https://static-mdb.v.geilijiasu.com/t/p/w500';
+    const defaultImageUrl = '/static/img/no-image.png';
+    const mediaType = "{{ media_type }}"; // 将 media_type 传递给 JavaScript
+
+    function fetchMoviePoster(imgElement) {
+        const tmdbId = imgElement.dataset.tmdbId;
+        const url = `https://api.tmdb.org/3/movie/${tmdbId}?api_key=${apiKey}&language=zh-CN`;
+
+        $.getJSON(url, function(data) {
+            if (data.poster_path) {
+                imgElement.src = `${baseUrl}${data.poster_path}`;
+            }
+            if (data.vote_average) { // 获取评分并显示
+                const formattedRating = data.vote_average.toFixed(1);
+                $(imgElement).siblings('.rating').text(`评分: ${formattedRating}`);
+            }
+        }).fail(function() {
+            console.log('获取电影数据时发生错误。');
+        });
+    }
+
+    function fetchTvPoster(imgElement) {
+        const tmdbId = imgElement.dataset.tmdbId;
+        const url = `https://api.tmdb.org/3/tv/${tmdbId}?api_key=${apiKey}&language=zh-CN`;
+
+        $.getJSON(url, function(data) {
+            if (data.poster_path) {
+                imgElement.src = `${baseUrl}${data.poster_path}`;
+            }
+            if (data.vote_average) { // 获取评分并显示
+                const formattedRating = data.vote_average.toFixed(1);
+                $(imgElement).siblings('.rating').text(`评分: ${formattedRating}`);
+            }
+        }).fail(function() {
+            console.log('获取电视剧数据时发生错误。');
+        });
+    }
+
+    // 初始化加载电影海报及评分
+    $(document).ready(function() {
+        $('.movie-poster').each(function() {
+            fetchMoviePoster(this);
+        });
+
+        $('.tv-poster').each(function() {
+            fetchTvPoster(this);
+        });
+
+        adjustPosterWallLayout();
+        $(window).resize(adjustPosterWallLayout);
+
+        // 根据媒体项数量显示或隐藏分页按钮
+        const items = $('#movieWall, #tvWall').find('.poster-item');
+        const itemCount = items.length;
+        const perPage = {{ per_page }};
+        const currentPage = {{ page }};
+        const totalPages = Math.ceil((mediaType == 'movies' ? {{ total_movies }} : {{ total_tvs }}) / perPage);
+
+        if (currentPage === 1) {
+            $('#prevPage').hide();
+        } else {
+            $('#prevPage').show();
+        }
+
+        if (currentPage === totalPages || itemCount < perPage) {
+            $('#nextPage').hide();
+        } else {
+            $('#nextPage').show();
+        }
+    });
+
+    function adjustPosterWallLayout() {
+        const posterWall = document.querySelector('.poster-wall');
+        const items = posterWall.querySelectorAll('.poster-item');
+        const itemCount = items.length;
+
+        let columns, rows;
+        if (window.innerWidth > 800) {
+            columns = Math.min(Math.max(itemCount, 6), 6); // 大屏幕默认6列
+            rows = Math.min(Math.ceil(itemCount / columns), 4); // 大屏幕最多4行
+        } else {
+            columns = Math.min(Math.max(itemCount, 4), 4); // 小屏幕默认4列
+            rows = Math.min(Math.ceil(itemCount / columns), 6); // 小屏幕最多6行
+        }
+
+        posterWall.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
+        posterWall.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+    }
+
+    function showMediaDetails(element) {
+        const tmdbId = element.querySelector('.movie-poster, .tv-poster').dataset.tmdbId;
+        const mediaType = element.querySelector('.movie-poster') ? 'movie' : 'tv';
+        const url = `https://api.tmdb.org/3/${mediaType}/${tmdbId}?api_key=${apiKey}&language=zh-CN`;
+
+        const title = element.getAttribute('data-title');
+        const year = element.getAttribute('data-year');
+
+        $.getJSON(url, function(data) {
+            document.getElementById('modalPoster').src = data.poster_path ? `${baseUrl}${data.poster_path}` : defaultImageUrl;
+            document.getElementById('modalTitle').innerText = title;
+            document.getElementById('modalYear').innerText = `发行年份: ${year}`;
+            document.getElementById('modalOverview').innerText = `简介: ${data.overview}`;
+            if (mediaType === 'tv') {
+                const totalEpisodes = element.getAttribute('data-total-episodes');
+                document.getElementById('modalEpisodeCount').innerText = `共 ${totalEpisodes} 集`;
+            } else {
+                document.getElementById('modalEpisodeCount').innerText = '';
+            }
+            $('#mediaDetailsModal').modal('show');
+        }).fail(function() {
+            console.log('获取媒体数据时发生错误。');
+        });
+    }
+
+    function closeModal() {
+        $('#mediaDetailsModal').modal('hide');
+    }
+</script>
+{% endblock %}

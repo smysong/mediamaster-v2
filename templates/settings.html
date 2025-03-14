@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}系统设置{% endblock %}
+{% block content %}
+<h3>系统设置</h3>
+
+<form method="post" action="/save_set">
+    {% for group, options in config.items() %}
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="card-title">{{ group }}</h5>
+        </div>
+        <div class="card-body">
+            {% for key, field in options.items() %}
+            <div class="form-group row">
+                <label for="{{ key }}" class="col-sm-3 col-form-label" style="font-size: clamp(12px, 1.2vw, 16px);">{{ field.label }}</label>
+                <div class="col-sm-9" style="font-size: clamp(12px, 1.2vw, 16px);">
+                    <!-- 隐藏字段存储 ID -->
+                    <input type="hidden" name="{{ key }}_id" value="{{ field.id }}">
+                    
+                    {% if field.type == 'password' %}
+                        <input type="password" class="form-control" name="{{ key }}" id="{{ key }}" value="{{ field.value }}" style="margin-bottom: 5px;">
+                    {% elif field.type == 'select' %}
+                        <select class="form-control" name="{{ key }}" id="{{ key }}" style="margin-bottom: 5px;">
+                            <option value="move" {% if field.value == 'move' %}selected{% endif %}>移动</option>
+                            <option value="copy" {% if field.value == 'copy' %}selected{% endif %}>复制</option>
+                        </select>
+                    {% elif field.type == 'switch' %}
+                        <select class="form-control" name="{{ key }}" id="{{ key }}" style="margin-bottom: 5px;">
+                            <option value="True" {% if field.value == 'True' %}selected{% endif %}>开启</option>
+                            <option value="False" {% if field.value == 'False' %}selected{% endif %}>关闭</option>
+                        </select>
+                    {% else %}
+                        <input type="text" class="form-control" name="{{ key }}" id="{{ key }}" value="{{ field.value }}" style="margin-bottom: 5px;">
+                        {% if ',' in field.value %}
+                        <small class="form-text text-muted" style="font-size: clamp(12px, 1.2vw, 16px);">多个值可以用逗号分隔。</small>
+                        {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+    <button type="submit" class="btn btn-sm btn-primary" style="margin-bottom: 15px;">保存更改</button>
+    <a href="/change_password" class="btn btn-sm btn-warning" style="margin-bottom: 15px;margin-left: 15px;">修改密码</a>
+</form>
+
+<!-- Toast提示框 -->
+<div id="toast" class="toast" role="alert" aria-live="assertive" aria-atomic="true" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1060;">
+    <div class="toast-header">
+        <strong class="me-auto">系统提示</strong>
+        <small>现在</small>
+        <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+    <div class="toast-body" id="toastMessage" style="text-align: center;">
+        默认消息
+    </div>
+</div>
+<script src="/static/js/jquery.min.js"></script>
+<!-- 初始化 Toast 消息 -->
+<script>
+    $(document).ready(function () {
+        // 获取 Flask 传递的闪现消息
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    // 设置 Toast 消息内容
+                    $('#toastMessage').text('{{ message }}');
+
+                    // 初始化并显示 Toast
+                    var toast = new bootstrap.Toast(document.getElementById('toast'), {
+                        delay: 2000  // 设置自动关闭的时间，单位为毫秒
+                    });
+                    toast.show();
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+    });
+</script>
+{% endblock %}

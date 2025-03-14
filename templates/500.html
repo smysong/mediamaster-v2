@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>服务器错误</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        .error-container {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        .error-container h1 {
+            margin: 0;
+            font-size: 48px;
+            color: #e74c3c;
+        }
+        .error-container p {
+            margin: 10px 0 20px;
+            font-size: 18px;
+        }
+        .error-container a {
+            color: #2980b9;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .error-container a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="error-container">
+        <h1>500</h1>
+        <p>抱歉，服务器内部错误，请稍后再试。</p>
+        <p>如果您是系统管理员，请检查系统日志以获取更多信息。</p>
+        <p>如果您是初次运行，请更改：<a href="/settings">系统设置</a>并重新启动程序。</p>
+    </div>
+</body>
+</html>
