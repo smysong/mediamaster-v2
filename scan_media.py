@@ -464,7 +464,7 @@ def update_tv_year(episodes_path, db_path):
         logging.error(f"更新电视剧年份时发生错误: {e}")
 
 def main():
-    db_path = 'database/data.db'
+    db_path = '/config/data.db'
 
     # 检查数据库路径是否存在
     if not os.path.exists(db_path):

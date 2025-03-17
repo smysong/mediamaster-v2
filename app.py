@@ -46,7 +46,7 @@ app.secret_key = 'mediamaster'  # 设置一个密钥，用于会话管理
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)  # 设置会话有效期为24小时
 app.config['SESSION_COOKIE_NAME'] = 'mediamaster'  # 设置会话 cookie 名称为 mediamaster
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # 设置会话 cookie 的 SameSite 属性
-DATABASE = 'database/data.db'
+DATABASE = '/config/data.db'
 
 # 存储进程ID的字典
 running_services = {}

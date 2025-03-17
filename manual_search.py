@@ -75,7 +75,7 @@ class MediaDownloader:
     def load_config(self):
         try:
             # 连接到 SQLite 数据库
-            conn = sqlite3.connect('database/data.db')
+            conn = sqlite3.connect('/config/data.db')
             cursor = conn.cursor()
 
             # 查询 CONFIG 表中的所有配置项

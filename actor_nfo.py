@@ -8,7 +8,7 @@ import re
 import random
 
 # 数据库路径
-DB_PATH = 'database/data.db'
+DB_PATH = '/config/data.db'
 
 # 已处理文件列表文件路径
 PROCESSED_FILES_FILE = '/tmp/record/processed_nfo_files.txt'

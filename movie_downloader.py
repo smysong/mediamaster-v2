@@ -27,7 +27,7 @@ logging.basicConfig(
 DOWNLOAD_RECORD_FILE = '/tmp/record/movie_download_records.json'
 
 class MovieDownloader:
-    def __init__(self, db_path='database/data.db'):
+    def __init__(self, db_path='/config/data.db'):
         self.db_path = db_path
         self.driver = None
         self.config = {}

@@ -1,9 +1,0 @@
-USERS表：id、username、nickname、profilepictureurl、password。用于存储登录用户名、昵称、头像、密码
-CONFIG表：id、option、value。用于存储配置项与对应的参数值。
-LIB_MOVIES表：id、title、year、tmdb_id、douban_id。用于存储电影标题、发行年份、tmdb ID、豆瓣ID。
-LIB_TVS表：id、title、year、tmdb_id、douban_id。用于存储电视剧标题、发行年份、tmdb ID、豆瓣ID。
-LIB_TV_SEASONS表：id、tv_id、season、year、episodes。用于存储电视剧id（对应LIB_TVS表id）、电视剧季编号、季发行年份、在库的集。
-RSS_MOVIES表：id、title、douban_id、year、sub_title、url。用于存储豆瓣订阅的电影标题、豆瓣id、发行年份、副标题、豆瓣链接。
-RSS_TVS表：id、title、douban_id、year、sub_title、season、episode、url。用于存储豆瓣订阅的电视剧标题、豆瓣id、发行年份、副标题、季、总集数、豆瓣链接。
-MISS_MOVIES表：id、title、year、douban_id。用于存储正在订阅的电影标题、发行年份、豆瓣id。
-MISS_TVS表：id、title、year、season、missing_episodes、douban_id。用于存储正在订阅的电视剧标题、发行年份、季、缺失的集、豆瓣id

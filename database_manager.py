@@ -14,7 +14,7 @@ logging.basicConfig(
 )
 
 # 数据库文件路径
-DB_PATH = "database/data.db"
+DB_PATH = "/config/data.db"
 
 # 定义状态码
 CONFIG_DEFAULT = 0

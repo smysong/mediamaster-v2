@@ -262,7 +262,7 @@ class DouBanRSSParser:
 
 # 主程序入口
 if __name__ == "__main__":
-    db_path = 'database/data.db'
+    db_path = '/config/data.db'
     parser = DouBanRSSParser(db_path)
     parser.run()
     parser.close_db()

@@ -18,7 +18,7 @@ global_config = {}
 
 def load_config():
     try:
-        conn = sqlite3.connect('database/data.db')
+        conn = sqlite3.connect('/config/data.db')
         cursor = conn.cursor()
         cursor.execute("SELECT OPTION, VALUE FROM CONFIG")
         rows = cursor.fetchall()

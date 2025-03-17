@@ -148,7 +148,7 @@ def update_subscriptions(cursor, config):
 
 def main():
     # 数据库路径
-    db_path = 'database/data.db'
+    db_path = '/config/data.db'
 
     # 连接到数据库
     conn = sqlite3.connect(db_path)

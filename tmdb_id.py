@@ -173,7 +173,7 @@ def fetch_data_without_tmdb_id(db_path, table):
     return rows
 
 def main():
-    db_path = 'database/data.db'
+    db_path = '/config/data.db'
 
     # 检查数据库路径是否存在
     if not validate_directory_path(os.path.dirname(db_path), "数据库文件所在目录"):

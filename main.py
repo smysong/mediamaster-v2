@@ -49,7 +49,7 @@ def get_run_interval_from_db():
     """
     try:
         # 连接到数据库
-        conn = sqlite3.connect('database/data.db')
+        conn = sqlite3.connect('/config/data.db')
         cursor = conn.cursor()
         
         # 查询 run_interval_hours 的值
