@@ -118,9 +118,6 @@ def main():
     run_interval_hours = get_run_interval_from_db()
     run_interval_seconds = run_interval_hours * 3600
 
-    # 启动 check_db_dir.py
-    start_check_db_dir()
-
     # 启动 app.py
     app_pid = start_app()
 
@@ -184,4 +181,6 @@ def main():
         time.sleep(run_interval_seconds)
 
 if __name__ == "__main__":
+    # 启动 check_db_dir.py
+    start_check_db_dir()
     main()
