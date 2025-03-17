@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # 创建文件处理器
-file_handler = logging.FileHandler(LOG_FILE_PATH)
+file_handler = logging.FileHandler(LOG_FILE_PATH, mode='w')
 file_handler.setLevel(logging.INFO)
 file_formatter = logging.Formatter('%(levelname)s - %(message)s')
 file_handler.setFormatter(file_formatter)

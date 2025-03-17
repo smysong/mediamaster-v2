@@ -8,7 +8,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("/tmp/log/episodes_nfo.log"),
+        logging.FileHandler("/tmp/log/episodes_nfo.log", mode='w'),
         logging.StreamHandler()
     ]
 )
@@ -24,7 +24,7 @@ def load_config():
         config_dict = {option: value for option, value in rows}
         global_config.update({
             "episodes_path": config_dict.get("episodes_path"),
-            "nfo_exclude_dirs": config_dict.get("nfo_exclude_dirs").split(',')
+            "nfo_exclude_dirs": config_dict.get("nfo_exclude_dirs", "").split(',')
         })
         logging.info("从数据库加载配置文件成功")
     except sqlite3.Error as e:
@@ -185,8 +185,17 @@ def process_media_directory(media_dir, exclude_dirs):
             if os.path.isdir(show_path):
                 process_directory(show_path, exclude_dirs)
 
-if __name__ == '__main__': 
+if __name__ == '__main__':
+    load_config()  # 确保配置被加载
     media_dir = global_config.get("episodes_path")
-    exclude_dirs = global_config.get("nfo_exclude_dirs").split(',')
+    exclude_dirs_str = global_config.get("nfo_exclude_dirs")
+    
+    if exclude_dirs_str is None:
+        logging.warning("nfo_exclude_dirs 配置项未找到，使用空列表作为默认值")
+        exclude_dirs = []
+    elif isinstance(exclude_dirs_str, list):  # 检查是否已经是列表
+        exclude_dirs = exclude_dirs_str
+    else:  # 如果是字符串，则进行分割
+        exclude_dirs = exclude_dirs_str.split(',')
     
     process_media_directory(media_dir, exclude_dirs)

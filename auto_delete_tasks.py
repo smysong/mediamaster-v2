@@ -9,7 +9,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("/tmp/log/auto_delete_tasks.log"),
+        logging.FileHandler("/tmp/log/auto_delete_tasks.log", mode='w'),
         logging.StreamHandler()
     ]
 )

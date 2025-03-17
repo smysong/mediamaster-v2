@@ -9,7 +9,7 @@ logging.basicConfig(
     level=logging.INFO,  # 设置日志级别为 INFO
     format="%(levelname)s - %(message)s",  # 设置日志格式
     handlers=[
-        logging.FileHandler("/tmp/log/scan_media.log"),  # 输出到文件
+        logging.FileHandler("/tmp/log/scan_media.log", mode='w'),  # 输出到文件
         logging.StreamHandler()  # 输出到控制台
     ]
 )

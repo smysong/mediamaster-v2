@@ -25,7 +25,7 @@ logger.propagate = False
 
 # 配置日志处理器
 if not logger.handlers:
-    file_handler = logging.FileHandler("/tmp/log/app.log")
+    file_handler = logging.FileHandler("/tmp/log/app.log", mode='w')
     stream_handler = logging.StreamHandler()
 
     # 设置日志格式
@@ -422,7 +422,7 @@ def run_service():
     service = data.get('service')
     try:
         logger.info(f"尝试启动服务: {service}")
-        log_file_path = f'/tmp/{service}.log'
+        log_file_path = f'/tmp/log/{service}.log'
         with open(log_file_path, 'w', encoding='utf-8') as log_file:
             process = subprocess.Popen(['python3', f'/app/{service}.py'], stdout=log_file, stderr=log_file)
             pid = process.pid
@@ -438,7 +438,7 @@ def run_service():
 @login_required
 def realtime_log(service):
     def generate():
-        log_file_path = f'/tmp/{service}.log'
+        log_file_path = f'/tmp/log/{service}.log'
         if not os.path.exists(log_file_path):
             logger.warning(f"实时日志文件不存在: {log_file_path}")
             yield 'data: 当前没有实时运行日志，请检查服务是否正在运行！\n\n'.encode('utf-8')
