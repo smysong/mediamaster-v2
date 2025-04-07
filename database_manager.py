@@ -54,7 +54,8 @@ def create_tables():
             USERNAME TEXT NOT NULL,
             NICKNAME TEXT,
             AVATAR_URL TEXT,
-            PASSWORD TEXT NOT NULL
+            PASSWORD TEXT NOT NULL,
+            UNIQUE(USERNAME)
         )
     ''')
 
@@ -63,7 +64,8 @@ def create_tables():
         CREATE TABLE IF NOT EXISTS CONFIG (
             ID INTEGER PRIMARY KEY AUTOINCREMENT,
             OPTION TEXT NOT NULL,
-            VALUE TEXT
+            VALUE TEXT,
+            UNIQUE(OPTION)
         )
     ''')
 
@@ -74,7 +76,8 @@ def create_tables():
             TITLE TEXT NOT NULL,
             YEAR INTEGER,
             TMDB_ID INTEGER,
-            DOUBAN_ID INTEGER
+            DOUBAN_ID INTEGER,
+            UNIQUE(TITLE, YEAR)
         )
     ''')
 
@@ -85,7 +88,8 @@ def create_tables():
             TITLE TEXT NOT NULL,
             YEAR INTEGER,
             TMDB_ID INTEGER,
-            DOUBAN_ID INTEGER
+            DOUBAN_ID INTEGER,
+            UNIQUE(TITLE, YEAR)
         )
     ''')
 
@@ -109,7 +113,8 @@ def create_tables():
             DOUBAN_ID INTEGER,
             YEAR INTEGER,
             SUB_TITLE TEXT,
-            URL TEXT
+            URL TEXT,
+            UNIQUE(TITLE, YEAR)
         )
     ''')
 
@@ -123,7 +128,8 @@ def create_tables():
             SUB_TITLE TEXT,
             SEASON INTEGER,
             EPISODE INTEGER,
-            URL TEXT
+            URL TEXT,
+            UNIQUE(TITLE, YEAR)
         )
     ''')
 
@@ -133,7 +139,8 @@ def create_tables():
             ID INTEGER PRIMARY KEY AUTOINCREMENT,
             TITLE TEXT NOT NULL,
             YEAR INTEGER,
-            DOUBAN_ID INTEGER
+            DOUBAN_ID INTEGER,
+            UNIQUE(TITLE, YEAR)
         )
     ''')
 
@@ -145,7 +152,8 @@ def create_tables():
             YEAR INTEGER,
             SEASON INTEGER,
             MISSING_EPISODES TEXT,
-            DOUBAN_ID INTEGER
+            DOUBAN_ID INTEGER,
+            UNIQUE(TITLE, YEAR)
         )
     ''')
 
@@ -165,7 +173,9 @@ def create_tables():
 
     # 插入默认配置数据
     default_configs = [
+        ("notification", "False"),
         ("notification_api_key", "your_api_key"),
+        ("dateadded", "False"),
         ("nfo_exclude_dirs", "Season,Movie,Music,Unknown,backdrops,.actors,.deletedByTMM"),
         ("nfo_excluded_filenames", "season.nfo,video1.nfo"),
         ("nfo_excluded_subdir_keywords", "Season,Music,Unknown,backdrops,.actors,.deletedByTMM"),
@@ -180,10 +190,6 @@ def create_tables():
         ("douban_rss_url", "https://www.douban.com/feed/people/your_douban_id/interests"),
         ("tmdb_base_url", "https://api.tmdb.org"),
         ("tmdb_api_key", "your_api_key"),
-        ("emby_api_key", "your_api_key"),
-        ("emby_url", "http://emby_ip:port"),
-        ("tmm_api_key", "your_api_key"),
-        ("tmm_url", "http://tmm_api_ip:port"),
         ("download_mgmt", "False"),
         ("download_username", "username"),
         ("download_password", "password"),
@@ -252,10 +258,7 @@ def check_config_data():
         "douban_rss_url": "https://www.douban.com/feed/people/your_douban_id/interests",
         "tmdb_base_url": "https://api.tmdb.org",
         "tmdb_api_key": "your_api_key",
-        "emby_api_key": "your_api_key",
-        "emby_url": "http://emby_ip:port",
-        "tmm_api_key": "your_api_key",
-        "tmm_url": "http://tmm_api_ip:port",
+        "dateadded": "False",
         "download_mgmt": "False",
         "download_username": "username",
         "download_password": "password",

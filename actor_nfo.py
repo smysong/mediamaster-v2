@@ -7,42 +7,41 @@ import time
 import re
 import random
 
-# 数据库路径
-DB_PATH = '/config/data.db'
-
 # 已处理文件列表文件路径
-PROCESSED_FILES_FILE = '/tmp/record/processed_nfo_files.txt'
+PROCESSED_FILES_FILE = '/config/processed_nfo_files.txt'
 
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,  # 设置日志级别为 INFO
     format="%(levelname)s - %(message)s",  # 设置日志格式
     handlers=[
-        logging.FileHandler("/tmp/log/actor_nfo.log", mode='w'),  # 输出到文件
+        logging.FileHandler("/tmp/log/actor_nfo.log", mode='w'),  # 输出到文件并清空之前的日志
         logging.StreamHandler()  # 输出到控制台
     ]
 )
 
-def get_config_from_db(db_path):
-    config = {}
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT OPTION, VALUE FROM CONFIG")
-    rows = cursor.fetchall()
-    for row in rows:
-        config[row[0]] = row[1]
-    conn.close()
-    return config
+def load_config(db_path='/config/data.db'):
+    """从数据库中加载配置"""
+    try:
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT OPTION, VALUE FROM CONFIG')
+            config_items = cursor.fetchall()
+            config = {option: value for option, value in config_items}
+        
+        logging.info("加载配置文件成功")
+        return config
+    except sqlite3.Error as e:
+        logging.error(f"数据库加载配置错误: {e}")
+        exit(1)
 
-# 从数据库读取配置
-config = get_config_from_db(DB_PATH)
-
-# 从配置中读取值
-key = config.get('douban_api_key')
-cookie = config.get('douban_cookie')
-directory = config.get('media_dir')
-excluded_filenames = config.get('nfo_excluded_filenames').split(',')
-excluded_subdir_keywords = config.get('nfo_excluded_subdir_keywords').split(',')
+# 从配置文件中读取值
+config = load_config()
+key = config.get('douban_api_key', '')
+cookie = config.get('douban_cookie', '')
+directory = config.get('media_dir', '')
+excluded_filenames = config.get('nfo_excluded_filenames', '').split(',')
+excluded_subdir_keywords = config.get('nfo_excluded_subdir_keywords', '').split(',')
 
 class DoubanAPI:
     def __init__(self, key: str, cookie: str) -> None:
@@ -215,15 +214,29 @@ def read_nfo_file(file_path):
             logging.warning(f"未知文件类型: {file_path}")
             return None, None, None, None
         
-        # 查找并获取标题和年份
+        # 查找并获取标题
         title = None
-        year = None
         for element in root.findall('.//title'):
             title = element.text
             break  # 只需要第一个匹配到的标题
+        
+        # 查找并获取年份
+        year = None
         for element in root.findall('.//year'):
             year = element.text
             break  # 只需要第一个匹配到的年份
+        
+        # 如果 <year> 标签中没有找到年份，则尝试从 <premiered> 和 <releasedate> 标签中提取年份
+        if not year:
+            for tag in ['premiered', 'releasedate']:
+                for element in root.findall(f'.//{tag}'):
+                    date_str = element.text
+                    if date_str:
+                        try:
+                            year = date_str.split('-')[0]  # 提取年份部分
+                            break
+                        except IndexError:
+                            logging.warning(f"日期格式不正确: {date_str}")
         
         # 查找并获取 IMDb ID
         imdb_id = None
@@ -422,5 +435,6 @@ def process_nfo_files(directory, douban_api):
                 time.sleep(sleep_time)
 
 if __name__ == "__main__":
+    config = load_config()
     douban_api = DoubanAPI(key, cookie)
     process_nfo_files(directory, douban_api)

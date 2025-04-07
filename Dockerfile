@@ -80,9 +80,6 @@ COPY templates.zip .
 RUN unzip templates.zip -d /app/ && \
     rm templates.zip
 
-# 创建数据库目录
-RUN mkdir -p /app/database
-
 # 创建定时任务脚本
 COPY main.py .
 

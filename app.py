@@ -2,8 +2,7 @@ import sqlite3
 import subprocess
 import threading
 import bcrypt
-from flask import Flask, g, render_template, request, redirect, url_for, jsonify, session, flash, session, send_from_directory, Response
-from werkzeug.security import check_password_hash, generate_password_hash
+from flask import Flask, g, render_template, request, redirect, url_for, jsonify, session, flash, session, Response
 from functools import wraps
 from werkzeug.exceptions import InternalServerError
 from manual_search import MediaDownloader  # 导入 MediaDownloader 类
@@ -443,6 +442,13 @@ def realtime_log(service):
             logger.warning(f"实时日志文件不存在: {log_file_path}")
             yield 'data: 当前没有实时运行日志，请检查服务是否正在运行！\n\n'.encode('utf-8')
             return
+        
+        # 检查文件是否为空
+        if os.path.getsize(log_file_path) == 0:
+            logger.warning(f"实时日志文件为空: {log_file_path}")
+            yield 'data: 当前日志文件为空\n\n'.encode('utf-8')
+            return
+
         logger.info(f"开始读取实时日志: {log_file_path}")
         with open(log_file_path, 'r', encoding='utf-8') as log_file:
             while True:
@@ -559,7 +565,11 @@ GROUP_MAPPING = {
         "run_interval_hours": {"type": "text", "label": "程序运行间隔"}
     },
     "消息通知": {
+        "notification": {"type": "switch", "label": "消息通知"},
         "notification_api_key": {"type": "password", "label": "Bark设备Token"}
+    },
+    "媒体添加时间": {
+        "dateadded": {"type": "switch", "label": "使用影片发行日期"}
     },
     "中文演职人员": {
         "nfo_exclude_dirs": {"type": "text", "label": "排除目录"},
@@ -570,10 +580,6 @@ GROUP_MAPPING = {
         "media_dir": {"type": "text", "label": "主目录"},
         "movies_path": {"type": "text", "label": "电影目录"},
         "episodes_path": {"type": "text", "label": "电视剧目录"}
-    },
-    "EMBY媒体库": {
-        "emby_api_key": {"type": "password", "label": "EMBY API 密钥"},
-        "emby_url": {"type": "text", "label": "EMBY内网地址"}
     },
     "资源下载设置": {
         "download_dir": {"type": "text", "label": "下载目录"},
@@ -591,10 +597,6 @@ GROUP_MAPPING = {
     "TMDB接口": {
         "tmdb_base_url": {"type": "text", "label": "TMDB API接口地址"},
         "tmdb_api_key": {"type": "password", "label": "TMDB API密钥"}
-    },
-    "TMM接口": {
-        "tmm_api_key": {"type": "password", "label": "TMM API密钥"},
-        "tmm_url": {"type": "text", "label": "TMM内网接口地址"}
     },
     "下载器管理": {
         "download_mgmt": {"type": "switch", "label": "下载管理"},

@@ -7,7 +7,14 @@ import signal
 import sqlite3
 
 # 配置日志
-logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s', encoding='utf-8')
+logging.basicConfig(
+    level=logging.INFO,  # 设置日志级别为 INFO
+    format="%(levelname)s - %(message)s",  # 设置日志格式
+    handlers=[
+        logging.FileHandler("/tmp/log/main.log", mode='w'),  # 输出到文件并清空之前的日志
+        logging.StreamHandler()  # 输出到控制台
+    ]
+)
 
 def get_run_interval_from_db():
     """
@@ -126,18 +133,6 @@ def main():
 
     while running:
         # 执行所有任务脚本
-        run_script('scan_media.py')
-        logging.info("-" * 80)
-        logging.info("扫描媒体库，已执行完毕，等待10秒...")
-        logging.info("-" * 80)
-        time.sleep(10)
-
-        run_script('tmdb_id.py')
-        logging.info("-" * 80)
-        logging.info("更新数据库TMDB_ID，已执行完毕，等待10秒...")
-        logging.info("-" * 80)
-        time.sleep(10)
-
         run_script('subscr.py')
         logging.info("-" * 80)
         logging.info("获取最新豆瓣订阅，已执行完毕，等待10秒...")
@@ -162,14 +157,32 @@ def main():
         logging.info("-" * 80)
         time.sleep(10)
 
+        run_script('scan_media.py')
+        logging.info("-" * 80)
+        logging.info("扫描媒体库，已执行完毕，等待10秒...")
+        logging.info("-" * 80)
+        time.sleep(10)
+
+        run_script('tmdb_id.py')
+        logging.info("-" * 80)
+        logging.info("更新数据库TMDB_ID，已执行完毕，等待10秒...")
+        logging.info("-" * 80)
+        time.sleep(10)
+
+        run_script('dateadded.py')
+        logging.info("-" * 80)
+        logging.info("更新媒体NFO文件添加日期，已执行完毕，等待10秒...")
+        logging.info("-" * 80)
+        time.sleep(10)
+
         run_script('actor_nfo.py')
         logging.info("-" * 80)
-        logging.info("更新电视剧演职人员中文信息，已执行完毕。")
+        logging.info("更新演职人员中文信息，已执行完毕。")
         logging.info("-" * 80)
 
         run_script('episodes_nfo.py')
         logging.info("-" * 80)
-        logging.info("更新每集演职人员中文信息，已执行完毕。")
+        logging.info("更新集演职人员中文信息，已执行完毕。")
         logging.info("-" * 80)
 
         run_script('auto_delete_tasks.py')
@@ -183,4 +196,6 @@ def main():
 if __name__ == "__main__":
     # 启动 check_db_dir.py
     start_check_db_dir()
+    logging.info("等待初始化检查...")
+    time.sleep(5)
     main()

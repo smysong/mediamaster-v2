@@ -7,7 +7,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.action_chains import ActionChains
 import logging
 import os
@@ -24,8 +24,6 @@ logging.basicConfig(
         logging.StreamHandler()  # 输出到控制台
     ]
 )
-
-DOWNLOAD_RECORD_FILE = '/tmp/record/tvshow_download_records.json'
 
 class TVDownloader:
     def __init__(self, db_path='/config/data.db'):
@@ -82,11 +80,38 @@ class TVDownloader:
                 config_items = cursor.fetchall()
                 self.config = {option: value for option, value in config_items}
             
-            logging.debug("加载配置文件成功")
+            logging.info("加载配置文件成功")
             return self.config
         except sqlite3.Error as e:
             logging.error(f"数据库加载配置错误: {e}")
             exit(1)
+
+    def send_notification(self, item, title_text, resolution):
+        # 通知功能
+        try:
+            notification_enabled = self.config.get("notification", "")
+            if notification_enabled.lower() != "true":  # 显式检查是否为 "true"
+                logging.info("通知功能未启用，跳过发送通知。")
+                return
+            api_key = self.config.get("notification_api_key", "")
+            if not api_key:
+                logging.error("通知API Key未在配置文件中找到，无法发送通知。")
+                return
+            api_url = f"https://api.day.app/{api_key}"
+            data = {
+                "title": "下载通知",
+                "body": f"{item['剧集']} - {resolution} - {title_text}"  # 使用 title_text 作为 body 内容
+            }
+            headers = {'Content-Type': 'application/json'}
+            response = requests.post(api_url, data=json.dumps(data), headers=headers)
+            if response.status_code == 200:
+                logging.info("通知发送成功: %s", response.text)
+            else:
+                logging.error("通知发送失败: %s %s", response.status_code, response.text)
+        except KeyError as e:
+            logging.error(f"配置文件中缺少必要的键: {e}")
+        except requests.RequestException as e:
+            logging.error(f"网络请求出现错误: {e}")
 
     def site_captcha(self, url):
         self.driver.get(url)
@@ -180,380 +205,309 @@ class TVDownloader:
         except TimeoutException:
             return False
 
-    def load_download_records(self):
-        """加载已下载记录"""
-        if os.path.exists(DOWNLOAD_RECORD_FILE):
-            with open(DOWNLOAD_RECORD_FILE, 'r', encoding='utf-8') as file:
-                records = json.load(file)
-                logging.debug("加载下载记录成功")
-                return records
-        logging.info("下载记录文件不存在，创建新文件")
-        return []
-
-    def save_download_records(self, records):
-        """保存已下载记录"""
-        with open(DOWNLOAD_RECORD_FILE, 'w', encoding='utf-8') as file:
-            json.dump(records, file, ensure_ascii=False, indent=4)
-            logging.debug("保存下载记录成功")
-
-    def build_record_key(self, item, resolution, title_text):
-        # 构建记录键，使用实际的标题
-        return f"{item['剧集']}_{resolution}_{title_text}"
-
     def extract_tv_info(self):
-        """从数据库读取缺失的电视节目信息"""
+        """从数据库读取缺失的电视节目信息和缺失的集数信息"""
         all_tv_info = []
+        
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            # 假设数据库中有一个额外的列 'year' 存储年份信息
-            cursor.execute('SELECT title, year, missing_episodes FROM MISS_TVS')
+            
+            # 读取缺失的电视节目信息和缺失的集数信息
+            cursor.execute('SELECT title, year, season, missing_episodes FROM MISS_TVS')
             tvs = cursor.fetchall()
             
-            for title, year, missing_episodes_str in tvs:
-                # 确保 year 是字符串类型
+            for title, year, season, missing_episodes in tvs:
+                # 确保 year 和 season 是字符串类型
                 if isinstance(year, int):
                     year = str(year)  # 将整数转换为字符串
+                if isinstance(season, int):
+                    season = str(season)  # 将整数转换为字符串
                 
-                # 确保 missing_episodes_str 是字符串类型
-                if isinstance(missing_episodes_str, int):
-                    missing_episodes_str = str(missing_episodes_str)  # 将整数转换为字符串
+                # 将缺失的集数字符串转换为列表
+                missing_episodes_list = [episode.strip() for episode in missing_episodes.split(',')] if missing_episodes else []
                 
-                # 处理缺失集数
-                missing_episodes = [int(ep.strip()) for ep in missing_episodes_str.split(',') if ep.strip()]
-                if missing_episodes:
-                    min_episode_num = min(missing_episodes)
-                    formatted_episode_number = f'{"0" if min_episode_num < 10 else ""}{min_episode_num}'
-                else:
-                    formatted_episode_number = '01'  # 如果无缺失集数信息，则认为是从第01集开始缺失
-                
-                preferred_resolution = self.config.get('bt_preferred_resolution', "")
                 all_tv_info.append({
                     "剧集": title,
                     "年份": year,
-                    "分辨率": preferred_resolution,
-                    "集数": formatted_episode_number
+                    "季": season,
+                    "缺失集数": missing_episodes_list
                 })
-        logging.debug("读取缺失的电视节目信息完成")
+        
+        logging.info("读取缺失的电视节目信息和缺失的集数信息完成")
         return all_tv_info
 
-    def find_episode_links(self, list_items, item, resolution):
-        found_links = []
-        exclude_keywords = self.config.get("resources", {}).get("exclude_keywords", "")
-        exclude_keywords = [keyword.strip() for keyword in exclude_keywords.split(',')]
-        
-        # 获取当前条目的年份
-        year = item.get("年份", "")
-        
-        for li in list_items:
-            try:
-                a_element = li.find_element(By.TAG_NAME, 'a')
-                title_text = a_element.text.lower()
-
-                # 检查是否需要排除此条目
-                if any(keyword in title_text for keyword in exclude_keywords):
-                    continue
-
-                # 检查年份是否匹配
-                if year and year not in title_text:
-                    logging.debug(f"年份不匹配，跳过条目: {title_text}")
-                    continue
-
-                # 匹配集数范围
-                range_match = f"[第{item['集数']}-" in title_text
-                # 匹配精确集数
-                exact_match = f"[第{item['集数']}集]" in title_text
-                if resolution.lower() in title_text and (exact_match or range_match):
-                    link = a_element.get_attribute('href')
-                    found_links.append((link, title_text))
-                    logging.info(f"发现: {title_text}, Link: {link}")
-            except NoSuchElementException:
-                logging.warning("未找到搜索结果元素")
-                continue
-        return found_links
-
-
-    def find_full_set_resource(self, resolution, download_records, item):
-        list_items = self.driver.find_elements(By.TAG_NAME, 'li')
-        # 获取当前条目的年份
-        year = item.get("年份", "")
-        
-        for li in list_items:
-            try:
-                a_element = li.find_element(By.TAG_NAME, 'a')
-                title_text = a_element.text.lower()
-
-                # 获取排除关键字列表
-                exclude_keywords = self.config.get("resources", {}).get("exclude_keywords", "")
-                exclude_keywords = [keyword.strip() for keyword in exclude_keywords.split(',')]
-                
-                # 检查是否需要排除此条目
-                if any(keyword in title_text for keyword in exclude_keywords):
-                    continue
-                
-                # 检查年份是否匹配
-                if year and year not in title_text:
-                    logging.debug(f"年份不匹配，跳过条目: {title_text}")
-                    continue
-                
-                # 匹配全集，并且包含分辨率
-                if '全' in title_text and any(char.isdigit() for char in title_text) and resolution.lower() in title_text:
-                    link = a_element.get_attribute('href')
-                    logging.info(f"发现全集资源: {title_text}, Link: {link}")
-                    self.handle_full_set(link, item, resolution, download_records)
-                    return True
-            except NoSuchElementException:
-                logging.warning("未找到搜索结果元素")
-                continue
-        return False
-
-    def search_and_download(self, search_url, items):
-        download_records = self.load_download_records()
-        
-        for item in items:
-            # 构建下载记录的键
-            preferred_resolution = item.get('分辨率', "")
-            fallback_resolution = self.config.get('bt_fallback_resolution', "")
-            
-            # 尝试首选分辨率
-            record_key = self.build_record_key(item, preferred_resolution, "未知标题")
-            if record_key not in download_records:
-                logging.info(f"开始搜索: 剧集 {item['剧集']}, 分辨率 {preferred_resolution}, 集数 {item['集数']}")
-                self.driver.get(search_url)
-                search_box = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.ID, 'scform_srchtxt'))
-                )
-                search_box.send_keys(item['剧集'])
-                search_box.send_keys(Keys.RETURN)
-                logging.info("搜索请求发送完成")
-                logging.info("等待剧集结果")
-                time.sleep(5)  # 假设结果5秒内加载完成
-
-                # 查找全集资源优先
-                full_set_found = self.find_full_set_resource(preferred_resolution, download_records, item)
-                if full_set_found:
-                    continue
-                
-                # 没有找到全集资源，按单集搜索
-                found_links = self.find_episode_links(self.driver.find_elements(By.TAG_NAME, 'li'), item, preferred_resolution)
-                if found_links:
-                    self.handle_single_episodes(found_links, item, preferred_resolution, download_records)
-                    continue
-                
-                # 没有找到首选分辨率的资源，尝试次级分辨率
-                logging.warning("未找到首选分辨率资源，尝试备选分辨率搜索")
-                self.search_with_fallback_resolution(item, search_url, download_records, preferred_resolution, fallback_resolution)
-            else:
-                logging.debug(f"记录已存在，跳过下载: {record_key}")
-
-    def search_with_fallback_resolution(self, item, search_url, download_records, preferred_resolution, fallback_resolution):
-        record_key = self.build_record_key(item, fallback_resolution, "未知标题")
-        if record_key not in download_records:
-            logging.info(f"开始搜索: 剧集 {item['剧集']}, 分辨率 {fallback_resolution}, 集数 {item['集数']}")
+    def search(self, search_url, all_tv_info):
+        # 搜索剧集
+        for item in all_tv_info:
+            logging.info(f"开始搜索剧集: {item['剧集']}  年份: {item['年份']}  季: {item['季']}")
+            search_query = f"{item['剧集']} {item['年份']}"
             self.driver.get(search_url)
-            search_box = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.ID, 'scform_srchtxt'))
-            )
-            search_box.send_keys(item['剧集'])
-            search_box.send_keys(Keys.RETURN)
-            logging.info("搜索请求发送完成")
-            logging.info("等待剧集结果")
-            time.sleep(5)  # 假设结果5秒内加载完成
+            try:
+                search_box = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.NAME, "srchtxt"))
+                )
+                search_box.send_keys(search_query)
+                search_box.send_keys(Keys.RETURN)
+                logging.debug(f"搜索关键词: {search_query}")
 
-            # 查找全集资源优先
-            full_set_found = self.find_full_set_resource(fallback_resolution, download_records, item)
-            if full_set_found:
-                return
+                # 等待搜索结果加载
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.ID, "threadlist"))
+                )
+                # 查找搜索结果中的链接
+                results = self.driver.find_elements(By.CSS_SELECTOR, "#threadlist li.pbw h3.xs3 a")
+                search_results = []
+                for result in results:
+                    title_text = result.text
+                    link = result.get_attribute('href')
+                    search_results.append({
+                        "title": title_text,
+                        "link": link
+                    })
+
+                # 过滤搜索结果
+                filtered_results = []
+                for result in search_results:
+                    # 检查年份是否匹配
+                    if item['年份'] not in result['title']:
+                        continue
+                    
+                    # 检查是否包含排除关键词
+                    exclude_keywords = self.config.get("resources_exclude_keywords", "").split(',')
+                    if any(keyword.strip() in result['title'] for keyword in exclude_keywords):
+                        continue
+                    
+                    filtered_results.append(result)
+
+                # 获取首选分辨率和备选分辨率
+                preferred_resolution = self.config.get('preferred_resolution', "未知分辨率")
+                fallback_resolution = self.config.get('fallback_resolution', "未知分辨率")
+
+                # 按分辨率和集数范围分类搜索结果
+                categorized_results = {
+                    "首选分辨率": {
+                        "单集": [],
+                        "集数范围": [],
+                        "全集": []
+                    },
+                    "备选分辨率": {
+                        "单集": [],
+                        "集数范围": [],
+                        "全集": []
+                    },
+                    "其他分辨率": {
+                        "单集": [],
+                        "集数范围": [],
+                        "全集": []
+                    }
+                }
+                for result in filtered_results:
+                    details = self.extract_details(result['title'])
+                    resolution = details['resolution']
+                    start_episode = details['start_episode']
+                    end_episode = details['end_episode']
+                    episode_type = details.get('episode_type', "未知集数")
+                    
+                    if episode_type == "单集":
+                        episode_type = "单集"
+                    elif episode_type == "集数范围":
+                        episode_type = "集数范围"
+                    elif episode_type == "全集":
+                        episode_type = "全集"
+                    else:
+                        episode_type = "未知集数"
+                    
+                    if resolution == preferred_resolution:
+                        categorized_results["首选分辨率"][episode_type].append({
+                            "title": result['title'],
+                            "link": result['link'],
+                            "resolution": details['resolution'],
+                            "start_episode": details['start_episode'],
+                            "end_episode": details['end_episode']
+                        })
+                    elif resolution == fallback_resolution:
+                        categorized_results["备选分辨率"][episode_type].append({
+                            "title": result['title'],
+                            "link": result['link'],
+                            "resolution": details['resolution'],
+                            "start_episode": details['start_episode'],
+                            "end_episode": details['end_episode']
+                        })
+                    else:
+                        categorized_results["其他分辨率"][episode_type].append({
+                            "title": result['title'],
+                            "link": result['link'],
+                            "resolution": details['resolution'],
+                            "start_episode": details['start_episode'],
+                            "end_episode": details['end_episode']
+                        })
+
+                # 匹配缺失的集数
+                missing_episodes = item['缺失集数']
+                matched_results = self.match_missing_episodes(categorized_results, missing_episodes)
+                
+                # 下载种子文件
+                for result in matched_results:
+                    title_text = result['title']
+                    resolution = result['resolution']
+                    self.download_torrent(result, item, title_text, resolution)
+
+            except TimeoutException:
+                logging.error("搜索结果加载超时")
+            except Exception as e:
+                logging.error(f"搜索过程中出错: {e}")
+
+    def extract_details(self, title_text):
+        # 处理搜索结果
+        title_text = str(title_text)
+        
+        # 提取分辨率
+        resolution_match = re.search(r'(\d+p)', title_text)
+        resolution = resolution_match.group(1) if resolution_match else "未知分辨率"
+        
+        # 初始化集数范围
+        start_episode = "未知集数"
+        end_episode = "未知集数"
+        episode_type = "未知集数"
+        
+        # 处理单集或集数范围格式
+        episode_pattern = r"\[第(\d{1,3})(?:-(\d{1,3}))?集\]"
+        episode_match = re.search(episode_pattern, title_text)
+        
+        if episode_match:
+            start_episode = episode_match.group(1)
+            end_episode = episode_match.group(2) or start_episode
+            episode_type = "单集" if start_episode == end_episode else "集数范围"
+        elif "全" in title_text:
+            # 如果标题中包含“全”字，则认为是全集资源
+            full_episode_pattern = r"全(\d{1,3})"
+            full_episode_match = re.search(full_episode_pattern, title_text)
             
-            # 没有找到全集资源，按单集搜索
-            found_links = self.find_episode_links(self.driver.find_elements(By.TAG_NAME, 'li'), item, fallback_resolution)
-            if found_links:
-                self.handle_single_episodes(found_links, item, fallback_resolution, download_records)
+            if full_episode_match:
+                start_episode = "1"
+                end_episode = full_episode_match.group(1)
+                episode_type = "全集"
             else:
-                logging.warning("没有找到匹配的下载链接。")
-        else:
-            logging.debug(f"记录已存在，跳过下载: {record_key}")
-
-    def handle_full_set(self, link, item, resolution, download_records):
-        # 处理全集资源的方法
-        self.driver.get(link)
-        WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "plc")))
-        logging.debug("进入详情页面")
-        logging.info("找到匹配全集剧集结果，开始查找种子文件")
+                start_episode = "1"
+                end_episode = "所有"
+                episode_type = "全集"
         
-        # 构建记录键
-        record_key = self.build_record_key(item, resolution, "全集")
-        if record_key in download_records:
-            logging.info(f"记录已存在，跳过下载: {record_key}")
-            return
+        # 确保 start_episode 和 end_episode 是整数
+        if start_episode != "未知集数":
+            start_episode = int(start_episode)
+        if end_episode != "未知集数":
+            end_episode = int(end_episode)
         
-        try:
-            attachment_link = self.driver.find_element(By.PARTIAL_LINK_TEXT, "torrent")
-            attachment_url = attachment_link.get_attribute('href')
-            self.download_torrent(attachment_url, item, "全集", resolution, download_records)
-        except NoSuchElementException:
-            logging.warning("没有找到附件链接。")
-
-    def handle_single_episodes(self, found_links, item, resolution, download_records):
-        # 处理单集资源的方法
-        if found_links:
-            # 只处理第一个匹配结果
-            first_link, first_title_text = found_links[0]
-            # 构建记录键
-            record_key = self.build_record_key(item, resolution, first_title_text)
-            if record_key in download_records:
-                logging.info(f"记录已存在，跳过下载: {record_key}")
-                return
-            self.driver.get(first_link)
-            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "plc")))
-            logging.debug("进入详情页面")
-            logging.info("找到匹配剧集结果，开始查找种子文件")
-            try:
-                attachment_link = self.driver.find_element(By.PARTIAL_LINK_TEXT, "torrent")
-                attachment_url = attachment_link.get_attribute('href')
-                self.download_torrent(attachment_url, item, first_title_text, resolution, download_records)
-            except NoSuchElementException:
-                logging.warning("没有找到附件链接。")
-        else:
-            logging.warning("没有找到匹配的下载链接。")
-
-    def download_torrent(self, torrent_url, item, title_text, resolution, download_records):
-        self.driver.get(torrent_url)
-        logging.info("开始下载种子文件")
-        time.sleep(10)  # 设置等待时间为10秒，等待文件下载完成
-        self.send_notification(item, title_text, resolution)
+        # 添加日志记录
+        logging.debug(f"提取结果 - 标题: {title_text}, 分辨率: {resolution}, 开始集数: {start_episode}, 结束集数: {end_episode}, 集数类型: {episode_type}")
         
-        # 从标题中提取集数范围
-        episode_range = self.extract_episode_number(title_text)
-        
-        # 构建记录键
-        record_key = self.build_record_key(item, resolution, title_text)
-        if record_key not in download_records:
-            download_records.append(record_key)
-            self.save_download_records(download_records)
-            logging.info(f"下载记录更新完成: {record_key}")
-        else:
-            logging.info(f"记录已存在，跳过更新: {record_key}")
-        
-        # 尝试下载下一集
-        if episode_range is not None:
-            start_episode, end_episode = episode_range
-            next_episode_number = str(int(end_episode) + 1).zfill(2)
-            logging.info(f"尝试下载下一集：第{next_episode_number}集")
-            self.search_and_download_next_episode(item, next_episode_number, resolution)
-
-    def extract_episode_number(self, title_text):
-        # 正则表达式匹配集数或集数范围
-        episode_pattern = r"(?:第)?(\d{1,2})(?:-(\d{1,2}))?(?:集)?"
-        match = re.search(episode_pattern, title_text)
-        
-        if match:
-            start_episode = match.group(1)
-            end_episode = match.group(2) or start_episode
-            
-            # 返回集数范围的元组
-            return (start_episode, end_episode)
-        else:
-            logging.error("无法从标题中提取集数")
-            return None
-
-    def search_and_download_next_episode(self, item, next_episode_number, resolution):
-        search_url = self.config.get("urls", {}).get("tv_search_url", "")
-        search_term = f"{item['剧集']}"
-        self.driver.get(search_url)
-        search_box = WebDriverWait(self.driver, 10).until(
-            EC.presence_of_element_located((By.ID, 'scform_srchtxt'))
-        )
-        search_box.send_keys(search_term)
-        search_box.send_keys(Keys.RETURN)
-        logging.info("搜索请求发送完成")
-        logging.info("等待剧集结果")
-        time.sleep(5)  # 假设结果5秒内加载完成
-        
-        # 查找符合的资源
-        list_items = self.driver.find_elements(By.TAG_NAME, 'li')
-        found_links = []
-        exclude_keywords = self.config.get("resources", {}).get("exclude_keywords", "")
-        exclude_keywords = [keyword.strip() for keyword in exclude_keywords.split(',')]
-        
-        # 获取当前条目的年份
-        year = item.get("年份", "")
-        
-        for li in list_items:
-            try:
-                a_element = li.find_element(By.TAG_NAME, 'a')
-                title_text = a_element.text.lower()
-
-                # 检查是否需要排除此条目
-                if any(keyword in title_text for keyword in exclude_keywords):
-                    continue
-
-                # 检查年份是否匹配
-                if year and year not in title_text:
-                    logging.debug(f"年份不匹配，跳过条目: {title_text}")
-                    continue
-
-                # 匹配精确集数
-                exact_match = f"[第{next_episode_number}集]" in title_text
-                # 匹配集数范围
-                range_match = f"[第{next_episode_number}-" in title_text
-                if resolution.lower() in title_text and (exact_match or range_match):
-                    link = a_element.get_attribute('href')
-                    found_links.append((link, title_text))
-                    logging.info(f"发现: {title_text}, Link: {link}")
-            except NoSuchElementException:
-                logging.warning("未找到搜索结果元素")
-                continue
-
-        if found_links:
-            # 只处理第一个匹配结果
-            first_link, first_title_text = found_links[0]
-            # 更新记录键为实际的标题
-            record_key = self.build_record_key(item, resolution, first_title_text)
-            download_records = self.load_download_records()
-            if record_key in download_records:
-                logging.info(f"记录已存在，跳过下载: {record_key}")
-                return
-            self.driver.get(first_link)
-            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "plc")))
-            logging.debug("进入详情页面")
-            logging.info("找到匹配剧集结果，开始查找种子文件")
-            try:
-                attachment_link = self.driver.find_element(By.PARTIAL_LINK_TEXT, "torrent")
-                attachment_url = attachment_link.get_attribute('href')
-                self.download_torrent(attachment_url, item, first_title_text, resolution, download_records)
-            except NoSuchElementException:
-                logging.warning("没有找到附件链接。")
-        else:
-            logging.warning("没有找到匹配的下载链接。")
-
-    def send_notification(self, item, title_text, resolution):
-        api_key = self.config.get("notification_api_key", "")
-        if not api_key:
-            logging.error("通知API Key未在配置文件中找到，无法发送通知。")
-            return
-        api_url = f"https://api.day.app/{api_key}"
-        data = {
-            "title": "下载通知",
-            "body": f"{item['剧集']} - {resolution} - {title_text}"  # 使用 title_text 作为 body 内容
+        return {
+            "resolution": resolution,
+            "start_episode": start_episode,
+            "end_episode": end_episode,
+            "episode_type": episode_type
         }
-        headers = {'Content-Type': 'application/json'}
-        response = requests.post(api_url, data=json.dumps(data), headers=headers)
-        if response.status_code == 200:
-            logging.info("通知发送成功: %s", response.text)
-        else:
-            logging.error("通知发送失败: %s %s", response.status_code, response.text)
+    
+    def match_missing_episodes(self, categorized_results, missing_episodes):
+        """匹配缺失的集数"""
+        matched_results = []
+
+        # 将缺失集数转换为整数列表并排序
+        remaining_episodes = sorted(set(int(ep) for ep in missing_episodes))
+        logging.debug(f"剩余集数：{remaining_episodes}")
+
+        # 检查首选分辨率结果
+        preferred_results = categorized_results["首选分辨率"]
+        matched_results.extend(self.match_episodes(preferred_results, remaining_episodes))
+
+        # 如果首选分辨率匹配成功且没有剩余集数，则跳过备选分辨率和其他分辨率
+        if not remaining_episodes:
+            return matched_results
+
+        # 检查备选分辨率结果
+        fallback_results = categorized_results["备选分辨率"]
+        matched_results.extend(self.match_episodes(fallback_results, remaining_episodes))
+
+        # 如果备选分辨率匹配成功且没有剩余集数，则跳过其他分辨率
+        if not remaining_episodes:
+            return matched_results
+
+        # 检查其他分辨率结果
+        other_results = categorized_results["其他分辨率"]
+        matched_results.extend(self.match_episodes(other_results, remaining_episodes))
+
+        return matched_results
+
+    def match_episodes(self, results, remaining_episodes):
+        matched_results = []
+
+        # 先处理全集结果
+        if results["全集"]:
+            result = results["全集"][0]
+            logging.info(f"找到全集匹配: {result['title']}")
+            matched_results.append(result)
+            remaining_episodes.clear()  # 清空剩余集数
+            return matched_results
+
+        # 处理集数范围结果
+        for result in results["集数范围"]:
+            start_episode = int(result["start_episode"])
+            end_episode = int(result["end_episode"])
+            matched_episodes = set(range(start_episode, end_episode + 1))
+
+            # 记录日志
+            logging.debug(f"尝试匹配集数范围: {result['title']} (范围: {start_episode}-{end_episode})")
+
+            if matched_episodes.intersection(remaining_episodes):
+                logging.info(f"找到集数范围匹配: {result['title']}")
+                matched_results.append(result)
+                # 使用列表操作更新 remaining_episodes
+                remaining_episodes[:] = [ep for ep in remaining_episodes if ep not in matched_episodes]
+                if not remaining_episodes:
+                    return matched_results
+
+        # 处理单集结果
+        for episode in sorted(remaining_episodes.copy()):  # 使用副本避免修改集合
+            for result in results["单集"]:
+                if result["start_episode"] == episode:
+                    logging.info(f"找到单集匹配: {result['title']}")
+                    matched_results.append(result)
+                    remaining_episodes.remove(episode)
+                    if not remaining_episodes:
+                        return matched_results
+                    break  # 找到匹配后跳出循环，继续处理下一个集数
+
+        return matched_results
+
+    def download_torrent(self, result, item, title_text, resolution):
+        """解析并下载种子文件"""
+        try:
+            self.driver.get(result['link'])
+            logging.info(f"进入：{title_text} 详情页面...")
+            logging.info(f"开始查找种子文件下载链接...")
+            # 等待种子文件下载链接加载
+            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "plc")))
+            download_link = self.driver.find_element(By.PARTIAL_LINK_TEXT, "torrent")
+            download_url = download_link.get_attribute('href')
+
+            # 请求下载链接
+            self.driver.get(download_url)
+            logging.info("开始下载种子文件...")
+
+            # 等待下载完成（这里假设下载完成后会有一个特定的文件名）
+            time.sleep(10)  # 等待10秒，确保文件下载完成
+            # 发送通知
+            self.send_notification(item, title_text, resolution)
+
+        except TimeoutException:
+            logging.error("种子文件下载链接加载超时")
+        except Exception as e:
+            logging.error(f"下载种子文件过程中出错: {e}")
 
     def run(self):
         # 加载配置文件
         self.load_config()
         
-        # 检查配置中的必要信息是否存在
-        if not self.config.get("bt_login_username") or \
-        not self.config.get("bt_login_password") or \
-        not self.config.get("notification_api_key"):
-            logging.error("请在系统设置中修改必要配置并填写正确的用户名、密码及API key等参数。")
-            exit(1)  # 提示后立即退出程序
-
         # 提取电视节目信息
         all_tv_info = self.extract_tv_info()
 
@@ -575,7 +529,7 @@ class TVDownloader:
         self.login(login_url, self.config["bt_login_username"], self.config["bt_login_password"])
 
         # 搜索和下载操作
-        self.search_and_download(search_url, all_tv_info)
+        self.search(search_url, all_tv_info)
 
         # 清理工作，关闭浏览器
         self.driver.quit()

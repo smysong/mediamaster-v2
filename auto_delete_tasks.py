@@ -5,43 +5,42 @@ import os
 import shutil
 
 # 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("/tmp/log/auto_delete_tasks.log", mode='w'),
-        logging.StreamHandler()
-    ]
-)
+logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s', encoding='utf-8')
+logger = logging.getLogger(__name__)
 
-global_config = {}
-
-def load_config():
+def load_config(db_path='/config/data.db'):
+    """从数据库中加载配置"""
     try:
-        conn = sqlite3.connect('/config/data.db')
-        cursor = conn.cursor()
-        cursor.execute("SELECT OPTION, VALUE FROM CONFIG")
-        rows = cursor.fetchall()
-        config_dict = {option: value for option, value in rows}
-        global_config.update({
-            "download_mgmt": config_dict.get("download_mgmt"),
-            "download_mgmt_url": config_dict.get("download_mgmt_url"),
-            "download_username": config_dict.get("download_username"),
-            "download_password": config_dict.get("download_password")
-        })
-        logging.info("从数据库加载配置文件成功")
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT OPTION, VALUE FROM CONFIG')
+            config_items = cursor.fetchall()
+            config = {option: value for option, value in config_items}
+        
+        logging.info("加载配置文件成功")
+        return config
     except sqlite3.Error as e:
-        logging.error(f"从数据库加载配置失败: {e}")
+        logging.error(f"数据库加载配置错误: {e}")
         exit(1)
-    finally:
-        if 'conn' in locals():
-            conn.close()
+
+# 创建ConfigParser对象
+config = load_config()
+
+# 获取download_mgmt部分的信息
+download_mgmt = config.get('download_mgmt', '')
+internal_download_mgmt_url = config.get('download_mgmt_url', '')
+
+# 用于存储传输会话ID
+session_id = ''
+
+# 后端URL
+backend_url = f'{internal_download_mgmt_url}/transmission/rpc'
+
+# Torrent目录路径
+TORRENT_DIR = '/Torrent'
 
 def get_torrents():
     global session_id
-    internal_download_mgmt_url = global_config.get("download_mgmt_url")
-    backend_url = f'{internal_download_mgmt_url}/transmission/rpc'
-
     try:
         headers = {
             'Content-Type': 'application/json',
@@ -59,7 +58,8 @@ def get_torrents():
             session_id = response.headers['X-Transmission-Session-Id']
 
         if response.status_code == 409:
-            logging.debug('收到409错误，重新尝试获取任务列表')
+            # 如果是409错误，重新尝试
+            logger.debug('收到409错误，重新尝试获取任务列表')
             return get_torrents()
 
         response.raise_for_status()
@@ -68,17 +68,17 @@ def get_torrents():
         torrents = data['arguments']['torrents']
         
         if not torrents:
-            logging.info('任务列表为空')
+            logger.info('任务列表为空')
             check_and_delete_torrent_files()
         else:
             delete_stopped_torrents(torrents)
     except requests.exceptions.RequestException as e:
-        logging.error(f'获取任务列表失败: {e}')
+        logger.error(f'获取任务列表失败: {e}')
 
 def delete_stopped_torrents(torrents):
     global session_id
     for torrent in torrents:
-        if torrent['status'] == 0:
+        if torrent['status'] == 0:  # 0 表示停止状态
             try:
                 headers = {
                     'Content-Type': 'application/json',
@@ -98,41 +98,25 @@ def delete_stopped_torrents(torrents):
 
                 response.raise_for_status()
 
-                logging.info(f'任务 {torrent["name"]} 已删除')
+                logger.info(f'任务 {torrent["name"]} 已删除')
             except requests.exceptions.RequestException as e:
-                logging.error(f'删除任务失败: {e}')
+                logger.error(f'删除任务失败: {e}')
 
 def check_and_delete_torrent_files():
     if os.path.exists(TORRENT_DIR) and os.path.isdir(TORRENT_DIR):
         try:
+            # 删除目录中的所有文件
             for filename in os.listdir(TORRENT_DIR):
                 file_path = os.path.join(TORRENT_DIR, filename)
                 if os.path.isfile(file_path) or os.path.islink(file_path):
                     os.unlink(file_path)
                 elif os.path.isdir(file_path):
                     shutil.rmtree(file_path)
-            logging.info(f'已删除 {TORRENT_DIR} 目录中的所有文件')
+            logger.info(f'已删除 {TORRENT_DIR} 目录中的所有文件')
         except Exception as e:
-            logging.error(f'删除 {TORRENT_DIR} 目录中的文件失败: {e}')
+            logger.error(f'删除 {TORRENT_DIR} 目录中的文件失败: {e}')
     else:
-        logging.info(f'{TORRENT_DIR} 目录不存在或不是一个目录')
+        logger.info(f'{TORRENT_DIR} 目录不存在或不是一个目录')
 
-# 全局变量
-session_id = ''
-TORRENT_DIR = '/Torrent'
-backend_url = ''
-
-if __name__ == "__main__":
-    load_config()
-    download_mgmt = global_config.get("download_mgmt")
-    if download_mgmt == "False":  # 假设数据库中的值是字符串 "False"
-        logging.info("下载管理未启用，程序不运行")
-        exit(0)
-    elif download_mgmt is None:
-        logging.error("未找到下载管理相关配置，程序不运行")
-        exit(1)
-    elif download_mgmt != "True":  # 假设数据库中的值是字符串 "True"
-        logging.error(f"下载管理配置值无效: {download_mgmt}，程序不运行")
-        exit(1)
-    
-    get_torrents()
+# 执行一次任务获取和删除操作
+get_torrents()

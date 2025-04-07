@@ -19,19 +19,29 @@ logging.basicConfig(
     level=logging.INFO,  # 设置日志级别为 INFO
     format="%(levelname)s - %(message)s",  # 设置日志格式
     handlers=[
-        logging.FileHandler("/tmp/log/manual_search.log", mode='w'),  # 输出到文件
+        logging.FileHandler("/tmp/log/manual_search.log", mode='w'),  # 输出到文件并清空之前的日志
         logging.StreamHandler()  # 输出到控制台
     ]
 )
 
 class MediaDownloader:
-    def __init__(self):
+    def __init__(self, db_path='/config/data.db'):
+        self.db_path = db_path
         self.driver = None
+        self.config = {}
         self.activity_time = time.time()  # 记录最后一次活动的时间
         self.timeout = 60  # 超时时间设置为1分钟
         self.timeout_thread = threading.Thread(target=self.check_timeout)
         self.timeout_thread.daemon = True  # 设置为守护线程
         self.timeout_thread.start()
+        self.load_config()  # 调用方法加载配置
+        # 读取配置文件中的登录信息
+        self.bt_tv_base_url = self.config["bt_tv_base_url"]
+        self.bt_movie_base_url = self.config["bt_movie_base_url"]
+        self.tv_login_url = f"{self.bt_tv_base_url}/member.php?mod=logging&action=login"
+        self.tv_search_url = f"{self.bt_tv_base_url}/search.php?mod=forum"
+        self.movie_login_url = f"{self.bt_movie_base_url}/member.php?mod=logging&action=login"
+        self.movie_search_url = f"{self.bt_movie_base_url}/search.php?mod=forum"
 
     def setup_webdriver(self):
         if hasattr(self, 'driver') and self.driver is not None:
@@ -73,42 +83,19 @@ class MediaDownloader:
             raise
 
     def load_config(self):
+        """从数据库中加载配置"""
         try:
-            # 连接到 SQLite 数据库
-            conn = sqlite3.connect('/config/data.db')
-            cursor = conn.cursor()
-
-            # 查询 CONFIG 表中的所有配置项
-            cursor.execute("SELECT OPTION, VALUE FROM CONFIG")
-            rows = cursor.fetchall()
-
-            # 将查询结果转换为字典
-            config_dict = {option: value for option, value in rows}
-
-            # 映射配置项到代码中的结构
-            self.config = {
-                "login_username": config_dict.get("bt_login_username"),
-                "login_password": config_dict.get("bt_login_password"),
-                "preferred_resolution": config_dict.get("preferred_resolution"),
-                "fallback_resolution": config_dict.get("fallback_resolution"),
-                "notification_api_key": config_dict.get("notification_api_key"),
-                "exclude_keywords": config_dict.get("resources_exclude_keywords", "").split(',')
-            }
-            self.urls = {
-                "movie_login_url": config_dict.get("bt_movie_base_url"+"/member.php?mod=logging&action=login"),
-                "tv_login_url": config_dict.get("bt_tv_login_url"+"/member.php?mod=logging&action=login"),
-                "movie_search_url": config_dict.get("bt_movie_search_url"+"/search.php?mod=forum"),
-                "tv_search_url": config_dict.get("bt_tv_search_url"+"/search.php?mod=forum")
-            }
-
-            logging.info("从数据库加载配置文件成功")
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT OPTION, VALUE FROM CONFIG')
+                config_items = cursor.fetchall()
+                self.config = {option: value for option, value in config_items}
+            
+            logging.info("加载配置文件成功")
+            return self.config
         except sqlite3.Error as e:
-            logging.error(f"从数据库加载配置失败: {e}")
+            logging.error(f"数据库加载配置错误: {e}")
             exit(1)
-        finally:
-            # 确保关闭数据库连接
-            if 'conn' in locals():
-                conn.close()
 
     def site_captcha(self, url):
         self.driver.get(url)
@@ -169,7 +156,7 @@ class MediaDownloader:
             return False
 
     def login_movie_site(self, username, password):
-        login_url = self.urls['movie_login_url']
+        login_url = self.movie_login_url
         self.site_captcha(login_url)  # 调用 site_captcha 方法
         self.driver.get(login_url)
         try:
@@ -203,7 +190,7 @@ class MediaDownloader:
             raise
 
     def login_tv_site(self, username, password):
-        login_url = self.urls['tv_login_url']
+        login_url = self.tv_login_url
         self.site_captcha(login_url)  # 调用 site_captcha 方法
         self.driver.get(login_url)
         try:
@@ -239,8 +226,8 @@ class MediaDownloader:
     def search_movie(self, keyword, year=None):
         self.update_activity_time()
         self.setup_webdriver()
-        self.login_movie_site(self.config["login_username"], self.config["login_password"])
-        self.driver.get(self.urls['movie_search_url'])
+        self.login_movie_site(self.config["bt_login_username"], self.config["bt_login_password"])
+        self.driver.get(self.movie_search_url)
 
         # 创建一个包含所有可能分辨率的列表
         resolutions = [self.config["preferred_resolution"], self.config["fallback_resolution"]]
@@ -294,7 +281,7 @@ class MediaDownloader:
     def download_movie(self, link, title, year):
         self.update_activity_time()
         self.setup_webdriver()
-        self.login_movie_site(self.config["login_username"], self.config["login_password"])
+        self.login_movie_site(self.config["bt_login_username"], self.config["bt_login_password"])
         self.driver.get(link)
         try:
             WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "cl")))
@@ -315,8 +302,8 @@ class MediaDownloader:
     def search_tv_show(self, keyword, year=None):
         self.update_activity_time()
         self.setup_webdriver()
-        self.login_tv_site(self.config["login_username"], self.config["login_password"])
-        self.driver.get(self.urls['tv_search_url'])
+        self.login_tv_site(self.config["bt_login_username"], self.config["bt_login_password"])
+        self.driver.get(self.tv_search_url)
 
         # 创建一个包含所有可能分辨率的列表
         resolutions = [self.config["preferred_resolution"], self.config["fallback_resolution"]]
@@ -370,7 +357,7 @@ class MediaDownloader:
     def download_tv_show(self, link, title, year):
         self.update_activity_time()
         self.setup_webdriver()
-        self.login_tv_site(self.config["login_username"], self.config["login_password"])
+        self.login_tv_site(self.config["bt_login_username"], self.config["bt_login_password"])
         self.driver.get(link)
         try:
             WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "cl")))
@@ -413,18 +400,5 @@ class MediaDownloader:
                 break  # 退出超时检查线程
             time.sleep(10)  # 每10秒检查一次
 
-    def run(self):
-        # 加载配置
-        self.load_config()
-
-        # 检查配置中的必要信息是否存在
-        if not self.config.get("login_username") or not self.config.get("login_password"):
-            logging.error("请确保系统设置中填写了正确的用户名、密码等参数。")
-            exit(1)
-
-        # 如果需要，可以在这里添加其他初始化逻辑
-        logging.info("配置检查完成，程序启动中...")
-
 if __name__ == "__main__":
     downloader = MediaDownloader()
-    downloader.run()

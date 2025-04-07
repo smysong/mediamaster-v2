@@ -5,34 +5,28 @@ import sqlite3
 
 # 配置日志
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(levelname)s - %(message)s",
+    level=logging.INFO,  # 设置日志级别为 INFO
+    format="%(levelname)s - %(message)s",  # 设置日志格式
     handlers=[
-        logging.FileHandler("/tmp/log/episodes_nfo.log", mode='w'),
-        logging.StreamHandler()
+        logging.FileHandler("/tmp/log/episodes_nfo.log", mode='w'),  # 输出到文件并清空之前的日志
+        logging.StreamHandler()  # 输出到控制台
     ]
 )
 
-global_config = {}
-
-def load_config():
+def load_config(db_path='/config/data.db'):
+    """从数据库中加载配置"""
     try:
-        conn = sqlite3.connect('/config/data.db')
-        cursor = conn.cursor()
-        cursor.execute("SELECT OPTION, VALUE FROM CONFIG")
-        rows = cursor.fetchall()
-        config_dict = {option: value for option, value in rows}
-        global_config.update({
-            "episodes_path": config_dict.get("episodes_path"),
-            "nfo_exclude_dirs": config_dict.get("nfo_exclude_dirs", "").split(',')
-        })
-        logging.info("从数据库加载配置文件成功")
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT OPTION, VALUE FROM CONFIG')
+            config_items = cursor.fetchall()
+            config = {option: value for option, value in config_items}
+        
+        logging.info("加载配置文件成功")
+        return config
     except sqlite3.Error as e:
-        logging.error(f"从数据库加载配置失败: {e}")
+        logging.error(f"数据库加载配置错误: {e}")
         exit(1)
-    finally:
-        if 'conn' in locals():
-            conn.close()
 def parse_nfo(file_path):
     """解析NFO文件，返回演员字典，键为tmdbid或imdbid，值为(name, role)元组"""
     try:
@@ -186,16 +180,9 @@ def process_media_directory(media_dir, exclude_dirs):
                 process_directory(show_path, exclude_dirs)
 
 if __name__ == '__main__':
-    load_config()  # 确保配置被加载
-    media_dir = global_config.get("episodes_path")
-    exclude_dirs_str = global_config.get("nfo_exclude_dirs")
+    config = load_config()
     
-    if exclude_dirs_str is None:
-        logging.warning("nfo_exclude_dirs 配置项未找到，使用空列表作为默认值")
-        exclude_dirs = []
-    elif isinstance(exclude_dirs_str, list):  # 检查是否已经是列表
-        exclude_dirs = exclude_dirs_str
-    else:  # 如果是字符串，则进行分割
-        exclude_dirs = exclude_dirs_str.split(',')
+    media_dir = config.get('episodes_path', '')
+    exclude_dirs = config.get('nfo_exclude_dirs', '').split(',')
     
     process_media_directory(media_dir, exclude_dirs)

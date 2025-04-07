@@ -1,8 +1,9 @@
 import os
 import re
+import sqlite3
 import xml.etree.ElementTree as ET
 import logging
-import sqlite3
+import configparser
 import requests
 
 # 配置日志
@@ -10,47 +11,25 @@ logging.basicConfig(
     level=logging.INFO,  # 设置日志级别为 INFO
     format="%(levelname)s - %(message)s",  # 设置日志格式
     handlers=[
-        logging.FileHandler("/tmp/log/tmdb_id.log", mode='w'),  # 输出到文件
+        logging.FileHandler("/tmp/log/tmdb_id.log", mode='w'),  # 输出到文件并清空之前的日志
         logging.StreamHandler()  # 输出到控制台
     ]
 )
 
-def validate_directory_path(directory, context):
-    """验证目录路径是否存在，若不存在则记录错误日志"""
-    if not os.path.exists(directory):
-        logging.error(f"{context} 路径不存在: {directory}")
-        return False
-    return True
-
-def read_config_from_db(db_path, option):
-    """
-    从数据库 CONFIG 表中读取指定配置项的值。
-    
-    :param db_path: 数据库文件路径
-    :param option: 配置项名称
-    :return: 配置项的值
-    """
-    if not os.path.exists(db_path):
-        logging.error(f"数据库文件不存在: {db_path}")
-        raise FileNotFoundError(f"数据库文件不存在: {db_path}")
-
+def load_config(db_path):
+    """从数据库中加载配置"""
     try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT OPTION, VALUE FROM CONFIG')
+            config_items = cursor.fetchall()
+            config = {option: value for option, value in config_items}
         
-        # 查询 CONFIG 表中的值
-        cursor.execute("SELECT VALUE FROM CONFIG WHERE OPTION = ?", (option,))
-        result = cursor.fetchone()
-        
-        conn.close()
-        
-        if result:
-            return result[0]
-        else:
-            raise ValueError(f"未在数据库中找到配置项: {option}")
-    except Exception as e:
-        logging.error(f"读取数据库配置时发生错误: {e}")
-        raise
+        logging.info("加载配置文件成功")
+        return config
+    except sqlite3.Error as e:
+        logging.error(f"数据库加载配置错误: {e}")
+        exit(1)
 
 def parse_nfo(file_path):
     """解析NFO文件，返回title, year和tmdb id"""
@@ -79,9 +58,6 @@ def parse_nfo(file_path):
 
 def find_and_parse_nfo_files(directory, title, year):
     """在给定目录中查找所有NFO文件并解析它们，返回匹配的tmdb_id"""
-    if not validate_directory_path(directory, "NFO文件搜索目录"):
-        return None
-
     logging.info(f"在目录 {directory} 中查找所有NFO文件，标题: {title}, 年份: {year}")
     title = title.lower().strip()
     year = str(year).strip()  # 确保 year 是字符串类型
@@ -100,9 +76,9 @@ def find_and_parse_nfo_files(directory, title, year):
 
 def query_tmdb_api(title, year, media_type, config):
     """通过TMDB API查询获取tmdb_id"""
-    TMDB_API_KEY = config['tmdb']['api_key']
-    TMDB_BASE_URL = config['tmdb']['base_url'].rstrip('/') + '/3'
-    url = f"{TMDB_BASE_URL}/search/{media_type}"
+    TMDB_API_KEY = config['tmdb_api_key']
+    TMDB_BASE_URL = config['tmdb_base_url']
+    url = f"{TMDB_BASE_URL}/3/search/{media_type}"
     params = {
         'api_key': TMDB_API_KEY,
         'query': title,
@@ -134,14 +110,7 @@ def update_database(db_path, table, title, year, tmdb_id):
     """更新数据库中的tmdb_id字段"""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    
-    # 检查是否存在tmdb_id字段，如果不存在则创建
-    cursor.execute(f"PRAGMA table_info({table})")
-    columns = [column[1] for column in cursor.fetchall()]
-    if 'tmdb_id' not in columns:
-        cursor.execute(f"ALTER TABLE {table} ADD COLUMN tmdb_id TEXT")
-        logging.info(f"在表 {table} 中添加了 tmdb_id 字段")
-    
+        
     # 查询是否存在相同的title和year
     cursor.execute(f"SELECT tmdb_id FROM {table} WHERE title = ? AND year = ?", (title, year))
     row = cursor.fetchone()
@@ -173,67 +142,37 @@ def fetch_data_without_tmdb_id(db_path, table):
     return rows
 
 def main():
+    # 从配置文件中读取路径信息
     db_path = '/config/data.db'
+    config = load_config(db_path)
+    movies_path = config['movies_path']
+    episodes_path = config['episodes_path']
 
-    # 检查数据库路径是否存在
-    if not validate_directory_path(os.path.dirname(db_path), "数据库文件所在目录"):
-        return
+    # 获取数据库中没有tmdb_id的电影记录
+    movies_without_tmdb_id = fetch_data_without_tmdb_id(db_path, 'LIB_MOVIES')
 
-    try:
-        # 从数据库中读取路径配置
-        try:
-            movies_path = read_config_from_db(db_path, 'movies_path')
-            episodes_path = read_config_from_db(db_path, 'episodes_path')
-            
-            # 初始化 config 变量
-            tmdb_api_key = read_config_from_db(db_path, 'tmdb_api_key')
-            tmdb_base_url = read_config_from_db(db_path, 'tmdb_base_url')
-            config = {
-                'tmdb': {
-                    'api_key': tmdb_api_key,
-                    'base_url': tmdb_base_url
-                }
-            }
-        except ValueError as e:
-            logging.error(e)
-            return
+    # 获取数据库中没有tmdb_id的电视剧记录
+    episodes_without_tmdb_id = fetch_data_without_tmdb_id(db_path, 'LIB_TVS')
 
-        # 验证路径有效性
-        if not validate_directory_path(movies_path, "电影媒体库路径"):
-            movies_path = None
-        if not validate_directory_path(episodes_path, "电视剧媒体库路径"):
-            episodes_path = None
+    # 处理电影记录
+    for title, year in movies_without_tmdb_id:
+        logging.info(f"处理电影记录, 标题: {title}, 年份: {year}")
+        # 尝试从NFO文件中读取tmdb_id
+        tmdb_id = find_and_parse_nfo_files(movies_path, title, year)
+        if not tmdb_id:
+            # 调用TMDB API获取tmdb_id
+            tmdb_id = query_tmdb_api(title, year, 'movie', config)
+        update_database(db_path, 'LIB_MOVIES', title, year, tmdb_id)
 
-        # 获取数据库中没有tmdb_id的电影记录
-        movies_without_tmdb_id = fetch_data_without_tmdb_id(db_path, 'LIB_MOVIES')
-
-        # 获取数据库中没有tmdb_id的电视剧记录
-        episodes_without_tmdb_id = fetch_data_without_tmdb_id(db_path, 'LIB_TVS')
-
-        # 处理电影记录
-        if movies_path:
-            for title, year in movies_without_tmdb_id:
-                logging.info(f"处理电影记录, 标题: {title}, 年份: {year}")
-                # 尝试从NFO文件中读取tmdb_id
-                tmdb_id = find_and_parse_nfo_files(movies_path, title, year)
-                if not tmdb_id:
-                    # 调用TMDB API获取tmdb_id，传入 config
-                    tmdb_id = query_tmdb_api(title, year, 'movie', config)
-                update_database(db_path, 'LIB_MOVIES', title, year, tmdb_id)
-
-        # 处理电视剧记录
-        if episodes_path:
-            for title, year in episodes_without_tmdb_id:
-                logging.info(f"处理电视剧记录, 标题: {title}, 年份: {year}")
-                # 尝试从NFO文件中读取tmdb_id
-                tmdb_id = find_and_parse_nfo_files(episodes_path, title, year)
-                if not tmdb_id:
-                    # 调用TMDB API获取tmdb_id，传入 config
-                    tmdb_id = query_tmdb_api(title, year, 'tv', config)
-                update_database(db_path, 'LIB_TVS', title, year, tmdb_id)
-
-    except Exception as e:
-        logging.error(f"主程序运行时发生错误: {e}")
+    # 处理电视剧记录
+    for title, year in episodes_without_tmdb_id:
+        logging.info(f"处理电视剧记录, 标题: {title}, 年份: {year}")
+        # 尝试从NFO文件中读取tmdb_id
+        tmdb_id = find_and_parse_nfo_files(episodes_path, title, year)
+        if not tmdb_id:
+            # 调用TMDB API获取tmdb_id
+            tmdb_id = query_tmdb_api(title, year, 'tv', config)
+        update_database(db_path, 'LIB_TVS', title, year, tmdb_id)
 
 if __name__ == "__main__":
     main()

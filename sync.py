@@ -12,84 +12,44 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 # 定义常量
-LOG_FILE_PATH = '/tmp/log/sync.log'
 FILES_RECORD_PATH = '/tmp/record/files_record.txt'
 
-# 清空日志文件
-if os.path.exists(LOG_FILE_PATH):
-    os.remove(LOG_FILE_PATH)
-
-# 配置日志记录
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# 创建文件处理器
-file_handler = logging.FileHandler(LOG_FILE_PATH, mode='w')
-file_handler.setLevel(logging.INFO)
-file_formatter = logging.Formatter('%(levelname)s - %(message)s')
-file_handler.setFormatter(file_formatter)
-
-# 创建流处理器
-stream_handler = logging.StreamHandler()
-stream_handler.setLevel(logging.INFO)
-stream_formatter = logging.Formatter('%(levelname)s - %(message)s')
-stream_handler.setFormatter(stream_formatter)
-
-# 添加处理器到日志记录器
-logger.addHandler(file_handler)
-logger.addHandler(stream_handler)
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,  # 设置日志级别为 INFO
+    format="%(levelname)s - %(message)s",  # 设置日志格式
+    handlers=[
+        logging.FileHandler("/tmp/log/sync.log", mode='w'),  # 输出到文件并清空之前的日志
+        logging.StreamHandler()  # 输出到控制台
+    ]
+)
 
 # 创建一个默认字典来存储缓存数据
 cache = defaultdict(dict)
 
-def get_db():
-    """
-    获取数据库连接。
-    """
-    db_path = '/config/data.db'  # 数据库路径
-    conn = sqlite3.connect(db_path)
-    return conn
-
-def read_config():
-    """
-    从数据库读取配置项并返回嵌套字典结构。
-    """
-    db = get_db()  # 获取数据库连接
-    config_rows = db.execute('SELECT ID, OPTION, VALUE FROM CONFIG').fetchall()
-
-    config = {}
-    for row in config_rows:
-        id, option, value = row
-        # 根据选项名解析嵌套结构
-        if '.' in option:
-            section, key = option.split('.', 1)
-            if section not in config:
-                config[section] = {}
-            config[section][key] = value
-        else:
-            config[option] = value
-
-    # 特殊处理：将逗号分隔的字符串转为列表
-    list_keys = [
-        'nfo_exclude_dirs', 'nfo_excluded_filenames', 'nfo_excluded_subdir_keywords',
-        'download_excluded_filenames', 'resources_exclude_keywords'
-    ]
-    for key in list_keys:
-        if key in config:
-            config[key] = [item.strip() for item in config[key].split(',')]
-
-    return config
+def load_config(db_path='/config/data.db'):
+    """从数据库中加载配置"""
+    try:
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT OPTION, VALUE FROM CONFIG')
+            config_items = cursor.fetchall()
+            config = {option: value for option, value in config_items}
+        
+        logging.info("加载配置文件成功")
+        return config
+    except sqlite3.Error as e:
+        logging.error(f"数据库加载配置错误: {e}")
+        exit(1)
 
 def get_tmdb_info(title, year, media_type):
     try:
         # 检查缓存中是否有数据
         if (title, year) in cache[media_type]:
             return cache[media_type][(title, year)]
-        
-        config = read_config()
-        TMDB_API_KEY = config['tmdb']['api_key']
-        TMDB_BASE_URL = config['tmdb']['base_url'].rstrip('/') + '/3'
-        url = f"{TMDB_BASE_URL}/search/{media_type}"
+        TMDB_API_KEY = config.get("tmdb_api_key", "")
+        TMDB_BASE_URL = config.get("tmdb_base_url", "")
+        url = f"{TMDB_BASE_URL}/3/search/{media_type}"
         params = {
             'api_key': TMDB_API_KEY,
             'query': title,
@@ -109,15 +69,14 @@ def get_tmdb_info(title, year, media_type):
                 cache[media_type][(title, year)] = (result['id'], result.get('name', ''))
                 return result['id'], result.get('name', '')
     except requests.RequestException as e:
-        logger.error(f"请求错误: {e}")
+        logging.error(f"请求错误: {e}")
     return None, None
 
 def get_tv_episode_name(tmdb_id, season_number, episode_number):
     try:
-        config = read_config()
-        TMDB_API_KEY = config['tmdb']['api_key']
-        TMDB_BASE_URL = config['tmdb']['base_url']
-        url = f"{TMDB_BASE_URL}/tv/{tmdb_id}/season/{season_number}/episode/{episode_number}"
+        TMDB_API_KEY = config.get("tmdb_api_key", "")
+        TMDB_BASE_URL = config.get("tmdb_base_url", "")
+        url = f"{TMDB_BASE_URL}/3/tv/{tmdb_id}/season/{season_number}/episode/{episode_number}"
         params = {
             'api_key': TMDB_API_KEY,
             'language': 'zh-CN'
@@ -127,7 +86,7 @@ def get_tv_episode_name(tmdb_id, season_number, episode_number):
         episode_info = response.json()
         return episode_info.get('name', f"第{episode_number}集")
     except requests.RequestException as e:
-        logger.error(f"请求错误: {e}")
+        logging.error(f"请求错误: {e}")
     return f"第{episode_number}集"
 
 def extract_info(filename, folder_name=None):
@@ -277,18 +236,16 @@ def extract_info(filename, folder_name=None):
 
 def move_or_copy_file(src, dst, action):
     try:
-        # 检查目标路径是否存在，如果不存在则创建
-        os.makedirs(os.path.dirname(dst), exist_ok=True)
         if action == 'move':
             shutil.move(src, dst)
-            logger.info(f"文件已移动: {src} -> {dst}")
+            logging.info(f"文件已移动: {src} -> {dst}")
         elif action == 'copy':
             shutil.copy2(src, dst)
-            logger.info(f"文件已复制: {src} -> {dst}")
+            logging.info(f"文件已复制: {src} -> {dst}")
         else:
-            logger.error(f"未知操作: {action}")
+            logging.error(f"未知操作: {action}")
     except Exception as e:
-        logger.error(f"文件操作失败: {e}")
+        logging.error(f"文件操作失败: {e}")
 
 def is_common_video_file(filename):
     common_video_extensions = ['.mkv', '.mp4', '.avi', '.mov']
@@ -303,91 +260,57 @@ def is_unfinished_download_file(filename):
 def load_processed_files():
     processed_filenames = set()
     if os.path.exists(FILES_RECORD_PATH):
-        try:
-            with open(FILES_RECORD_PATH, 'r') as f:
-                for line in f.read().splitlines():
-                    processed_filenames.add(line.split('/')[-1])
-        except Exception as e:
-            logger.error(f"读取已处理文件记录失败: {e}")
-    else:
-        logger.warning(f"已处理文件记录文件不存在: {FILES_RECORD_PATH}")
-        try:
-            with open(FILES_RECORD_PATH, 'w') as f:
-                pass  # 创建空文件
-            logger.info(f"已创建已处理文件记录文件: {FILES_RECORD_PATH}")
-        except Exception as e:
-            logger.error(f"创建已处理文件记录文件失败: {e}")
+        with open(FILES_RECORD_PATH, 'r') as f:
+            for line in f.read().splitlines():
+                processed_filenames.add(line.split('/')[-1])
     return processed_filenames
 
 def save_processed_files(processed_filenames):
-    try:
-        with open(FILES_RECORD_PATH, 'w') as f:
-            for filename in processed_filenames:
-                f.write(filename + '\n')
-    except Exception as e:
-        logger.error(f"保存已处理文件记录失败: {e}")
-
-def notify_emby_refresh():
-    config = read_config()
-    emby_api_key = config['emby_api_key']
-    emby_refresh_url = config['emby_url'] + "/Library/Refresh"
-    headers = {'Content-Type': 'application/json', 'X-Emby-Token': emby_api_key}
-    try:
-        response = requests.post(emby_refresh_url, headers=headers)
-        response.raise_for_status()
-        logger.info("EMBY媒体库刷新请求成功")
-    except requests.RequestException as e:
-        logger.error(f"EMBY媒体库刷新请求失败: {e}")
+    with open(FILES_RECORD_PATH, 'w') as f:
+        for filename in processed_filenames:
+            f.write(filename + '\n')
 
 def refresh_media_library():
     # 刷新媒体库
     subprocess.run(['python', 'scan_media.py'])  
     # 刷新正在订阅
-    subprocess.run(['python', 'check_rss.py'])   
+    subprocess.run(['python', 'check_subscr.py'])   
     # 刷新媒体库tmdb_id
     subprocess.run(['python', 'tmdb_id.py'])
 
 def process_file(file_path, processed_filenames):
     try:
-        config = read_config()
-        excluded_filenames = config['download_excluded_filenames']
-        action = config['download_action']
-        movie_directory = config['movies_path']
-        episode_directory = config['episodes_path']
-        tmm_api_key = config['tmm']['tmm_api_key']
-        tmm_url = config['tmm']['tmm_url'].rstrip('/') + '/api/'
+        excluded_filenames = config.get("download_excluded_filenames", "").split(',')
+        action = config.get("download_action", "")
+        movie_directory = config.get("movies_path", "")
+        episode_directory = config.get("episodes_path", "")
 
         filename = os.path.basename(file_path)
         folder_name = os.path.basename(os.path.dirname(file_path))
 
         if not is_common_video_file(filename) and is_unfinished_download_file(filename):
-            logger.debug(f"跳过下载未完成文件：{file_path}")
+            logging.debug(f"跳过下载未完成文件：{file_path}")
             return
 
         extension = os.path.splitext(filename)[1].lower()
         if filename in excluded_filenames:
-            logger.debug(f"跳过文件（文件名在排除列表中）: {file_path}")
+            logging.debug(f"跳过文件（文件名在排除列表中）: {file_path}")
             return
         if '【更多' in filename:
-            logger.debug(f"跳过文件（包含特定字符）: {file_path}")
+            logging.debug(f"跳过文件（包含特定字符）: {file_path}")
             return
 
         result = extract_info(filename, folder_name)
         if result:
-            logger.info(f"文件名: {filename}")
-            logger.info(f"解析结果: {result}")
+            logging.info(f"文件名: {filename}")
+            logging.info(f"解析结果: {result}")
 
             media_type = 'tv' if '季' in result and '集' in result else 'movie'
             target_directory = episode_directory if media_type == 'tv' else movie_directory
 
-            # 检查目标目录是否存在，如果不存在则创建
-            if not os.path.exists(target_directory):
-                os.makedirs(target_directory)
-                logger.info(f"创建目录: {target_directory}")
-
             tmdb_id, tmdb_name = get_tmdb_info(result['名称'], result['发行年份'], media_type)
             if tmdb_id:
-                logger.info(f"获取到 TMDB ID: {tmdb_id}，名称：{tmdb_name}")
+                logging.info(f"获取到 TMDB ID: {tmdb_id}，名称：{tmdb_name}")
 
                 title = tmdb_name if tmdb_name else result['名称']
                 year = result['发行年份']
@@ -395,7 +318,7 @@ def process_file(file_path, processed_filenames):
 
                 if not os.path.exists(target_base_dir):
                     os.makedirs(target_base_dir)
-                    logger.info(f"创建目录: {target_base_dir}")
+                    logging.info(f"创建目录: {target_base_dir}")
 
                 if media_type == 'tv':
                     season_number = result['季']
@@ -403,7 +326,7 @@ def process_file(file_path, processed_filenames):
                     season_dir = os.path.join(target_base_dir, f"Season {int(season_number)}")
                     if not os.path.exists(season_dir):
                         os.makedirs(season_dir)
-                        logger.info(f"创建目录: {season_dir}")
+                        logging.info(f"创建目录: {season_dir}")
 
                     episode_name = get_tv_episode_name(tmdb_id, season_number, episode_number)
                     new_filename = f"{title} - S{season_number}E{episode_number.zfill(2)} - {episode_name}.{result['后缀名']}"
@@ -413,7 +336,7 @@ def process_file(file_path, processed_filenames):
                     target_file_path = os.path.join(target_base_dir, new_filename)
 
                 if filename in processed_filenames:
-                    logger.debug(f"文件已处理，跳过: {filename}")
+                    logging.debug(f"文件已处理，跳过: {filename}")
                     return
 
                 move_or_copy_file(file_path, target_file_path, action)
@@ -426,35 +349,31 @@ def process_file(file_path, processed_filenames):
                     new_nfo_filename = f"{title} - S{season_number}E{episode_number.zfill(2)} - {episode_name}.nfo" if media_type == 'tv' else f"{title} - ({year}) {result['视频质量']}.nfo"
                     nfo_target_path = os.path.join(target_base_dir if media_type == 'movie' else season_dir, new_nfo_filename)
                     move_or_copy_file(nfo_file_path, nfo_target_path, action)
-                    logger.info(f"转移NFO文件: {nfo_file_path} -> {nfo_target_path}")
-
-                if media_type == 'tv':
-                    requests.post(f'{tmm_url}tvshows', data='[{"action":"update", "scope":{"name":"all"}},{"action":"scrape", "scope":{"name":"new"}},{"action":"rename", "scope":{"name":"new"}}]', headers={'Content-Type': 'application/json', 'api-key': tmm_api_key})
-                    logger.info(f"通知TMM对电视剧进行刮削")
-                else:
-                    requests.post(f'{tmm_url}movies', data='[{"action":"update", "scope":{"name":"all"}},{"action":"scrape", "scope":{"name":"new"}},{"action":"rename", "scope":{"name":"new"}}]', headers={'Content-Type': 'application/json', 'api-key': tmm_api_key})
-                    logger.info(f"通知TMM对电影进行刮削")
+                    logging.info(f"转移NFO文件: {nfo_file_path} -> {nfo_target_path}")
 
                 send_notification(new_filename)
-                notify_emby_refresh()
-                logger.info(f"文件处理完成，刷新本地数据库")
+                logging.info(f"文件处理完成，刷新本地数据库")
                 refresh_media_library()
 
                 # 保存已处理的文件列表
                 save_processed_files(processed_filenames)
             else:
-                logger.warning(f"未能获取到 TMDB ID: {result['名称']} ({result['发行年份']})")
+                logging.warning(f"未能获取到 TMDB ID: {result['名称']} ({result['发行年份']})")
         else:
-            logger.warning(f"无法解析文件名: {filename}")
+            logging.warning(f"无法解析文件名: {filename}")
     except Exception as e:
-        logger.error(f"处理文件时发生错误: {file_path}, 错误: {e}")
+        logging.error(f"处理文件时发生错误: {file_path}, 错误: {e}")
 
 def send_notification(title_text):
+    # 通知功能
     try:
-        config = read_config()
-        api_key = config['notification']['notification_api_key']
+        notification_enabled = config.get("notification", "")
+        if notification_enabled.lower() != "true":  # 显式检查是否为 "true"
+            logging.info("通知功能未启用，跳过发送通知。")
+            return
+        api_key = config.get("notification_api_key", "")
         if not api_key:
-            logger.error("通知 API Key 未在配置文件中找到，无法发送通知。")
+            logging.error("通知API Key未在配置文件中找到，无法发送通知。")
             return
         api_url = f"https://api.day.app/{api_key}"
         data = {
@@ -464,11 +383,13 @@ def send_notification(title_text):
         headers = {'Content-Type': 'application/json'}
         response = requests.post(api_url, data=json.dumps(data), headers=headers)
         if response.status_code == 200:
-            logger.info("通知发送成功: %s", response.text)
+            logging.info("通知发送成功: %s", response.text)
         else:
-            logger.error("通知发送失败: %s %s", response.status_code, response.text)
-    except Exception as e:
-        logger.error(f"发送通知时发生错误: {e}")
+            logging.error("通知发送失败: %s %s", response.status_code, response.text)
+    except KeyError as e:
+        logging.error(f"配置文件中缺少必要的键: {e}")
+    except requests.RequestException as e:
+        logging.error(f"网络请求出现错误: {e}")
 
 class CustomFileHandler(FileSystemEventHandler):
     def __init__(self):
@@ -483,9 +404,9 @@ class CustomFileHandler(FileSystemEventHandler):
         filename = os.path.basename(file_path)
         if is_unfinished_download_file(filename):
             self.unfinished_files.add(file_path)
-            logger.debug(f"发现下载未完成文件: {file_path}，开始监控")
+            logging.debug(f"发现下载未完成文件: {file_path}，开始监控")
         else:
-            logger.debug(f"新文件创建: {file_path}")
+            logging.debug(f"新文件创建: {file_path}")
             process_file(file_path, self.processed_files)
 
     def on_modified(self, event):
@@ -496,33 +417,28 @@ class CustomFileHandler(FileSystemEventHandler):
         if file_path in self.unfinished_files:
             if not is_unfinished_download_file(filename):
                 self.unfinished_files.remove(file_path)
-                logger.info(f"下载文件已完成: {file_path}，开始处理")
+                logging.info(f"下载文件已完成: {file_path}，开始处理")
                 process_file(file_path, self.processed_files)
         else:
-            logger.debug(f"文件修改: {file_path}")
+            logging.debug(f"文件修改: {file_path}")
             if filename not in self.processed_files:
                 process_file(file_path, self.processed_files)
             else:
-                logger.debug(f"文件已处理，跳过: {filename}")
+                logging.debug(f"文件已处理，跳过: {filename}")
 
     def on_moved(self, event):
         if event.is_directory:
             return
         old_file_path = event.src_path
         new_file_path = event.dest_path
-        logger.debug(f"文件重命名: {old_file_path} -> {new_file_path}")
+        logging.debug(f"文件重命名: {old_file_path} -> {new_file_path}")
         if os.path.basename(new_file_path) not in self.processed_files:
             process_file(new_file_path, self.processed_files)
         else:
-            logger.debug(f"文件已处理，跳过: {os.path.basename(new_file_path)}")
+            logging.debug(f"文件已处理，跳过: {os.path.basename(new_file_path)}")
 
 def start_monitoring(directory):
-    logger.info(f"开始监控目录: {directory}")
-    # 检查监控目录是否存在，如果不存在则创建
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-        logger.info(f"创建监控目录: {directory}")
-    
+    logging.info(f"开始监控目录: {directory}")
     event_handler = CustomFileHandler()
     observer = Observer()
     observer.schedule(event_handler, directory, recursive=True)
@@ -541,9 +457,9 @@ def start_monitoring(directory):
     except KeyboardInterrupt:
         observer.stop()
     observer.join()
-    logger.info("实时监控已停止")
+    logging.info("实时监控已停止")
 
 if __name__ == "__main__":
-    config = read_config()
-    directory = config['download_dir']
+    config = load_config()
+    directory = config.get("download_dir", "")
     start_monitoring(directory)

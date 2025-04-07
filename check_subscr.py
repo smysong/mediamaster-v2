@@ -1,6 +1,7 @@
 import sqlite3
 import logging
 import json
+import sqlite3
 import requests
 
 # 配置日志
@@ -8,47 +9,27 @@ logging.basicConfig(
     level=logging.INFO,  # 设置日志级别为 INFO
     format="%(levelname)s - %(message)s",  # 设置日志格式
     handlers=[
-        logging.FileHandler("/tmp/log/check_subscr.log", mode='w'),  # 输出到文件
+        logging.FileHandler("/tmp/log/check_subscr.log", mode='w'),  # 输出到文件并清空之前的日志
         logging.StreamHandler()  # 输出到控制台
     ]
 )
 
-def load_config_from_db(db_connection):
-    """从数据库 CONFIG 表中加载配置"""
-    cursor = db_connection.cursor()
-    cursor.execute("SELECT OPTION, VALUE FROM CONFIG")
-    config_rows = cursor.fetchall()
-    config = {option: value for option, value in config_rows}
-    logging.info("成功从数据库加载配置")
-    
-    # 检查必要配置项是否存在
-    required_options = ['notification_api_key']
-    for option in required_options:
-        if option not in config:
-            logging.error(f"缺少必要配置项: {option}")
-            raise ValueError(f"缺少必要配置项: {option}")
-    
-    return config
+def load_config(db_path):
+    """从数据库中加载配置"""
+    try:
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT OPTION, VALUE FROM CONFIG')
+            config_items = cursor.fetchall()
+            config = {option: value for option, value in config_items}
+        
+        logging.info("加载配置文件成功")
+        return config
+    except sqlite3.Error as e:
+        logging.error(f"数据库加载配置错误: {e}")
+        exit(1)
 
-def send_notification(title_text, config):
-    """发送通知"""
-    api_key = config.get('notification_api_key', "")
-    if not api_key:
-        logging.error("通知API Key未在配置文件中找到，无法发送通知。")
-        return
-    api_url = f"https://api.day.app/{api_key}"
-    data = {
-        "title": "订阅通知",
-        "body": title_text  # 使用 title_text 作为 body 内容
-    }
-    headers = {'Content-Type': 'application/json'}
-    response = requests.post(api_url, data=json.dumps(data), headers=headers)
-    if response.status_code == 200:
-        logging.info("通知发送成功: %s", response.text)
-    else:
-        logging.error("通知发送失败: %s %s", response.status_code, response.text)
-
-def subscribe_movies(cursor, config):
+def subscribe_movies(cursor):
     """订阅电影"""
     cursor.execute('SELECT title, year FROM RSS_MOVIES')
     rss_movies = cursor.fetchall()
@@ -58,13 +39,13 @@ def subscribe_movies(cursor, config):
             cursor.execute('INSERT OR IGNORE INTO MISS_MOVIES (title, year) VALUES (?, ?)', (title, year))
             if cursor.rowcount > 0:
                 logging.info(f"影片：{title}（{year}) 已添加订阅！")
-                send_notification(f"影片：{title}（{year}) 已添加订阅！", config)
+                send_notification(f"影片：{title}（{year}) 已添加订阅！")
             else:
                 logging.warning(f"影片：{title}（{year}) 已存在于订阅列表中，跳过插入。")
         else:
             logging.info(f"影片：{title}（{year}) 已入库，无需下载订阅！")
 
-def subscribe_tvs(cursor, config):
+def subscribe_tvs(cursor):
     """订阅电视剧"""
     cursor.execute('SELECT title, season, episode, year FROM RSS_TVS')
     rss_tvs = cursor.fetchall()
@@ -81,7 +62,7 @@ def subscribe_tvs(cursor, config):
             if not cursor.execute('SELECT 1 FROM MISS_TVS WHERE title = ? AND year = ? AND season = ?', (title, year, season)).fetchone():
                 cursor.execute('INSERT INTO MISS_TVS (title, year, season, missing_episodes) VALUES (?, ?, ?, ?)', (title, year, season, missing_episodes_str))
                 logging.info(f"电视剧：{title} 第{season}季 已添加订阅！")
-                send_notification(f"电视剧：{title} 第{season}季 已添加订阅！", config)
+                send_notification(f"电视剧：{title} 第{season}季 已添加订阅！")
             else:
                 logging.warning(f"电视剧：{title} 第{season}季 已存在于订阅列表中，跳过插入。")
         else:
@@ -97,7 +78,7 @@ def subscribe_tvs(cursor, config):
                 else:
                     logging.info(f"电视剧：{title} 第{season}季 已入库，无需下载订阅！")
 
-def update_subscriptions(cursor, config):
+def update_subscriptions(cursor):
     """检查并更新当前订阅"""
     # 检查并删除已入库的电影
     cursor.execute('SELECT title, year FROM MISS_MOVIES')
@@ -107,7 +88,7 @@ def update_subscriptions(cursor, config):
         if cursor.execute('SELECT 1 FROM LIB_MOVIES WHERE title = ? AND year = ?', (title, year)).fetchone():
             cursor.execute('DELETE FROM MISS_MOVIES WHERE title = ? AND year = ?', (title, year))
             logging.info(f"影片：{title}（{year}) 已完成订阅！")
-            send_notification(f"影片：{title}（{year}) 已完成订阅！", config)
+            send_notification(f"影片：{title}（{year}) 已完成订阅！")
 
     # 检查并删除已完整订阅的电视剧
     cursor.execute('SELECT title, year, season, missing_episodes FROM MISS_TVS')
@@ -136,36 +117,60 @@ def update_subscriptions(cursor, config):
             if len(total_episodes_set) == len(existing_episodes):
                 cursor.execute('DELETE FROM MISS_TVS WHERE title = ? AND year = ? AND season = ?', (title, year, season))
                 logging.info(f"电视剧：{title} 第{season}季 已完成订阅！")
-                send_notification(f"电视剧：{title} 第{season}季 已完成订阅！", config)
+                send_notification(f"电视剧：{title} 第{season}季 已完成订阅！")
             else:
                 new_missing_episodes_str = ','.join(map(str, sorted(total_episodes_set - existing_episodes)))
                 if new_missing_episodes_str != missing_episodes:  # 检查是否发生变化
                     cursor.execute('UPDATE MISS_TVS SET missing_episodes = ? WHERE title = ? AND year = ? AND season = ?', (new_missing_episodes_str, title, year, season))
                     logging.info(f"电视剧：{title} 第{season}季 缺失 {new_missing_episodes_str} 集，已更新订阅！")
-                    send_notification(f"电视剧：{title} 第{season}季 缺失 {new_missing_episodes_str} 集，已更新订阅！", config)
+                    send_notification(f"电视剧：{title} 第{season}季 缺失 {new_missing_episodes_str} 集，已更新订阅！")
                 else:
                     logging.info(f"电视剧：{title} 第{season}季 订阅未发生变化！")
 
-def main():
-    # 数据库路径
-    db_path = '/config/data.db'
+def send_notification(title_text):
+    # 通知功能
+    try:
+        notification_enabled = config.get("notification", "")
+        if notification_enabled.lower() != "true":  # 显式检查是否为 "true"
+            logging.info("通知功能未启用，跳过发送通知。")
+            return
+        api_key = config.get("notification_api_key", "")
+        if not api_key:
+            logging.error("通知API Key未在配置文件中找到，无法发送通知。")
+            return
+        api_url = f"https://api.day.app/{api_key}"
+        data = {
+            "title": "订阅通知",
+            "body": title_text  # 使用 title_text 作为 body 内容
+        }
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(api_url, data=json.dumps(data), headers=headers)
+        if response.status_code == 200:
+            logging.info("通知发送成功: %s", response.text)
+        else:
+            logging.error("通知发送失败: %s %s", response.status_code, response.text)
+    except KeyError as e:
+        logging.error(f"配置文件中缺少必要的键: {e}")
+    except requests.RequestException as e:
+        logging.error(f"网络请求出现错误: {e}")
 
+def main():
+    # 读取配置文件
+    global config
+    config = load_config(db_path)
     # 连接到数据库
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
     try:
-        # 加载配置
-        config = load_config_from_db(conn)
-
         # 订阅电影
-        subscribe_movies(cursor, config)
+        subscribe_movies(cursor)
 
         # 订阅电视剧
-        subscribe_tvs(cursor, config)
+        subscribe_tvs(cursor)
 
         # 更新订阅
-        update_subscriptions(cursor, config)
+        update_subscriptions(cursor)
 
         # 提交事务
         conn.commit()
@@ -177,4 +182,5 @@ def main():
         conn.close()
 
 if __name__ == "__main__":
+    db_path='/config/data.db'
     main()

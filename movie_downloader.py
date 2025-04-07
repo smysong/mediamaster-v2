@@ -7,10 +7,11 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.action_chains import ActionChains
 import logging
 import os
+import re
 import time
 import requests
 
@@ -23,8 +24,6 @@ logging.basicConfig(
         logging.StreamHandler()  # 输出到控制台
     ]
 )
-
-DOWNLOAD_RECORD_FILE = '/tmp/record/movie_download_records.json'
 
 class MovieDownloader:
     def __init__(self, db_path='/config/data.db'):
@@ -80,11 +79,38 @@ class MovieDownloader:
                 config_items = cursor.fetchall()
                 self.config = {option: value for option, value in config_items}
             
-            logging.debug("加载配置文件成功")
+            logging.info("加载配置文件成功")
             return self.config
         except sqlite3.Error as e:
             logging.error(f"数据库加载配置错误: {e}")
             exit(1)
+
+    def send_notification(self, item, title_text, resolution):
+        # 通知功能
+        try:
+            notification_enabled = self.config.get("notification", "")
+            if notification_enabled.lower() != "true":  # 显式检查是否为 "true"
+                logging.info("通知功能未启用，跳过发送通知。")
+                return
+            api_key = self.config.get("notification_api_key", "")
+            if not api_key:
+                logging.error("通知API Key未在配置文件中找到，无法发送通知。")
+                return
+            api_url = f"https://api.day.app/{api_key}"
+            data = {
+                "title": "下载通知",
+                "body": f"{item['剧集']} - {resolution} - {title_text}"  # 使用 title_text 作为 body 内容
+            }
+            headers = {'Content-Type': 'application/json'}
+            response = requests.post(api_url, data=json.dumps(data), headers=headers)
+            if response.status_code == 200:
+                logging.info("通知发送成功: %s", response.text)
+            else:
+                logging.error("通知发送失败: %s %s", response.status_code, response.text)
+        except KeyError as e:
+            logging.error(f"配置文件中缺少必要的键: {e}")
+        except requests.RequestException as e:
+            logging.error(f"网络请求出现错误: {e}")
 
     def site_captcha(self, url):
         self.driver.get(url)
@@ -178,29 +204,6 @@ class MovieDownloader:
         except TimeoutException:
             return False
 
-    def load_download_records(self):
-        """加载已下载记录"""
-        if os.path.exists(DOWNLOAD_RECORD_FILE):
-            try:
-                with open(DOWNLOAD_RECORD_FILE, 'r', encoding='utf-8') as file:
-                    records = json.load(file)
-                    logging.debug("加载下载记录成功")
-                    return records
-            except Exception as e:
-                logging.error(f"加载下载记录时发生错误: {e}")
-                return []
-        logging.info("下载记录文件不存在，创建新文件")
-        return []
-
-    def save_download_records(self, records):
-        """保存已下载记录"""
-        try:
-            with open(DOWNLOAD_RECORD_FILE, 'w', encoding='utf-8') as file:
-                json.dump(records, file, ensure_ascii=False, indent=4)
-                logging.debug("保存下载记录成功")
-        except Exception as e:
-            logging.error(f"保存下载记录时发生错误: {e}")
-
     def extract_movie_info(self):
         """从数据库读取订阅电影信息"""
         all_movie_info = []
@@ -220,114 +223,175 @@ class MovieDownloader:
             logging.error(f"提取电影信息时发生错误: {e}")
             return []
 
-    def search_and_download(self, search_url, items):
-        download_records = self.load_download_records()
-
-        for item in items:
-            # 构建下载记录的键
-            record_key = f"{item['标题']}_{item['年份']}"
-
-            if record_key in download_records:
-                logging.info(f"记录已存在，跳过下载: {record_key}")
-                continue
-
-            logging.info(f"开始搜索: 标题 {item['标题']}, 年份 {item['年份']}")
+    def search(self, search_url, all_movie_info):
+        # 搜索电影
+        for item in all_movie_info:
+            logging.info(f"开始搜索电影: {item['标题']}  年份: {item['年份']}")
+            search_query = f"{item['标题']} {item['年份']}"
             self.driver.get(search_url)
-            search_box = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.ID, 'scform_srchtxt'))
-            )
-            search_box.send_keys(f"{item['标题']}")
-            search_box.send_keys(Keys.RETURN)
-            logging.info("搜索请求发送完成")
-            logging.info("等待电影结果")
-            time.sleep(5)  # 假设结果5秒内加载完成
+            try:
+                search_box = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.NAME, "srchtxt"))
+                )
+                search_box.send_keys(search_query)
+                search_box.send_keys(Keys.RETURN)
+                logging.debug(f"搜索关键词: {search_query}")
 
-            # 查找所有可能的分辨率链接
-            list_items = self.driver.find_elements(By.TAG_NAME, 'li')
-            found_links = False
-            exclude_keywords = self.config.get("resources", {}).get("exclude_keywords", "")
-            exclude_keywords = [keyword.strip() for keyword in exclude_keywords.split(',')]
+                # 等待搜索结果加载
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.ID, "threadlist"))
+                )
+                # 查找搜索结果中的链接
+                results = self.driver.find_elements(By.CSS_SELECTOR, "#threadlist li.pbw h3.xs3 a")
+                search_results = []
+                for result in results:
+                    title_text = result.text
+                    link = result.get_attribute('href')
+                    search_results.append({
+                        "title": title_text,
+                        "link": link
+                    })
 
-            for li in list_items:
-                try:
-                    a_element = li.find_element(By.TAG_NAME, 'a')
-                    title_text = a_element.text.lower()
-                    link = a_element.get_attribute('href')
-
-                    # 检查是否需要排除此条目
-                    if any(keyword in title_text for keyword in exclude_keywords):
-                        logging.debug(f"排除资源: {title_text}")
+                # 过滤搜索结果
+                filtered_results = []
+                for result in search_results:
+                    # 检查年份是否匹配
+                    if str(item['年份']) not in result['title']:  # 将 item['年份'] 转换为字符串
                         continue
+                    
+                    # 检查是否包含排除关键词
+                    exclude_keywords = self.config.get("resources_exclude_keywords", "").split(',')
+                    if any(keyword.strip() in result['title'] for keyword in exclude_keywords):
+                        continue
+                    
+                    filtered_results.append(result)
 
-                    # 从配置文件中获取首选分辨率和备用分辨率
-                    preferred_resolution = self.config.get("preferred_resolution", "")
-                    fallback_resolution = self.config.get("fallback_resolution", "")
-                    # 创建一个包含所有可能分辨率的列表
-                    resolutions = [preferred_resolution, fallback_resolution]
-                    # 过滤掉空字符串
-                    resolutions = [res for res in resolutions if res]
-                    # 检查标题文本中是否包含任何分辨率，并且年份是否匹配
-                    if any(res in title_text for res in resolutions) and str(item['年份']) in title_text:
-                        logging.info(f"发现: {title_text}, Link: {link}")
-                        self.driver.get(link)
-                        WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "cl")))
-                        logging.debug("进入详情页面")
-                        logging.info("找到匹配电影结果，开始查找种子文件")
-                        try:
-                            attachment_link = self.driver.find_element(By.PARTIAL_LINK_TEXT, "Torrent")
-                            attachment_url = attachment_link.get_attribute('href')
-                            self.download_torrent(attachment_url, item, title_text)
-                            found_links = True
-                            break  # 成功下载后跳出循环
-                        except NoSuchElementException:
-                            logging.warning("没有找到附件链接。")
-                except NoSuchElementException:
-                    logging.warning("未找到搜索结果元素")
-                    continue
+                # 获取首选分辨率和备选分辨率
+                preferred_resolution = self.config.get('preferred_resolution', "未知分辨率")
+                fallback_resolution = self.config.get('fallback_resolution', "未知分辨率")
 
-            if not found_links:
-                logging.warning(f"没有找到首选和备用分辨率匹配的下载链接。")
+                # 按分辨率分类搜索结果
+                categorized_results = {
+                    "首选分辨率": [],
+                    "备选分辨率": [],
+                    "其他分辨率": []
+                }
+                for result in filtered_results:
+                    details = self.extract_details(result['title'])
+                    resolution = details['resolution']
+                    
+                    if resolution == preferred_resolution:
+                        categorized_results["首选分辨率"].append({
+                            "title": result['title'],
+                            "link": result['link'],
+                            "resolution": details['resolution'],
+                            "audio_tracks": details['audio_tracks'],
+                            "subtitles": details['subtitles']
+                        })
+                    elif resolution == fallback_resolution:
+                        categorized_results["备选分辨率"].append({
+                            "title": result['title'],
+                            "link": result['link'],
+                            "resolution": details['resolution'],
+                            "audio_tracks": details['audio_tracks'],
+                            "subtitles": details['subtitles']
+                        })
+                    else:
+                        categorized_results["其他分辨率"].append({
+                            "title": result['title'],
+                            "link": result['link'],
+                            "resolution": details['resolution'],
+                            "audio_tracks": details['audio_tracks'],
+                            "subtitles": details['subtitles']
+                        })
 
-    def download_torrent(self, torrent_url, item, title_text):
-        self.driver.get(torrent_url)
-        logging.info("开始下载种子文件")
-        time.sleep(10)  # 设置等待时间为10秒，等待文件下载完成
-        self.send_notification(item, title_text)
-        # 更新下载记录
-        download_records = self.load_download_records()
-        download_records.append(f"{item['标题']}_{item['年份']}")  # 只记录电影名称和年份
-        self.save_download_records(download_records)
-        logging.debug(f"下载记录更新完成: {item['标题']}_{item['年份']}")
+                # 定义一个函数来评估结果的优先级
+                def evaluate_result(result):
+                    # 优先级评分
+                    score = 0
+                    if result['audio_tracks']:
+                        score += 1  # 有音轨
+                    if result['subtitles']:
+                        score += 1  # 有字幕
+                    return score
 
-    def send_notification(self, item, title_text):
-        api_key = self.config.get("notification_api_key", "")
-        if not api_key:
-            logging.error("通知API Key未在配置文件中找到，无法发送通知。")
-            return
-        api_url = f"https://api.day.app/{api_key}"
-        data = {
-            "title": "下载通知",
-            "body": title_text  # 使用 title_text 作为 body 内容
+                # 对每个分辨率类别的结果进行排序
+                categorized_results["首选分辨率"].sort(key=evaluate_result, reverse=True)
+                categorized_results["备选分辨率"].sort(key=evaluate_result, reverse=True)
+                categorized_results["其他分辨率"].sort(key=evaluate_result, reverse=True)
+
+                # 匹配结果
+                matched_results = categorized_results["首选分辨率"] + categorized_results["备选分辨率"] + categorized_results["其他分辨率"]
+                
+                # 下载种子文件
+                for result in matched_results:
+                    title_text = result['title']
+                    resolution = result['resolution']
+                    self.download_torrent(result, item, title_text, resolution)
+                    break  # 只下载第一个匹配的结果
+
+            except TimeoutException:
+                logging.error("搜索结果加载超时")
+            except Exception as e:
+                logging.error(f"搜索过程中出错: {e}")
+
+    def extract_details(self, title):
+        """从标题中提取详细信息，如分辨率、音轨、字幕"""
+        details = {
+            "resolution": "未知分辨率",
+            "audio_tracks": [],
+            "subtitles": []
         }
-        headers = {'Content-Type': 'application/json'}
-        response = requests.post(api_url, data=json.dumps(data), headers=headers)
-        if response.status_code == 200:
-            logging.info("通知发送成功: %s", response.text)
-        else:
-            logging.error("通知发送失败: %s %s", response.status_code, response.text)
+        
+        # 使用正则表达式提取分辨率
+        resolution_match = re.search(r'(\d{3,4}p)', title, re.IGNORECASE)
+        if resolution_match:
+            details["resolution"] = resolution_match.group(1).upper()
+        
+        # 使用正则表达式提取音轨信息
+        audio_track_match = re.search(r'\[(.*?)音轨', title)
+        if audio_track_match:
+            audio_tracks_str = audio_track_match.group(1).strip()
+            details["audio_tracks"] = [track.strip() for track in audio_tracks_str.split('/')]
+        
+        # 使用正则表达式提取字幕信息
+        subtitle_match = re.search(r'\[(.*?)字幕', title)
+        if subtitle_match:
+            subtitles_str = subtitle_match.group(1).strip()
+            details["subtitles"] = [subtitle.strip() for subtitle in subtitles_str.split('/')]
+        
+        return details
+
+    def download_torrent(self, result, item, title_text, resolution):
+        """解析并下载种子文件"""
+        try:
+            self.driver.get(result['link'])
+            logging.info(f"进入：{title_text} 详情页面...")
+            logging.info(f"开始查找种子文件下载链接...")
+            # 等待种子文件下载链接加载
+            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "cl")))
+            download_link = self.driver.find_element(By.PARTIAL_LINK_TEXT, "Torrent")
+            download_url = download_link.get_attribute('href')
+
+            # 请求下载链接
+            self.driver.get(download_url)
+            logging.info("开始下载种子文件...")
+
+            # 等待下载完成（这里假设下载完成后会有一个特定的文件名）
+            time.sleep(10)  # 等待10秒，确保文件下载完成
+            # 发送通知
+            self.send_notification(item, title_text, resolution)
+
+        except TimeoutException:
+            logging.error("种子文件下载链接加载超时")
+        except Exception as e:
+            logging.error(f"下载种子文件过程中出错: {e}")
 
     def run(self):
         # 加载配置文件
         self.load_config()
         
-        # 检查配置中的必要信息是否存在
-        if not self.config.get("bt_login_username") or \
-        not self.config.get("bt_login_password") or \
-        not self.config.get("notification_api_key"):
-            logging.error("请在系统设置中修改必要配置并填写正确的用户名、密码及API key等参数。")
-            exit(1)  # 提示后立即退出程序
-
-        # 提取电影信息
+        # 提取电视节目信息
         all_movie_info = self.extract_movie_info()
 
         # 检查数据库中是否有有效订阅
@@ -337,18 +401,18 @@ class MovieDownloader:
 
         # 初始化WebDriver
         self.setup_webdriver()
-        
+
         # 获取基础 URL
         bt_movie_base_url = self.config.get("bt_movie_base_url", "")
         login_url = f"{bt_movie_base_url}/member.php?mod=logging&action=login"
         search_url = f"{bt_movie_base_url}/search.php?mod=forum"
-
+    
         # 登录操作前先检查滑动验证码
         self.site_captcha(login_url)  # 检查并处理滑动验证码
         self.login(login_url, self.config["bt_login_username"], self.config["bt_login_password"])
 
         # 搜索和下载操作
-        self.search_and_download(search_url, all_movie_info)
+        self.search(search_url, all_movie_info)
 
         # 清理工作，关闭浏览器
         self.driver.quit()

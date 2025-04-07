@@ -12,7 +12,7 @@ logging.basicConfig(
     level=logging.INFO,  # 设置日志级别为 INFO
     format="%(levelname)s - %(message)s",  # 设置日志格式
     handlers=[
-        logging.FileHandler("/tmp/log/subscr.log", mode='w'),  # 输出到文件
+        logging.FileHandler("/tmp/log/subscr.log", mode='w'),  # 输出到文件并清空之前的日志
         logging.StreamHandler()  # 输出到控制台
     ]
 )
@@ -38,45 +38,43 @@ def chinese_to_int(chinese_num):
         raise ValueError(f"无法解析中文数字: {chinese_num}")
 
 class DouBanRSSParser:
-    def __init__(self, db_path):
-        self.db_path = db_path
-        self.db_connection = sqlite3.connect(self.db_path)
-        self.config = self.load_config_from_db()
+    def __init__(self):
+        self.load_config()
+        self.cookie = self.config.get("douban_cookie", "")
+        self.rss_url = self.config.get("douban_rss_url", "")
+        self.db_path = '/config/data.db'
         self.pcheaders = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36 Edg/105.0.1343.27",
             "Referer": "https://movie.douban.com/",
-            "Cookie": self.config['douban_cookie'],
+            "Cookie": self.cookie,
             "Connection": "keep-alive",
         }
+        self.db_connection = sqlite3.connect(self.db_path)
 
-    def load_config_from_db(self):
-        """从数据库 CONFIG 表中加载配置"""
-        cursor = self.db_connection.cursor()
-        cursor.execute("SELECT OPTION, VALUE FROM CONFIG")
-        config_rows = cursor.fetchall()
-        config = {option: value for option, value in config_rows}
-        logging.info("成功从数据库加载配置")
-        
-        # 检查必要配置项是否存在
-        required_options = ['douban_cookie', 'douban_rss_url']
-        for option in required_options:
-            if option not in config:
-                logging.error(f"缺少必要配置项: {option}")
-                raise ValueError(f"缺少必要配置项: {option}")
-        
-        return config
+    def load_config(self, db_path='/config/data.db'):
+        """从数据库中加载配置"""
+        try:
+            with sqlite3.connect(db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT OPTION, VALUE FROM CONFIG')
+                config_items = cursor.fetchall()
+                self.config = {option: value for option, value in config_items}
+            
+            logging.info("加载配置文件成功")
+        except sqlite3.Error as e:
+            logging.error(f"数据库加载配置错误: {e}")
+            exit(1)
+
+    def config(self, key, default=None):
+        """获取配置项的值"""
+        return self.config.get(key, default)
 
     def fetch_rss_data(self):
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
         }
-        rss_url = self.config.get('douban_rss_url')  # 从配置中获取 RSS URL
-        if not rss_url:
-            logging.error("未找到 douban_rss_url 配置项")
-            return None
-
         try:
-            response = requests.get(rss_url, headers=headers, timeout=10)
+            response = requests.get(self.rss_url, headers=headers, timeout=10)
             if response.status_code == 200:
                 logging.info("成功获取豆瓣订阅数据")
                 return response.text
@@ -101,11 +99,9 @@ class DouBanRSSParser:
                 
                 # 提取豆瓣ID
                 parsed_url = urlparse(link)
-                query_params = parse_qs(parsed_url.query)
-                douban_id = query_params.get('id', [None])[0]
-                if not douban_id:
-                    path_segments = parsed_url.path.split('/')
-                    douban_id = path_segments[-2] if path_segments[-1] == '' else path_segments[-1]
+                path_segments = parsed_url.path.split('/')
+                douban_id = path_segments[-2] if path_segments[-1] == '' else path_segments[-1]
+                douban_id = int(douban_id)  # 将豆瓣ID转换为int类型
 
                 # 移除标题开头的“想看”（如果有的话）
                 title = title.replace('想看', '', 1) if title.startswith('想看') else title
@@ -120,9 +116,9 @@ class DouBanRSSParser:
     def fetch_existing_douban_ids(self):
         cursor = self.db_connection.cursor()
         cursor.execute('SELECT douban_id FROM RSS_MOVIES')
-        existing_movie_ids = {row[0] for row in cursor.fetchall()}
+        existing_movie_ids = {int(row[0]) for row in cursor.fetchall()}  # 将豆瓣ID转换为整数类型
         cursor.execute('SELECT douban_id FROM RSS_TVS')
-        existing_tv_ids = {row[0] for row in cursor.fetchall()}
+        existing_tv_ids = {int(row[0]) for row in cursor.fetchall()}  # 将豆瓣ID转换为整数类型
         return existing_movie_ids.union(existing_tv_ids)
 
     def fetch_movie_details(self, title, douban_id):
@@ -134,13 +130,14 @@ class DouBanRSSParser:
                 if api_data:
                     # 使用豆瓣ID匹配最佳结果
                     for movie_info in api_data:
-                        if movie_info.get('id') == douban_id:
+                        if movie_info.get('id') == str(douban_id):  # 将豆瓣ID转换为字符串进行匹配
                             episode = movie_info.get('episode', '')
                             year = movie_info.get('year', '')
+                            img = movie_info.get('img', '')
                             title = movie_info.get('title', '')
                             url = movie_info.get('url', '')
                             sub_title = movie_info.get('sub_title', '')
-                            douban_id = movie_info.get('id', '')
+                            douban_id = int(movie_info.get('id', ''))  # 确保豆瓣ID为整数类型
 
                             # 判断影片类型
                             media_type = '电影' if episode == '' else '电视剧'
@@ -166,6 +163,7 @@ class DouBanRSSParser:
                                 'douban_id': douban_id,
                                 'episode': episode,
                                 'year': year,
+                                'img': img,
                                 'url': url,
                                 'sub_title': sub_title,
                                 'media_type': media_type,
@@ -185,19 +183,15 @@ class DouBanRSSParser:
 
     def insert_into_db(self, movie_details):
         cursor = self.db_connection.cursor()
-        table_name = 'RSS_MOVIES' if movie_details['media_type'] == '电影' else 'RSS_TVS'
-        
         try:
             if movie_details['media_type'] == '电影':
-                cursor.execute('''
-                    INSERT INTO RSS_MOVIES (title, douban_id, year, url, sub_title)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', (movie_details['title'], movie_details['douban_id'], movie_details['year'], movie_details['url'], movie_details['sub_title']))
+                cursor.execute('''INSERT INTO RSS_MOVIES (title, douban_id, year, url, sub_title)
+                                VALUES (?, ?, ?, ?, ?)''',
+                            (movie_details['title'], movie_details['douban_id'], movie_details['year'], movie_details['url'], movie_details['sub_title']))
             elif movie_details['media_type'] == '电视剧':
-                cursor.execute('''
-                    INSERT INTO RSS_TVS (title, douban_id, episode, year, url, sub_title, season)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', (movie_details['title'], movie_details['douban_id'], movie_details['episode'], movie_details['year'], movie_details['url'], movie_details['sub_title'], movie_details['season']))
+                cursor.execute('''INSERT INTO RSS_TVS (title, douban_id, episode, year, url, sub_title, season)
+                                VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                            (movie_details['title'], movie_details['douban_id'], movie_details['episode'], movie_details['year'], movie_details['url'], movie_details['sub_title'], movie_details['season']))
             self.db_connection.commit()
             logging.info(f"成功插入 {movie_details['title']} 到数据库")
             logging.info("-" * 80)
@@ -226,11 +220,10 @@ class DouBanRSSParser:
                 # 获取数据库中已存在的豆瓣ID
                 existing_douban_ids = self.fetch_existing_douban_ids()
                 new_douban_ids = {douban_id for _, douban_id in items}
-                
                 # 删除数据库中不在新RSS数据中的过时数据
                 self.delete_old_data(existing_douban_ids, new_douban_ids)
 
-                logging.info("开始处理订阅中的所有项目")
+                logging.info("开始处理豆瓣订阅中的所有项目")
                 for title, douban_id in items:
                     # 检查数据库中是否已存在相同的豆瓣ID
                     if douban_id in existing_douban_ids:
@@ -241,10 +234,14 @@ class DouBanRSSParser:
                     if movie_details:
                         logging.info("-" * 80)
                         logging.info(f"处理项目: {movie_details['title']}")
-                        logging.info(f"副标题: {movie_details['sub_title']}")
                         logging.info(f"豆瓣ID: {movie_details['douban_id']}")
+                        logging.info(f"季数: {movie_details['season']}")
+                        logging.info(f"集数: {movie_details['episode']}")
                         logging.info(f"年份: {movie_details['year']}")
                         logging.info(f"类型: {movie_details['media_type']}")
+                        logging.info(f"图片URL: {movie_details['img']}")
+                        logging.info(f"URL: {movie_details['url']}")
+                        logging.info(f"副标题: {movie_details['sub_title']}")
                         # 插入数据库
                         self.insert_into_db(movie_details)
                     
@@ -252,9 +249,9 @@ class DouBanRSSParser:
                     sleep_time = random.uniform(10, 15)
                     time.sleep(sleep_time)
             else:
-                logging.warning("订阅中没有找到项目")
+                logging.warning("豆瓣订阅中没有找到项目")
         else:
-            logging.error("未能获取订阅数据")
+            logging.error("未能获取豆瓣订阅数据")
 
     def close_db(self):
         self.db_connection.close()
@@ -262,7 +259,6 @@ class DouBanRSSParser:
 
 # 主程序入口
 if __name__ == "__main__":
-    db_path = '/config/data.db'
-    parser = DouBanRSSParser(db_path)
+    parser = DouBanRSSParser()
     parser.run()
     parser.close_db()
