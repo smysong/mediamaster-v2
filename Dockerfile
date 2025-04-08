@@ -14,6 +14,9 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+# 创建日志和记录保存目录
+RUN mkdir -p /tmp/log /tmp/record
+
 # 设置系统语言为简体中文
 RUN apt-get update -y && \
     apt-get install -y locales && \
