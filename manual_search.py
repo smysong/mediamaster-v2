@@ -95,7 +95,7 @@ class MediaDownloader:
             return self.config
         except sqlite3.Error as e:
             logging.error(f"数据库加载配置错误: {e}")
-            exit(1)
+            exit(0)
 
     def site_captcha(self, url):
         self.driver.get(url)

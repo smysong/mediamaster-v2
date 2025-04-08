@@ -63,7 +63,7 @@ class DouBanRSSParser:
             logging.info("加载配置文件成功")
         except sqlite3.Error as e:
             logging.error(f"数据库加载配置错误: {e}")
-            exit(1)
+            exit(0)
 
     def config(self, key, default=None):
         """获取配置项的值"""

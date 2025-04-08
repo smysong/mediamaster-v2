@@ -29,7 +29,7 @@ def load_config(db_path):
         return config
     except sqlite3.Error as e:
         logging.error(f"数据库加载配置错误: {e}")
-        exit(1)
+        exit(0)
 
 def parse_nfo(file_path):
     """解析NFO文件，返回title, year和tmdb id"""

@@ -33,7 +33,7 @@ def load_config(db_path='/config/data.db'):
         return config
     except sqlite3.Error as e:
         logging.error(f"数据库加载配置错误: {e}")
-        exit(1)
+        exit(0)
 
 # 从配置文件中读取值
 config = load_config()

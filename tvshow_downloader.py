@@ -84,7 +84,7 @@ class TVDownloader:
             return self.config
         except sqlite3.Error as e:
             logging.error(f"数据库加载配置错误: {e}")
-            exit(1)
+            exit(0)
 
     def send_notification(self, item, title_text, resolution):
         # 通知功能
@@ -193,7 +193,7 @@ class TVDownloader:
         except TimeoutException:
             logging.error("登录失败或页面未正确加载，未找到预期元素！")
             self.driver.quit()
-            exit(1)
+            exit(0)
 
     def is_logged_in(self):
         try:

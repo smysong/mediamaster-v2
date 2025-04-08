@@ -31,7 +31,7 @@ def ensure_directory_exists(directory):
             logging.info(f"目录已创建: {directory}")
         except Exception as e:
             logging.error(f"无法创建目录 {directory}: {e}")
-            sys.exit(1)
+            sys.exit(0)
     else:
         logging.info(f"目录已存在: {directory}")
 
@@ -71,7 +71,7 @@ def check_database():
             logging.warning(f"未知的状态码: {status_code}")
     except subprocess.CalledProcessError as e:
         logging.error(f"数据库管理程序执行失败，退出程序。错误信息: {e.stderr}")
-        sys.exit(1)
+        sys.exit(0)
 
 if __name__ == "__main__":
     # 确保必要的目录存在

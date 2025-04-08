@@ -50,7 +50,7 @@ def run_script(script_name):
         logging.debug(f"{script_name} 已执行完毕。")
     except subprocess.CalledProcessError as e:
         logging.error(f"{script_name} 执行失败，退出程序。错误信息: {e}")
-        sys.exit(1)
+        sys.exit(0)
 
 def start_app():
     try:
@@ -60,7 +60,7 @@ def start_app():
             return process.pid
     except Exception as e:
         logging.error(f"无法启动WEB管理程序: {e}")
-        sys.exit(1)
+        sys.exit(0)
 
 def start_sync():
     try:
@@ -69,7 +69,7 @@ def start_sync():
         return process.pid
     except Exception as e:
         logging.error(f"无法启动目录监控服务: {e}")
-        sys.exit(1)
+        sys.exit(0)
 
 def start_check_db_dir():
     try:
@@ -78,7 +78,7 @@ def start_check_db_dir():
         return process.pid
     except Exception as e:
         logging.error(f"无法启动数据库和目录检查服务: {e}")
-        sys.exit(1)
+        sys.exit(0)
 
 # 全局变量，用于控制主循环
 running = True

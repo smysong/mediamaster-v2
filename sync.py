@@ -40,7 +40,7 @@ def load_config(db_path='/config/data.db'):
         return config
     except sqlite3.Error as e:
         logging.error(f"数据库加载配置错误: {e}")
-        exit(1)
+        exit(0)
 
 def get_tmdb_info(title, year, media_type):
     try:

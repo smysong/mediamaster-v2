@@ -27,7 +27,7 @@ def load_config(db_path):
         return config
     except sqlite3.Error as e:
         logging.error(f"数据库加载配置错误: {e}")
-        exit(1)
+        exit(0)
 
 def subscribe_movies(cursor):
     """订阅电影"""
