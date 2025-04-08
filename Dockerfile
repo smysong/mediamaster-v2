@@ -14,8 +14,8 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# 创建日志和记录保存目录
-RUN mkdir -p /tmp/log /tmp/record
+# 创建日志保存目录
+RUN mkdir -p /tmp/log
 
 # 设置系统语言为简体中文
 RUN apt-get update -y && \
@@ -77,6 +77,7 @@ COPY sync.py .
 COPY tmdb_id.py .
 COPY auto_delete_tasks.py .
 COPY check_db_dir.py .
+COPY dateadded.py .
 
 # 复制 html 模板
 COPY templates.zip .

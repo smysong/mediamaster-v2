@@ -25,12 +25,12 @@
 
 ## Docker 仓库地址
 
-本项目Docker仓库： https://hub.docker.com/r/smysong/mediamaster-chromedriver
+本项目Docker仓库： https://hub.docker.com/r/smysong/mediamaster-v2
 
 ## 快速开始
 
 ### 使用Docker Compose部署：
-请替换volumes路径为实际路径。docker.cloudlayer.icu是docker镜像代理拉取地址，可以去除或更改为其他代理地址。
+请替换volumes路径为实际路径。docker.1ms.run是docker镜像代理拉取地址，可以去除或更改为其他代理地址。
 WEB管理信息：
 > 默认端口：8888 \
 > 使用浏览器访问：http://your-ip:8888 \
@@ -42,7 +42,7 @@ WEB管理信息：
 version: '3.8'
 services:
   mediamaster:
-    image: docker.cloudlayer.icu/smysong/mediamaster-chromedriver
+    image: docker.1ms.run/smysong/mediamaster-mediamaster-v2:latest
     container_name: mediamaster
     environment:
       - UID=1000
@@ -73,7 +73,7 @@ networks:
 version: '3.8'
 services:
   emby:
-    image: docker.cloudlayer.icu/amilys/embyserver:latest
+    image: docker.1ms.run/amilys/embyserver:latest
     container_name: embyserver
     networks:
       media-network:
@@ -91,29 +91,8 @@ services:
       - "/dev/dri/renderD128:/dev/dri/renderD128"
     restart: always
 
-  tinymediamanager:
-    image: docker.cloudlayer.icu/tinymediamanager/tinymediamanager:latest
-    container_name: tinymediamanager
-    networks:
-      media-network:
-    environment:
-      - USER_ID=1000
-      - GROUP_ID=100
-      - ALLOW_DIRECT_VNC=true
-      - LC_ALL=en_US.UTF-8
-      - LANG=en_US.UTF-8
-      - PASSWORD=password
-    volumes:
-      - /vol1/1000/Docker/tinymediamanager:/data
-      - /vol1/1000/Media:/Media
-    ports:
-      - 5900:5900
-      - 4000:4000
-      - 7878:7878
-    restart: unless-stopped
-
   mediamaster:
-    image: docker.cloudlayer.icu/smysong/mediamaster-chromedriver:latest
+    image: docker.1ms.run/smysong/mediamaster-mediamaster-v2:latest
     container_name: mediamaster
     networks:
       media-network:
@@ -131,7 +110,7 @@ services:
     restart: always
 
   transmission:
-    image: docker.cloudlayer.icu/linuxserver/transmission:latest
+    image: docker.1ms.run/linuxserver/transmission:latest
     container_name: transmission
     networks:
       media-network:
@@ -171,11 +150,11 @@ networks:
 
 
 ```
-docker pull smysong/mmediamaster-chromedriver:latest
+docker pull smysong/mediamaster-mediamaster-v2:latest
 ```
 
 
-这将下载 smysong/mediamaster-chromedriver:latest 镜像到本地。
+这将下载 smysong/mediamaster-mediamaster-v2:latest 镜像到本地。
 
 ### 步骤 2: 运行镜像
 **接下来，你可以运行这个镜像。需要挂载一些配置文件或数据卷，你需要指定适当的挂载点。以下是一个示例命令，用于运行镜像，并挂载配置文件和数据卷：**
@@ -187,7 +166,7 @@ docker run -it --name mediamaster \
            -v /Media:/Media \
            -v /Torrent:/Torrent \
            -v /Downloads:/Downloads \
-           smysong/mediamaster-chromedriver:latest
+           smysong/mediamaster-mediamaster-v2:latest
 ```
 
 在这个命令中：
@@ -210,7 +189,7 @@ docker run -it --name mediamaster \
 > -v /Downloads:/Downloads \
 > 目录监控，将主机上下载器的下载目录挂载到容器/Downloads目录，可以实现自动转移并重命名下载完成的影片文件。
 >  
-> smysong/mediamaster-chromedriver:latest \
+> smysong/mediamaster-mediamaster-v2:latest \
 > 是要运行的镜像名称。
 
 ```

@@ -12,7 +12,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 # 定义常量
-FILES_RECORD_PATH = '/tmp/record/files_record.txt'
+FILES_RECORD_PATH = '/config/files_record.txt'
 
 # 配置日志
 logging.basicConfig(

@@ -9,6 +9,7 @@ from manual_search import MediaDownloader  # 导入 MediaDownloader 类
 from datetime import timedelta
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
+from flask import stream_with_context
 import os
 import time
 import requests
@@ -49,6 +50,9 @@ DATABASE = '/config/data.db'
 
 # 存储进程ID的字典
 running_services = {}
+
+# 存储日志传输状态的字典
+log_streaming_status = {}
 
 def get_db():
     db = getattr(g, '_database', None)
@@ -436,6 +440,7 @@ def run_service():
 @app.route('/realtime_log/<string:service>')
 @login_required
 def realtime_log(service):
+    @stream_with_context
     def generate():
         log_file_path = f'/tmp/log/{service}.log'
         if not os.path.exists(log_file_path):
@@ -455,9 +460,25 @@ def realtime_log(service):
                 line = log_file.readline()
                 if not line:
                     time.sleep(0.1)
+                    # 检查是否需要停止日志传输
+                    if not log_streaming_status.get(service, True):
+                        logger.info(f"停止读取日志: {log_file_path}")
+                        break
                     continue
                 yield f'data: {line}\n\n'
+    log_streaming_status[service] = True  # 初始化日志传输状态为 True
     return Response(generate(), mimetype='text/event-stream', content_type='text/event-stream; charset=utf-8')
+
+@app.route('/stop_realtime_log/<string:service>', methods=['POST'])
+@login_required
+def stop_realtime_log(service):
+    try:
+        log_streaming_status[service] = False  # 设置日志传输状态为 False
+        logger.info(f"停止实时日志传输: {service}")
+        return jsonify({"message": "实时日志传输已停止"}), 200
+    except Exception as e:
+        logger.error(f"停止实时日志传输失败: {e}")
+        return jsonify({"message": "停止实时日志传输失败"}), 500
 
 # 手动搜索和下载接口
 @app.route('/manual_search')
