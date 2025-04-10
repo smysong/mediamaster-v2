@@ -37,6 +37,9 @@ def update_dateadded(directory):
                     dateadded_content = dateadded_match.group(1)
                     logging.info(f"添加日期: {dateadded_content}")
 
+                    # 提取 dateadded 的年月日部分
+                    dateadded_date = dateadded_content.split()[0]
+
                     if releasedate_match:
                         replacement_content = releasedate_match.group(1)
                         logging.info(f"发行日期: {replacement_content}")
@@ -45,6 +48,11 @@ def update_dateadded(directory):
                         logging.info(f"播出日期: {replacement_content}")
                     else:
                         logging.warning(f"未找到 [发行日期] 或 [播出日期] 标签在文件: {file_path}")
+                        continue
+
+                    # 比较 dateadded 的年月日部分与 replacement_content 是否相同
+                    if dateadded_date == replacement_content:
+                        logging.info(f"[添加日期] 与 [发行日期] 或 [播出日期] 相同，跳过处理: {file_path}")
                         continue
 
                     # 替换<dateadded>标签中的内容
