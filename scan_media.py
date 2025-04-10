@@ -195,7 +195,12 @@ def insert_or_update_movies(db_path, movies):
         if existing_movie:
             logging.debug(f"电影 '{title} ({year})' 已存在于数据库中。")
             existing_tmdb_id = existing_movie[1]
-            if tmdb_id and tmdb_id != existing_tmdb_id:
+            
+            # 添加调试日志
+            logging.debug(f"比较 TMDB ID: 当前值={tmdb_id}, 数据库值={existing_tmdb_id}")
+            
+            # 确保数据类型一致
+            if tmdb_id and str(tmdb_id).strip() != str(existing_tmdb_id).strip():
                 cursor.execute('UPDATE LIB_MOVIES SET tmdb_id = ? WHERE id = ?', (tmdb_id, existing_movie[0]))
                 logging.info(f"已更新电影 '{title} ({year})' 的 TMDB ID: {tmdb_id}")
             else:
