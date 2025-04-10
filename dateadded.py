@@ -17,8 +17,12 @@ def update_dateadded(directory):
     # 遍历指定目录及其子目录中的所有文件
     logging.info(f"开始遍历目录及其子目录: {directory}")
     for root, dirs, files in os.walk(directory):
+        # 排除 music 目录（不区分大小写）
+        dirs[:] = [d for d in dirs if d.lower() != 'music']
+        
         for filename in files:
-            if filename.endswith('.nfo'):
+            # 排除 artist.nfo 文件（不区分大小写）
+            if filename.lower().endswith('.nfo') and not filename.lower() == 'artist.nfo':
                 file_path = os.path.join(root, filename)
                 logging.info(f"处理文件: {file_path}")
                 with open(file_path, 'r', encoding='utf-8') as file:

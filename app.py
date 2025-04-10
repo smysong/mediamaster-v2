@@ -40,7 +40,7 @@ if not logger.handlers:
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
 # 定义版本号
-APP_VERSION = '2.0.0'
+APP_VERSION = '2.0.1'
 downloader = MediaDownloader()
 app.secret_key = 'mediamaster'  # 设置一个密钥，用于会话管理
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)  # 设置会话有效期为24小时

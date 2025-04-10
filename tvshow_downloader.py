@@ -477,6 +477,10 @@ class TVDownloader:
                         return matched_results
                     break  # 找到匹配后跳出循环，继续处理下一个集数
 
+        # 如果没有匹配结果，记录日志
+        if not matched_results:
+            logging.info("没有找到匹配的缺失剧集")
+
         return matched_results
 
     def download_torrent(self, result, item, title_text, resolution):
@@ -485,16 +489,27 @@ class TVDownloader:
             self.driver.get(result['link'])
             logging.info(f"进入：{title_text} 详情页面...")
             logging.info(f"开始查找种子文件下载链接...")
+
             # 等待种子文件下载链接加载
             WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "plc")))
-            download_link = self.driver.find_element(By.PARTIAL_LINK_TEXT, "torrent")
-            download_url = download_link.get_attribute('href')
+            # 查找所有 <a> 标签
+            links = self.driver.find_elements(By.TAG_NAME, "a")
+            download_link = None
 
+            # 遍历所有 <a> 标签，查找包含 "torrent" 的链接（不区分大小写）
+            for link in links:
+                link_text = link.text.strip().lower()  # 转为小写并去除多余空格
+                if "torrent" in link_text:
+                    download_link = link
+                    break
+            if download_link is None:
+                logging.error("未找到种子文件下载链接")
+                return
+            download_url = download_link.get_attribute('href')
             # 请求下载链接
             self.driver.get(download_url)
             logging.info("开始下载种子文件...")
-
-            # 等待下载完成（这里假设下载完成后会有一个特定的文件名）
+            # 等待下载完成
             time.sleep(10)  # 等待10秒，确保文件下载完成
             # 发送通知
             self.send_notification(item, title_text, resolution)

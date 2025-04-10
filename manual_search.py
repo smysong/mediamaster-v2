@@ -287,13 +287,25 @@ class MediaDownloader:
             WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "cl")))
             logging.info("进入详情页面")
             logging.info("找到匹配电影结果，开始查找种子文件")
-            attachment_link = self.driver.find_element(By.PARTIAL_LINK_TEXT, "Torrent")
-            attachment_url = attachment_link.get_attribute('href')
-            self.download_torrent(attachment_url, title, year)
-            return True
-        except NoSuchElementException:
-            logging.warning("没有找到附件链接。")
-            return False
+
+            # 获取所有可能的链接元素
+            all_links = self.driver.find_elements(By.TAG_NAME, "a")
+            attachment_url = None
+
+            # 遍历所有链接，查找包含 "torrent"（忽略大小写）的链接
+            for link_element in all_links:
+                link_text = link_element.text.strip().lower()  # 转为小写并去除多余空格
+                if "torrent" in link_text:  # 忽略大小写匹配
+                    attachment_url = link_element.get_attribute('href')
+                    break
+
+            if attachment_url:
+                self.download_torrent(attachment_url, title, year)
+                return True
+            else:
+                logging.warning("没有找到附件链接。")
+                return False
+
         except Exception as e:
             logging.error(f"下载过程中发生未知错误: {e}")
             self.close_driver()
@@ -360,16 +372,28 @@ class MediaDownloader:
         self.login_tv_site(self.config["bt_login_username"], self.config["bt_login_password"])
         self.driver.get(link)
         try:
-            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "cl")))
+            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "plc")))
             logging.info("进入详情页面")
             logging.info("找到匹配电视剧结果，开始查找种子文件")
-            attachment_link = self.driver.find_element(By.PARTIAL_LINK_TEXT, "torrent")
-            attachment_url = attachment_link.get_attribute('href')
-            self.download_torrent(attachment_url, title, year)
-            return True
-        except NoSuchElementException:
-            logging.warning("没有找到附件链接。")
-            return False
+
+            # 获取所有可能的链接元素
+            all_links = self.driver.find_elements(By.TAG_NAME, "a")
+            attachment_url = None
+
+            # 遍历所有链接，查找包含 "torrent"（忽略大小写）的链接
+            for link_element in all_links:
+                link_text = link_element.text.strip().lower()  # 转为小写并去除多余空格
+                if "torrent" in link_text:  # 忽略大小写匹配
+                    attachment_url = link_element.get_attribute('href')
+                    break
+
+            if attachment_url:
+                self.download_torrent(attachment_url, title, year)
+                return True
+            else:
+                logging.warning("没有找到附件链接。")
+                return False
+
         except Exception as e:
             logging.error(f"下载过程中发生未知错误: {e}")
             self.close_driver()

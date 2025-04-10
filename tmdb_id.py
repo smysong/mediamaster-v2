@@ -3,7 +3,6 @@ import re
 import sqlite3
 import xml.etree.ElementTree as ET
 import logging
-import configparser
 import requests
 
 # 配置日志
@@ -154,25 +153,31 @@ def main():
     # 获取数据库中没有tmdb_id的电视剧记录
     episodes_without_tmdb_id = fetch_data_without_tmdb_id(db_path, 'LIB_TVS')
 
-    # 处理电影记录
-    for title, year in movies_without_tmdb_id:
-        logging.info(f"处理电影记录, 标题: {title}, 年份: {year}")
-        # 尝试从NFO文件中读取tmdb_id
-        tmdb_id = find_and_parse_nfo_files(movies_path, title, year)
-        if not tmdb_id:
-            # 调用TMDB API获取tmdb_id
-            tmdb_id = query_tmdb_api(title, year, 'movie', config)
-        update_database(db_path, 'LIB_MOVIES', title, year, tmdb_id)
+    # 检查是否有需要处理的电影记录
+    if movies_without_tmdb_id:
+        for title, year in movies_without_tmdb_id:
+            logging.info(f"处理电影记录, 标题: {title}, 年份: {year}")
+            # 尝试从NFO文件中读取tmdb_id
+            tmdb_id = find_and_parse_nfo_files(movies_path, title, year)
+            if not tmdb_id:
+                # 调用TMDB API获取tmdb_id
+                tmdb_id = query_tmdb_api(title, year, 'movie', config)
+            update_database(db_path, 'LIB_MOVIES', title, year, tmdb_id)
+    else:
+        logging.info("没有需要处理的电影记录")
 
-    # 处理电视剧记录
-    for title, year in episodes_without_tmdb_id:
-        logging.info(f"处理电视剧记录, 标题: {title}, 年份: {year}")
-        # 尝试从NFO文件中读取tmdb_id
-        tmdb_id = find_and_parse_nfo_files(episodes_path, title, year)
-        if not tmdb_id:
-            # 调用TMDB API获取tmdb_id
-            tmdb_id = query_tmdb_api(title, year, 'tv', config)
-        update_database(db_path, 'LIB_TVS', title, year, tmdb_id)
+    # 检查是否有需要处理的电视剧记录
+    if episodes_without_tmdb_id:
+        for title, year in episodes_without_tmdb_id:
+            logging.info(f"处理电视剧记录, 标题: {title}, 年份: {year}")
+            # 尝试从NFO文件中读取tmdb_id
+            tmdb_id = find_and_parse_nfo_files(episodes_path, title, year)
+            if not tmdb_id:
+                # 调用TMDB API获取tmdb_id
+                tmdb_id = query_tmdb_api(title, year, 'tv', config)
+            update_database(db_path, 'LIB_TVS', title, year, tmdb_id)
+    else:
+        logging.info("没有需要处理的电视剧记录")
 
 if __name__ == "__main__":
     main()
