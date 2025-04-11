@@ -284,26 +284,36 @@ class MediaDownloader:
         self.login_movie_site(self.config["bt_login_username"], self.config["bt_login_password"])
         self.driver.get(link)
         try:
-            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "cl")))
+            WebDriverWait(self.driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "cl")))
             logging.info("进入详情页面")
             logging.info("找到匹配电影结果，开始查找种子文件")
 
-            # 获取所有可能的链接元素
-            all_links = self.driver.find_elements(By.TAG_NAME, "a")
             attachment_url = None
+            max_retries = 5
+            retries = 0
 
-            # 遍历所有链接，查找包含 "torrent"（忽略大小写）的链接
-            for link_element in all_links:
-                link_text = link_element.text.strip().lower()  # 转为小写并去除多余空格
-                if "torrent" in link_text:  # 忽略大小写匹配
-                    attachment_url = link_element.get_attribute('href')
-                    break
+            while not attachment_url and retries < max_retries:
+                # 等待所有链接元素加载完成
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_all_elements_located((By.TAG_NAME, "a"))
+                )
+                all_links = self.driver.find_elements(By.TAG_NAME, "a")  # 每次循环重新获取元素
+                for link_element in all_links:
+                    link_text = link_element.text.strip().lower()
+                    if "torrent" in link_text:
+                        attachment_url = link_element.get_attribute('href')
+                        break
+
+                if not attachment_url:
+                    logging.warning(f"没有找到附件链接，重试中... ({retries + 1}/{max_retries})")
+                    time.sleep(2)  # 等待2秒后重新尝试
+                    retries += 1
 
             if attachment_url:
                 self.download_torrent(attachment_url, title, year)
                 return True
             else:
-                logging.warning("没有找到附件链接。")
+                logging.error("经过多次重试后仍未找到附件链接。")
                 return False
 
         except Exception as e:
@@ -372,26 +382,36 @@ class MediaDownloader:
         self.login_tv_site(self.config["bt_login_username"], self.config["bt_login_password"])
         self.driver.get(link)
         try:
-            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "plc")))
+            WebDriverWait(self.driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "plc")))
             logging.info("进入详情页面")
             logging.info("找到匹配电视剧结果，开始查找种子文件")
 
-            # 获取所有可能的链接元素
-            all_links = self.driver.find_elements(By.TAG_NAME, "a")
             attachment_url = None
+            max_retries = 5
+            retries = 0
 
-            # 遍历所有链接，查找包含 "torrent"（忽略大小写）的链接
-            for link_element in all_links:
-                link_text = link_element.text.strip().lower()  # 转为小写并去除多余空格
-                if "torrent" in link_text:  # 忽略大小写匹配
-                    attachment_url = link_element.get_attribute('href')
-                    break
+            while not attachment_url and retries < max_retries:
+                # 等待所有链接元素加载完成
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_all_elements_located((By.TAG_NAME, "a"))
+                )
+                all_links = self.driver.find_elements(By.TAG_NAME, "a")  # 每次循环重新获取元素
+                for link_element in all_links:
+                    link_text = link_element.text.strip().lower()
+                    if "torrent" in link_text:
+                        attachment_url = link_element.get_attribute('href')
+                        break
+
+                if not attachment_url:
+                    logging.warning(f"没有找到附件链接，重试中... ({retries + 1}/{max_retries})")
+                    time.sleep(2)  # 等待2秒后重新尝试
+                    retries += 1
 
             if attachment_url:
                 self.download_torrent(attachment_url, title, year)
                 return True
             else:
-                logging.warning("没有找到附件链接。")
+                logging.error("经过多次重试后仍未找到附件链接。")
                 return False
 
         except Exception as e:

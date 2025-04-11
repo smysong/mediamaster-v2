@@ -2,6 +2,15 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.0.2] - 2025-04-11
+
+### 优化
+- 进一步优化查找种子下载链接的匹配逻辑，增加显式等待和重试机制，减少 `stale element reference` 异常的发生，提高下载成功的概率。
+- 优化一些其他细节。
+
+### 升级
+- 升级Google Chrome浏览器和ChromeDriver版本到135.0.7049.84。
+
 ## [2.0.1] - 2025-04-10
 
 ### 优化
@@ -18,3 +27,4 @@
 
 [2.0.0]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.0.0
 [2.0.1]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.0.1
+[2.0.2]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.0.2

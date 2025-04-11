@@ -233,7 +233,7 @@ class TVDownloader:
                     "缺失集数": missing_episodes_list
                 })
         
-        logging.info("读取缺失的电视节目信息和缺失的集数信息完成")
+        logging.debug("读取缺失的电视节目信息和缺失的集数信息完成")
         return all_tv_info
 
     def search(self, search_url, all_tv_info):
@@ -491,28 +491,41 @@ class TVDownloader:
             logging.info(f"开始查找种子文件下载链接...")
 
             # 等待种子文件下载链接加载
-            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "plc")))
-            # 查找所有 <a> 标签
-            links = self.driver.find_elements(By.TAG_NAME, "a")
-            download_link = None
+            WebDriverWait(self.driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "plc")))
+            logging.info("页面加载完成")
 
-            # 遍历所有 <a> 标签，查找包含 "torrent" 的链接（不区分大小写）
-            for link in links:
-                link_text = link.text.strip().lower()  # 转为小写并去除多余空格
-                if "torrent" in link_text:
-                    download_link = link
-                    break
-            if download_link is None:
-                logging.error("未找到种子文件下载链接")
-                return
-            download_url = download_link.get_attribute('href')
-            # 请求下载链接
-            self.driver.get(download_url)
-            logging.info("开始下载种子文件...")
-            # 等待下载完成
-            time.sleep(10)  # 等待10秒，确保文件下载完成
-            # 发送通知
-            self.send_notification(item, title_text, resolution)
+            attachment_url = None
+            max_retries = 5
+            retries = 0
+
+            while not attachment_url and retries < max_retries:
+                # 等待所有链接元素加载完成
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_all_elements_located((By.TAG_NAME, "a"))
+                )
+                links = self.driver.find_elements(By.TAG_NAME, "a")  # 每次循环重新获取元素
+                for link in links:
+                    link_text = link.text.strip().lower()
+                    if "torrent" in link_text:
+                        attachment_url = link.get_attribute('href')
+                        break
+
+                if not attachment_url:
+                    logging.warning(f"没有找到种子文件下载链接，重试中... ({retries + 1}/{max_retries})")
+                    time.sleep(2)  # 等待2秒后重新尝试
+                    retries += 1
+
+            if attachment_url:
+                logging.info(f"找到种子文件下载链接: {attachment_url}")
+                # 请求下载链接
+                self.driver.get(attachment_url)
+                logging.info("开始下载种子文件...")
+                # 等待下载完成
+                time.sleep(10)  # 等待10秒，确保文件下载完成
+                # 发送通知
+                self.send_notification(item, title_text, resolution)
+            else:
+                logging.error("经过多次重试后仍未找到种子文件下载链接。")
 
         except TimeoutException:
             logging.error("种子文件下载链接加载超时")
