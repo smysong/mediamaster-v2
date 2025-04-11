@@ -34,10 +34,10 @@ RUN apt-get update -y && \
     rm -rf /var/lib/apt/lists/*
 
 # 安装 Google Chrome
-RUN wget -q https://repo.debiancn.org/debiancn/pool/main/g/google-chrome-stable/google-chrome-stable_135.0.7049.84-1_amd64.deb \
-&& dpkg -i google-chrome-stable_132.0.6834.83-1_amd64.deb \
+RUN wget -q https://dl.google.com/linux/deb/pool/main/g/google-chrome-stable/google-chrome-stable_135.0.7049.84-1_amd64.deb \
+&& dpkg -i google-chrome-stable_135.0.7049.84-1_amd64.deb \
 && apt-get install -f -y \
-&& rm -f google-chrome-stable_132.0.6834.83-1_amd64.deb \
+&& rm -f google-chrome-stable_135.0.7049.84-1_amd64.deb \
 && rm -rf /var/lib/apt/lists/*
 
 # 下载并配置 ChromeDriver
