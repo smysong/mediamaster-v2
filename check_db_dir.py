@@ -6,6 +6,7 @@ import sys
 # 定义日志保存目录和处理记录保存目录
 log_dir = "/tmp/log"  # 日志保存目录
 config_dir = "/config"  # 配置文件目录
+avatars_dir = "/config/avatars"  # 配置文件目录
 torrent_dir = "/Torrent"  # 种子文件目录
 downloads_dir = "/Downloads"  # 下载文件目录
 media_dir = "/Media"  # 媒体库根目录
@@ -57,7 +58,7 @@ def check_database():
         
         # 调用 database_manager.py 脚本
         subprocess.run(['python', 'database_manager.py'], check=True, capture_output=True, text=True)
-        logging.info("数据库已检查完成。")
+        logging.info("数据库检查完成。")
         
         # 获取状态码并处理
         status_code = get_status_code_from_log(os.path.join(log_dir, "database_manager.log"))
@@ -76,10 +77,12 @@ if __name__ == "__main__":
     # 确保必要的目录存在
     ensure_directory_exists(log_dir)
     ensure_directory_exists(config_dir)
+    ensure_directory_exists(avatars_dir)
     ensure_directory_exists(torrent_dir)
     ensure_directory_exists(downloads_dir)
     ensure_directory_exists(media_dir)
     ensure_directory_exists(movie_dir)
     ensure_directory_exists(episodes_dir)
+    logging.info("所有目录检查完成。")
     # 执行数据库检查
     check_database()

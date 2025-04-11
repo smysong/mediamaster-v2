@@ -75,6 +75,18 @@ def login_required(view):
         return view(**kwargs)
     return wrapped_view
 
+def create_soft_link(src, dst):
+    # 确保源目录存在
+    os.makedirs(src, exist_ok=True)
+    # 确保目标目录存在
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    # 创建软链接
+    if not os.path.exists(dst):
+        os.symlink(src, dst)
+        logger.info(f"软链接创建成功: {src} -> {dst}")
+    else:
+        logger.info(f"软链接已存在: {dst}")
+
 @app.route('/login', methods=('GET', 'POST'))
 def login():
     if request.method == 'POST':
@@ -113,8 +125,8 @@ def login():
 
 @app.route('/logout')
 def logout():
-    user_id = session.get('user_id')
-    logger.info(f"用户 {user_id} 登出")
+    nickname = session.get('nickname')
+    logger.info(f"用户 {nickname} 登出")
     session.clear()
     return redirect(url_for('login'))
 
@@ -130,7 +142,8 @@ def allowed_file(filename):
 def update_profile():
     try:
         user_id = session['user_id']
-        logger.info(f"用户 {user_id} 更新个人资料")
+        nickname = session.get('nickname')
+        logger.info(f"用户 {nickname} 更新个人资料")
         db = get_db()
 
         # 获取表单数据
@@ -156,14 +169,14 @@ def update_profile():
             avatar_file.save(file_path)
             avatar_url = f"/{upload_folder}/{filename}"
             db.execute('UPDATE USERS SET avatar_url = ? WHERE id = ?', (avatar_url, user_id))
-            logger.info(f"用户 {user_id} 更新了头像: {avatar_url}")
+            logger.info(f"用户 {nickname} 更新了头像: {avatar_url}")
             updated_avatar = True
         elif not avatar_file:
-            logger.info(f"用户 {user_id} 未选择新头像，跳过头像更新")
+            logger.info(f"用户 {nickname} 未选择新头像，跳过头像更新")
 
         # 提交数据库更改
         db.commit()
-        logger.info(f"用户 {user_id} 个人资料更新成功")
+        logger.info(f"用户 {nickname} 个人资料更新成功")
 
         # 更新会话中的昵称和头像
         if updated_nickname:
@@ -185,17 +198,18 @@ def update_profile():
 
     except Exception as e:
         db.rollback()
-        logger.error(f"用户 {user_id} 更新个人资料失败: {e}")
+        logger.error(f"用户 {nickname} 更新个人资料失败: {e}")
         return jsonify(success=False, message='更新失败，请稍后再试。'), 500
 
 @app.route('/change_password', methods=['GET', 'POST'])
 @login_required
 def change_password():
     user_id = session['user_id']
+    nickname = session.get('nickname')
     if request.method == 'POST':
         old_password = request.form['old_password']
         new_password = request.form['new_password']
-        logger.info(f"用户 {user_id} 尝试修改密码")
+        logger.info(f"用户 {nickname} 尝试修改密码")
 
         db = get_db()
         user = db.execute('SELECT * FROM USERS WHERE ID = ?', (user_id,)).fetchone()
@@ -208,10 +222,10 @@ def change_password():
             new_hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
             db.execute('UPDATE USERS SET PASSWORD = ? WHERE ID = ?', (new_hashed_password, user_id))
             db.commit()
-            logger.info(f"用户 {user_id} 密码修改成功")
+            logger.info(f"用户 {nickname} 密码修改成功")
             return jsonify(success=True, message='您的密码已成功更新。', redirect_url=url_for('index'))
 
-        logger.warning(f"用户 {user_id} 密码修改失败: 旧密码错误")
+        logger.warning(f"用户 {nickname} 密码修改失败: 旧密码错误")
         return jsonify(success=False, message='旧密码错误。', redirect_url=url_for('change_password'))
 
     return render_template('change_password.html', nickname=session.get('nickname'), avatar_url=session.get('avatar_url'), version=APP_VERSION)
@@ -495,19 +509,19 @@ def api_search_movie():
     data = request.json
     keyword = data.get('keyword')
     year = data.get('year')
-    user_id = session.get('user_id')
+    nickname = session.get('nickname')
 
     if not keyword:
-        logger.warning(f"用户 {user_id} 搜索电影失败: 缺少关键词")
+        logger.warning(f"用户 {nickname} 搜索电影失败: 缺少关键词")
         return jsonify({'error': '缺少关键词'}), 400
 
-    logger.info(f"用户 {user_id} 搜索电影: 关键词={keyword}, 年份={year}")
+    logger.info(f"用户 {nickname} 搜索电影: 关键词={keyword}, 年份={year}")
     try:
         results = downloader.search_movie(keyword, year)
-        logger.info(f"用户 {user_id} 搜索电影成功: 返回结果数量={len(results)}")
+        logger.info(f"用户 {nickname} 搜索电影成功: 返回结果数量={len(results)}")
         return jsonify(results)
     except Exception as e:
-        logger.error(f"用户 {user_id} 搜索电影失败: {e}")
+        logger.error(f"用户 {nickname} 搜索电影失败: {e}")
         return jsonify({'error': '搜索失败，请稍后再试。'}), 500
 
 @app.route('/api/search_tv_show', methods=['POST'])
@@ -516,19 +530,19 @@ def api_search_tv_show():
     data = request.json
     keyword = data.get('keyword')
     year = data.get('year')
-    user_id = session.get('user_id')
+    nickname = session.get('nickname')
 
     if not keyword:
-        logger.warning(f"用户 {user_id} 搜索电视剧失败: 缺少关键词")
+        logger.warning(f"用户 {nickname} 搜索电视剧失败: 缺少关键词")
         return jsonify({'error': '缺少关键词'}), 400
 
-    logger.info(f"用户 {user_id} 搜索电视剧: 关键词={keyword}, 年份={year}")
+    logger.info(f"用户 {nickname} 搜索电视剧: 关键词={keyword}, 年份={year}")
     try:
         results = downloader.search_tv_show(keyword, year)
-        logger.info(f"用户 {user_id} 搜索电视剧成功: 返回结果数量={len(results)}")
+        logger.info(f"用户 {nickname} 搜索电视剧成功: 返回结果数量={len(results)}")
         return jsonify(results)
     except Exception as e:
-        logger.error(f"用户 {user_id} 搜索电视剧失败: {e}")
+        logger.error(f"用户 {nickname} 搜索电视剧失败: {e}")
         return jsonify({'error': '搜索失败，请稍后再试。'}), 500
 
 @app.route('/api/download_movie', methods=['GET'])
@@ -537,23 +551,23 @@ def api_download_movie():
     link = request.args.get('link')
     title = request.args.get('title')
     year = request.args.get('year')
-    user_id = session.get('user_id')
+    nickname = session.get('nickname')
 
     if not link or not title or not year:
-        logger.warning(f"用户 {user_id} 下载电影失败: 缺少参数")
+        logger.warning(f"用户 {nickname} 下载电影失败: 缺少参数")
         return jsonify({'error': '缺少参数'}), 400
 
-    logger.info(f"用户 {user_id} 尝试下载电影: 标题={title}, 年份={year}, 链接={link}")
+    logger.info(f"用户 {nickname} 尝试下载电影: 标题={title}, 年份={year}, 链接={link}")
     try:
         success = downloader.download_movie(link, title, year)
         if success:
-            logger.info(f"用户 {user_id} 下载电影成功: 标题={title}, 年份={year}")
+            logger.info(f"用户 {nickname} 下载电影成功: 标题={title}, 年份={year}")
             return jsonify({'success': True})
         else:
-            logger.warning(f"用户 {user_id} 下载电影失败: 标题={title}, 年份={year}")
+            logger.warning(f"用户 {nickname} 下载电影失败: 标题={title}, 年份={year}")
             return jsonify({'success': False}), 400
     except Exception as e:
-        logger.error(f"用户 {user_id} 下载电影失败: {e}")
+        logger.error(f"用户 {nickname} 下载电影失败: {e}")
         return jsonify({'error': '下载失败，请稍后再试。'}), 500
 
 @app.route('/api/download_tv_show', methods=['GET'])
@@ -562,23 +576,23 @@ def api_download_tv_show():
     link = request.args.get('link')
     title = request.args.get('title')
     year = request.args.get('year')
-    user_id = session.get('user_id')
+    nickname = session.get('nickname')
 
     if not link or not title or not year:
-        logger.warning(f"用户 {user_id} 下载电视剧失败: 缺少参数")
+        logger.warning(f"用户 {nickname} 下载电视剧失败: 缺少参数")
         return jsonify({'error': '缺少参数'}), 400
 
-    logger.info(f"用户 {user_id} 尝试下载电视剧: 标题={title}, 年份={year}, 链接={link}")
+    logger.info(f"用户 {nickname} 尝试下载电视剧: 标题={title}, 年份={year}, 链接={link}")
     try:
         success = downloader.download_tv_show(link, title, year)
         if success:
-            logger.info(f"用户 {user_id} 下载电视剧成功: 标题={title}, 年份={year}")
+            logger.info(f"用户 {nickname} 下载电视剧成功: 标题={title}, 年份={year}")
             return jsonify({'success': True})
         else:
-            logger.warning(f"用户 {user_id} 下载电视剧失败: 标题={title}, 年份={year}")
+            logger.warning(f"用户 {nickname} 下载电视剧失败: 标题={title}, 年份={year}")
             return jsonify({'success': False}), 400
     except Exception as e:
-        logger.error(f"用户 {user_id} 下载电视剧失败: {e}")
+        logger.error(f"用户 {nickname} 下载电视剧失败: {e}")
         return jsonify({'error': '下载失败，请稍后再试。'}), 500
 
 GROUP_MAPPING = {
@@ -761,4 +775,8 @@ def proxy_download_mgmt(path):
 
 if __name__ == '__main__':
     logger.info("程序已启动")
+    # 创建硬链接
+    src_dir = '/config/avatars'
+    dst_dir = '/app/static/uploads/avatars'
+    create_soft_link(src_dir, dst_dir)
     app.run(host='0.0.0.0', port=8888, debug=False)
