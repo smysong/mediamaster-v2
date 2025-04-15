@@ -16,19 +16,19 @@
     
     <!-- 批量操作按钮 -->
     <div>
-        <button onclick="startSelectedTorrents()" class="action-button" title="开始任务">
+        <button onclick="performBulkAction('start')" class="action-button" title="开始任务">
             <span class="mantine-1ryt1ht mantine-Button-label">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="1.5rem" height="1.5rem" fill="#228be6">
                     <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM6.79 5.093A.5.5 0 0 0 6 5.5v5a.5.5 0 0 0 .79.407l3.5-2.5a.5.5 0 0 0 0-.814l-3.5-2.5z"></path>
                 </svg>
             </span>
         </button>
-        <button onclick="pauseSelectedTorrents()" class="action-button" title="暂停任务">
+        <button onclick="performBulkAction('pause')" class="action-button" title="暂停任务">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="1.5rem" height="1.5rem" fill="#228be6">
                 <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM6.25 5C5.56 5 5 5.56 5 6.25v3.5a1.25 1.25 0 1 0 2.5 0v-3.5C7.5 5.56 6.94 5 6.25 5zm3.5 0c-.69 0-1.25.56-1.25 1.25v3.5a1.25 1.25 0 1 0 2.5 0v-3.5C11 5.56 10.44 5 9.75 5z"></path>
             </svg>
         </button>
-        <button onclick="removeSelectedTorrents()" class="action-button" title="删除任务">
+        <button onclick="performBulkAction('delete')" class="action-button" title="删除任务">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="1.5rem" height="1.5rem" fill="#fa5252">
                 <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM5.354 4.646a.5.5 0 1 0-.708.708L7.293 8l-2.647 2.646a.5.5 0 0 0 .708.708L8 8.707l2.646 2.647a.5.5 0 0 0 .708-.708L8.707 8l2.647-2.646a.5.5 0 0 0-.708-.708L8 7.293 5.354 4.646z"></path>
             </svg>
@@ -59,7 +59,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <label for="torrentUrl" class="form-label" style="display: none;">请输入种子链接</label>
+                <label for="torrentUrl" class="form-label" style="display: none;">请输入磁力链接</label>
                 <input type="text" class="form-control" id="torrentUrl" placeholder="请输入磁力链接" style="font-size: clamp(8px, 1.2vw, 14px);">
             </div>
             <div class="modal-footer">
@@ -88,38 +88,19 @@
 <script>
     let sessionId = ''; // 用于存储传输会话ID
     const refreshInterval = 5000; // 每5秒刷新一次
-    const backendUrl = '{{ download_mgmt_url }}/transmission/rpc'; // 服务器IP
+    const backendUrl = '/api/download'; // 后端统一接口
 
     // 获取所有下载任务
     async function getTorrents() {
         try {
-            const response = await fetch(backendUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Transmission-Session-Id': sessionId
-                },
-                body: JSON.stringify({
-                    method: 'torrent-get',
-                    arguments: {
-                        fields: ['id', 'name', 'percentDone', 'status', 'rateDownload', 'rateUpload', 'magnetLink']
-                    }
-                })
-            });
-
-            if (response.headers.get('X-Transmission-Session-Id')) {
-                sessionId = response.headers.get('X-Transmission-Session-Id');
-            }
+            const response = await fetch(`${backendUrl}/list`, { method: 'GET' });
 
             if (!response.ok) {
-                if (response.status === 409) { // 如果是409错误，重新尝试
-                    return getTorrents();
-                }
                 throw new Error(`网络响应错误: ${response.statusText}`);
             }
 
             const data = await response.json();
-            torrents = data.arguments.torrents; // 确保全局变量 torrents 被正确赋值
+            const torrents = data.torrents || [];
             updateTorrentList(torrents);
         } catch (error) {
             showToast(`获取任务列表失败: ${error.message}`);
@@ -128,11 +109,6 @@
 
     // 更新任务列表显示
     function updateTorrentList(torrents) {
-        if (!Array.isArray(torrents)) {
-            console.error('期望的任务列表数组未收到，实际收到:', torrents);
-            return;
-        }
-
         const list = document.getElementById('taskList');
         list.innerHTML = ''; // 清空现有内容
 
@@ -162,25 +138,22 @@
     // 格式化速度
     function formatSpeed(speed) {
         const speedInMB = speed / 1024 / 1024;
-        if (speedInMB >= 1) {
-            return `${speedInMB.toFixed(2)} MB/s`;
-        } else {
-            return `${(speed / 1024).toFixed(2)} KB/s`;
-        }
+        return speedInMB >= 1 ? `${speedInMB.toFixed(2)} MB/s` : `${(speed / 1024).toFixed(2)} KB/s`;
     }
 
     // 转换状态码为文本
     function getStatusText(status) {
-        switch (status) {
-            case 0: return '停止';
-            case 1: return '检查等待';
-            case 2: return '检查';
-            case 3: return '下载等待';
-            case 4: return '下载';
-            case 5: return '做种等待';
-            case 6: return '做种';
-            default: return '未知';
-        }
+        const statusMap = {
+            stopped_download: '停止',
+            stalled_download: '等待',
+            stopped: '停止',
+            checking: '检查',
+            downloading: '下载',
+            seeding: '做种',
+            paused: '暂停',
+            error: '错误'
+        };
+        return statusMap[status] || '未知';
     }
 
     // 切换任务选择状态
@@ -190,117 +163,55 @@
         localStorage.setItem(`selectedTorrent_${torrentId}`, isSelected);
     }
 
-    // 开始选中任务
-    function startSelectedTorrents() {
-        const selectedIds = Array.from(document.querySelectorAll('.task-item.selected')).map(item => parseInt(item.getAttribute('data-id')));
-        if (selectedIds.length > 0) {
-            sendRpcRequest('torrent-start', { ids: selectedIds }).then(() => {
-                showToast('已开始选中任务');
-            }).catch(() => {
-                showToast('开始任务失败，请重试');
-            });
-        } else {
+    // 执行批量操作（启动、暂停、删除）
+    function performBulkAction(action) {
+        const selectedIds = Array.from(document.querySelectorAll('.task-item.selected')).map(item => item.getAttribute('data-id'));
+        if (selectedIds.length === 0) {
             showToast('没有选中任务');
+            return;
         }
-    }
 
-    // 暂停选中任务
-    function pauseSelectedTorrents() {
-        const selectedIds = Array.from(document.querySelectorAll('.task-item.selected')).map(item => parseInt(item.getAttribute('data-id')));
-        if (selectedIds.length > 0) {
-            sendRpcRequest('torrent-stop', { ids: selectedIds }).then(() => {
-                showToast('已暂停选中任务');
-            }).catch(() => {
-                showToast('暂停任务失败，请重试');
-            });
-        } else {
-            showToast('没有选中任务');
-        }
-    }
-
-    // 删除选中任务
-    function removeSelectedTorrents() {
-        const selectedIds = Array.from(document.querySelectorAll('.task-item.selected')).map(item => parseInt(item.getAttribute('data-id')));
-        if (selectedIds.length > 0) {
-            sendRpcRequest('torrent-remove', { ids: selectedIds, 'delete-local-data': true }).then(() => {
-                showToast('已删除选中任务及其数据');
-            }).catch(() => {
-                showToast('删除任务失败，请重试');
-            });
-        } else {
-            showToast('没有选中任务');
-        }
-    }
-
-    // 发送RPC请求
-    function sendRpcRequest(method, arguments) {
-        return new Promise((resolve, reject) => {
-            fetch(backendUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Transmission-Session-Id': sessionId
-                },
-                body: JSON.stringify({
-                    method: method,
-                    arguments: arguments
-                })
-            }).then(response => {
-                if (response.headers.get('X-Transmission-Session-Id')) {
-                    sessionId = response.headers.get('X-Transmission-Session-Id');
-                }
-
-                if (response.ok) {
-                    getTorrents(); // 刷新任务列表
-                    resolve();
-                } else {
-                    console.error('发送RPC请求失败:', response.statusText);
-                    reject();
-                }
-            }).catch(error => {
-                console.error('发送RPC请求失败:', error);
-                reject();
-            });
-        });
+        fetch(`${backendUrl}/${action}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: selectedIds })
+        }).then(response => {
+            if (response.ok) {
+                showToast(`已${action === 'start' ? '启动' : action === 'pause' ? '暂停' : '删除'}选中任务`);
+                getTorrents(); // 刷新任务列表
+            } else {
+                showToast(`${action === 'start' ? '启动' : action === 'pause' ? '暂停' : '删除'}任务失败，请重试`);
+            }
+        }).catch(() => showToast('操作失败，请重试'));
     }
 
     // 添加下载任务
     function addTorrentByUrl() {
         const url = document.getElementById('torrentUrl').value;
 
-        fetch(backendUrl, {
+        fetch(`${backendUrl}/add`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Transmission-Session-Id': sessionId
-            },
-            body: JSON.stringify({
-                method: 'torrent-add',
-                arguments: {
-                    filename: url
-                }
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'url', value: url })
         }).then(response => {
-            if (response.headers.get('X-Transmission-Session-Id')) {
-                sessionId = response.headers.get('X-Transmission-Session-Id');
-            }
-
             if (response.ok) {
                 showToast('添加成功！');
-                document.getElementById('addLinkModal').querySelector('.btn-close').click(); // 关闭模态框
-                getTorrents(); // 刷新任务列表
+                document.getElementById('addLinkModal').querySelector('.btn-close').click();
+                getTorrents();
             } else {
                 showToast('添加失败，请重试。');
             }
-        }).catch(error => {
-            console.error('添加任务失败:', error);
-            showToast('添加失败，请重试。');
-        });
+        }).catch(() => showToast('添加失败，请重试。'));
     }
 
     // 显示文件输入框
     function showFileInput() {
-        document.getElementById('hiddenFileInput').click();
+        const fileInput = document.getElementById('hiddenFileInput');
+        if (fileInput) {
+            fileInput.click(); // 触发文件选择对话框
+        } else {
+            showToast('文件输入元素未找到，请检查页面结构');
+        }
     }
 
     // 处理文件上传
@@ -311,106 +222,85 @@
             const reader = new FileReader();
             reader.onload = function(e) {
                 const base64String = e.target.result.split(',')[1]; // 去掉 "data:application/x-bittorrent;base64,"
-                addTorrentByBase64(base64String);
+                addTorrentByBase64(base64String); // 调用新方法处理Base64字符串
             };
-            reader.readAsDataURL(file);
+            reader.readAsDataURL(file); // 读取文件为Data URL
         }
     });
 
-    // 添加下载任务（通过Base64编码的种子文件）
+    // 添加种子任务（Base64格式）
     function addTorrentByBase64(base64String) {
-        fetch(backendUrl, {
+        fetch(`${backendUrl}/add`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Transmission-Session-Id': sessionId
-            },
-            body: JSON.stringify({
-                method: 'torrent-add',
-                arguments: {
-                    metainfo: base64String
-                }
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'base64', value: base64String }) // 发送Base64数据到后端
         }).then(response => {
-            if (response.headers.get('X-Transmission-Session-Id')) {
-                sessionId = response.headers.get('X-Transmission-Session-Id');
-            }
-
             if (response.ok) {
-                response.json().then(data => {
-                    if (data.result === 'success') {
-                        showToast('上传成功！');
-                        getTorrents(); // 刷新任务列表
-                    } else {
-                        showToast('上传失败，请重试。');
-                    }
-                });
+                showToast('任务添加成功！');
+                getTorrents(); // 刷新任务列表
             } else {
-                showToast('上传失败，请重试。');
-                console.error('错误响应:', response);
+                showToast('任务添加失败，请重试。');
             }
-        }).catch(error => {
-            console.error('上传任务失败:', error);
-            showToast('上传失败，请重试。');
-        });
+        }).catch(() => showToast('任务添加失败，请重试。'));
     }
 
-    // 复制选中任务的磁力链接
-    function copySelectedMagnetLinks() {
-        const selectedIds = Array.from(document.querySelectorAll('.task-item.selected')).map(item => parseInt(item.getAttribute('data-id')));
-
+    // 复制选中的磁力链接
+    async function copySelectedMagnetLinks() {
+        const selectedIds = Array.from(document.querySelectorAll('.task-item.selected')).map(item => item.getAttribute('data-id'));
         if (selectedIds.length === 0) {
             showToast('没有选中任务');
             return;
         }
 
-        // 获取选中任务的磁力链接
-        const selectedTorrents = selectedIds.map(id => {
-            const torrent = torrents.find(t => t.id === id);
-            if (torrent) {
-                return torrent.magnetLink;
-            } else {
-                return null;
+        try {
+            // 调用后端接口获取磁力链接
+            const response = await fetch(`${backendUrl}/get-magnet-links`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selectedIds })
+            });
+
+            if (!response.ok) {
+                throw new Error(`获取磁力链接失败: ${response.statusText}`);
             }
-        }).filter(link => link && link.trim() !== ''); // 过滤掉无效的链接
 
-        if (selectedTorrents.length === 0) {
-            showToast('选中的任务没有有效的磁力链接');
-            return;
-        }
+            const data = await response.json();
+            const magnetLinks = data.magnetLinks || [];
 
-        const magnetLinks = selectedTorrents.join('\n');
-
-        // 尝试复制磁力链接
-        if (navigator.clipboard) {
-            if (navigator.permissions) {
-                navigator.permissions.query({ name: "clipboard-write" }).then(result => {
-                    if (result.state == "granted" || result.state == "prompt") {
-                        // 用户已授权或需要用户确认
-                        navigator.clipboard.writeText(magnetLinks).then(() => {
-                            showToast('磁力链接已复制到剪贴板');
-                        }).catch(error => {
-                            console.error('复制失败:', error);
-                            showToast('复制失败，请重试');
-                        });
-                    } else {
-                        // 用户拒绝了权限
-                        showToast('请允许网站访问剪贴板');
-                    }
-                });
-            } else {
-                // 浏览器不支持权限查询，直接尝试复制
-                navigator.clipboard.writeText(magnetLinks).then(() => {
-                    showToast('磁力链接已复制到剪贴板');
-                }).catch(error => {
-                    console.error('复制失败:', error);
-                    showToast('复制失败，请重试');
-                });
+            if (magnetLinks.length === 0) {
+                showToast('未找到磁力链接');
+                return;
             }
-        } else {
-            // 浏览器不支持 Clipboard API
-            showToast('当前浏览器不支持复制功能');
+
+            // 拼接所有磁力链接
+            const textToCopy = magnetLinks.join('\n');
+
+            // 尝试使用新版浏览器剪贴板 API
+            if (navigator.clipboard) {
+                await navigator.clipboard.writeText(textToCopy);
+                showToast('磁力链接已复制到剪贴板');
+            } else {
+                // 回退到旧版浏览器兼容方法
+                fallbackCopyTextToClipboard(textToCopy);
+            }
+        } catch (error) {
+            showToast(`复制链接失败: ${error.message}`);
         }
+    }
+
+    // 兼容旧版浏览器的复制方法
+    function fallbackCopyTextToClipboard(text) {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            showToast('磁力链接已复制到剪贴板');
+        } catch (err) {
+            showToast('复制链接失败，请重试');
+        }
+        document.body.removeChild(textarea);
     }
 
     // 显示Toast提示
@@ -430,8 +320,9 @@
 
     // 存储所有任务数据
     let torrents = [];
+
 </script>
 {% else %}
-<p>下载管理功能未启用，请在系统设置中启用下载管理</p>
+<p>下载管理功能未启用，请在系统设置中启用下载管理并配置下载器相关参数</p>
 {% endif %}
 {% endblock %}

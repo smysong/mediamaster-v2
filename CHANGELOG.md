@@ -2,6 +2,17 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.0.3] - 2025-04-15
+
+### 优化
+- 优化下载器管理功能，使用qbittorrent-api和transmission-rpc python库，并且统一前端页面api接口调用，支持qbittorrent和transmission下载器。
+
+### 修复
+- 修复一些已知问题，提升用户体验。
+
+### 新增
+- 新增下载器管理功能支持用户名密码认证，在系统设置中配置下载器用户名和密码即可（qbittorrent一般需要登录，transmission一般不需要；如果没有用户名密码时配置项保持默认或填写为空即可）。
+
 ## [2.0.2] - 2025-04-11
 
 ### 优化
@@ -30,3 +41,4 @@
 [2.0.0]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.0.0
 [2.0.1]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.0.1
 [2.0.2]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.0.2
+[2.0.3]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.0.3

@@ -1,3 +1,4 @@
+import re
 import sqlite3
 import subprocess
 import threading
@@ -10,9 +11,10 @@ from datetime import timedelta
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 from flask import stream_with_context
+from transmission_rpc import Client as TransmissionClient
+from qbittorrentapi import Client as QbittorrentClient
 import os
 import time
-import requests
 import logging
 
 # 配置日志
@@ -40,7 +42,7 @@ if not logger.handlers:
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
 # 定义版本号
-APP_VERSION = '2.0.2'
+APP_VERSION = '2.0.3'
 downloader = MediaDownloader()
 app.secret_key = 'mediamaster'  # 设置一个密钥，用于会话管理
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)  # 设置会话有效期为24小时
@@ -634,10 +636,12 @@ GROUP_MAPPING = {
         "tmdb_api_key": {"type": "password", "label": "TMDB API密钥"}
     },
     "下载器管理": {
-        "download_mgmt": {"type": "switch", "label": "下载管理"},
+        "download_mgmt": {"type": "switch", "label": "下载器管理"},
+        "download_type": {"type": "downloader", "label": "下载器", "options": ["transmission", "qbittorrent"]},
         "download_username": {"type": "text", "label": "下载器用户名"},
         "download_password": {"type": "password", "label": "下载器密码"},
-        "download_mgmt_url": {"type": "text", "label": "下载管理器内网地址"}
+        "download_host": {"type": "text", "label": "下载器地址"},
+        "download_port": {"type": "text", "label": "下载器端口"}
     },
     "资源站点设置": {
         "bt_login_username": {"type": "text", "label": "站点登录用户名"},
@@ -706,72 +710,228 @@ def save_settings():
 @login_required
 def download_mgmt_page():
     db = get_db()
-    # 从数据库中读取 download_mgmt 和 download_mgmt_url 的配置
-    download_mgmt_config = db.execute('SELECT OPTION, VALUE FROM CONFIG WHERE OPTION IN (?, ?)', ('download_mgmt', 'download_mgmt_url')).fetchall()
+    # 从数据库中读取 download_mgmt 的配置
+    download_mgmt_config = db.execute('SELECT VALUE FROM CONFIG WHERE OPTION = ?', ('download_mgmt',)).fetchone()
     
-    download_mgmt = None
-    download_mgmt_url = None
-    
-    for config in download_mgmt_config:
-        if config['OPTION'] == 'download_mgmt':
-            download_mgmt = config['VALUE'] == 'True'
-        elif config['OPTION'] == 'download_mgmt_url':
-            download_mgmt_url = config['VALUE']
-    
-    # 如果没有从数据库中读取到 download_mgmt 或 download_mgmt_url，则返回错误或默认页面
-    if download_mgmt is None or download_mgmt_url is None:
-        flash('配置未找到，请检查数据库中的配置项。', 'error')
+    # 检查 download_mgmt 是否存在且为 True
+    if not download_mgmt_config or download_mgmt_config['VALUE'] != 'True':
+        flash('下载管理功能未启用，请在系统设置中开启下载管理功能。', 'error')
         return redirect(url_for('settings_page'))
     
-    # 确保 download_mgmt_url 指向本机的代理端点
-    proxy_base_url = url_for('proxy_download_mgmt', path='', _external=True)
     # 从会话中获取用户昵称和头像
     nickname = session.get('nickname')
     avatar_url = session.get('avatar_url')
+    
     # 将信息传递给模板
-    return render_template('download_mgmt.html', nickname=nickname, avatar_url=avatar_url, version=APP_VERSION, download_mgmt=download_mgmt, download_mgmt_url=proxy_base_url)
+    return render_template('download_mgmt.html', nickname=nickname, avatar_url=avatar_url, download_mgmt=download_mgmt_config, version=APP_VERSION)
 
-def get_proxy_url():
-    # 获取当前请求的协议
-    scheme = request.scheme
-    # 从数据库中读取 download_mgmt_url 的配置
+
+# 获取下载器客户端
+def get_downloader_client():
     db = get_db()
-    download_mgmt_url = db.execute('SELECT VALUE FROM CONFIG WHERE OPTION = ?', ('download_mgmt_url',)).fetchone()
-    
-    if download_mgmt_url:
-        download_mgmt_url = download_mgmt_url['VALUE']
-    else:
-        return None  # 如果没有配置，返回 None
-    
-    # 确保 download_mgmt_url 指向本机的代理端点
-    proxy_base_url = url_for('proxy_download_mgmt', path='', _external=True)
-    
-    return download_mgmt_url
+    config_rows = db.execute('''
+        SELECT OPTION, VALUE FROM CONFIG 
+        WHERE OPTION IN (?, ?, ?, ?, ?)
+    ''', ('download_type', 'download_host', 'download_port', 'download_username', 'download_password')).fetchall()
 
-@app.route('/proxy/download_mgmt/<path:path>', methods=['GET', 'POST'])
-def proxy_download_mgmt(path):
-    internal_url = get_proxy_url()
-    
-    if not internal_url:
-        return jsonify({"message": "代理 URL 未配置"}), 400
-    
-    # 构建完整的内部 URL
-    internal_url = f"{internal_url}/{path}"
-    
-    # 转发请求到内部URL
-    response = requests.request(
-        method=request.method,
-        url=internal_url,
-        headers={key: value for key, value in request.headers if key != 'Host'},
-        data=request.get_data(),
-        cookies=request.cookies,
-        allow_redirects=False
-    )
-    
-    # 返回响应
-    excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
-    headers = [(name, value) for (name, value) in response.raw.headers.items() if name.lower() not in excluded_headers]
-    return response.content, response.status_code, headers
+    config = {row['OPTION']: row['VALUE'] for row in config_rows}
+
+    if not all(config.values()):
+        raise ValueError("下载器配置不完整，请检查数据库中的配置项。")
+
+    download_type = config['download_type']
+    host = config['download_host']
+    port = config['download_port']
+    username = config['download_username']
+    password = config['download_password']
+
+    if download_type == 'transmission':
+        return TransmissionClient(
+            host=host,
+            port=port,
+            username=username,
+            password=password
+        )
+    elif download_type == 'qbittorrent':
+        return QbittorrentClient(
+            host=f"http://{host}:{port}",
+            username=username,
+            password=password
+        )
+    else:
+        raise ValueError(f"不支持的下载器类型: {download_type}")
+
+# 获取任务列表
+@app.route('/api/download/list', methods=['GET'])
+@login_required
+def list_torrents():
+    try:
+        client = get_downloader_client()
+
+        if isinstance(client, TransmissionClient):
+            torrents = client.get_torrents()
+            result = [{
+                "id": t.id,
+                "name": t.name,
+                "percentDone": t.percent_done,
+                "status": t.status,
+                "rateDownload": t.rate_download,
+                "rateUpload": t.rate_upload,
+                "magnetLink": t.magnet_link
+            } for t in torrents]
+        else:  # qBittorrent
+            torrents = client.torrents_info()
+            result = [{
+                "id": t.hash,
+                "name": t.name,
+                "percentDone": t.progress,
+                "status": t.state_enum.name.lower(),
+                "rateDownload": t.dlspeed,
+                "rateUpload": t.upspeed,
+                "magnetLink": t.magnet_uri
+            } for t in torrents]
+
+        return jsonify({"torrents": result})
+    except Exception as e:
+        logger.error(f"获取任务列表失败: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/download/add', methods=['POST'])
+@login_required
+def add_torrent():
+    try:
+        data = request.json
+        client = get_downloader_client()
+
+        task_type = data.get("type")
+        task_value = data.get("value")
+
+        if task_type == "url":
+            # 直接尝试添加磁力链接任务
+            if isinstance(client, TransmissionClient):
+                client.add_torrent(torrent=task_value)
+            else:
+                client.torrents_add(urls=task_value)
+
+        elif task_type == "base64":
+            # 解码Base64字符串并添加种子文件任务
+            import base64
+            try:
+                # 解码Base64字符串
+                torrent_data = base64.b64decode(task_value)
+            except Exception as e:
+                logger.error(f"Base64解码失败: {e}")
+                return jsonify({"error": "无效的Base64数据"}), 400
+
+            # 添加种子文件任务
+            if isinstance(client, TransmissionClient):
+                client.add_torrent(torrent=torrent_data)
+            else:
+                client.torrents_add(torrent_files=[torrent_data])
+
+        else:
+            return jsonify({"error": "无效的添加类型"}), 400
+
+        return jsonify({"message": "添加成功"})
+    except Exception as e:
+        logger.error(f"添加任务失败: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# 批量操作（启动、暂停、删除）
+@app.route('/api/download/<action>', methods=['POST'])
+@login_required
+def bulk_action(action):
+    try:
+        data = request.json
+        client = get_downloader_client()
+
+        # 获取任务 ID 列表
+        task_ids = data.get("ids", [])
+        if not task_ids:
+            return jsonify({"error": "任务 ID 列表为空"}), 400
+
+        # 根据下载器类型处理任务 ID
+        if isinstance(client, TransmissionClient):
+            # Transmission 使用整数 ID
+            task_ids = [int(task_id) for task_id in task_ids]
+        else:
+            # qBittorrent 使用 SHA-1 哈希值
+            task_ids = [str(task_id) for task_id in task_ids]
+
+        # 执行批量操作
+        if action == "start":
+            if isinstance(client, TransmissionClient):
+                client.start_torrent(task_ids)
+            else:
+                client.torrents_resume(hashes=task_ids)
+        elif action == "pause":
+            if isinstance(client, TransmissionClient):
+                client.stop_torrent(task_ids)
+            else:
+                client.torrents_pause(hashes=task_ids)
+        elif action == "delete":
+            if isinstance(client, TransmissionClient):
+                client.remove_torrent(task_ids, delete_data=True)
+            else:
+                client.torrents_delete(delete_files=True, hashes=task_ids)
+        else:
+            return jsonify({"error": "无效的操作"}), 400
+
+        return jsonify({"message": f"{action} 成功"})
+    except Exception as e:
+        logger.error(f"批量操作失败: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/download/get-magnet-links', methods=['POST'])
+@login_required
+def get_magnet_links():
+    try:
+        # 获取请求数据
+        data = request.json
+        task_ids = data.get("ids", [])
+
+        # 检查任务 ID 列表是否为空
+        if not task_ids:
+            return jsonify({"error": "任务 ID 列表为空"}), 400
+
+        # 获取下载器客户端
+        client = get_downloader_client()
+
+        # 根据下载器类型校验任务 ID 格式
+        if isinstance(client, TransmissionClient):
+            # Transmission 使用整数 ID
+            try:
+                task_ids = [int(task_id) for task_id in task_ids]
+            except ValueError:
+                return jsonify({"error": "无效的任务 ID，应为整数"}), 400
+        else:
+            # qBittorrent 使用 SHA-1 哈希值
+            for task_id in task_ids:
+                if not re.match(r'^[a-fA-F0-9]{40}$', task_id):
+                    return jsonify({"error": f"无效的任务 ID: {task_id}，应为 40 字符的 SHA-1 哈希值"}), 400
+
+        # 获取磁力链接
+        magnet_links = []
+
+        if isinstance(client, TransmissionClient):
+            # Transmission 获取磁力链接
+            torrents = client.get_torrents(ids=task_ids)
+            for torrent in torrents:
+                magnet_links.append(torrent.magnet_link)
+        else:
+            # qBittorrent 获取磁力链接
+            for task_id in task_ids:
+                try:
+                    magnet_link = client.torrents_info(hashes=[task_id])[0].magnet_uri
+                    magnet_links.append(magnet_link)
+                except IndexError:
+                    logger.warning(f"任务 ID {task_id} 未找到对应的磁力链接")
+                    continue
+
+        return jsonify({"magnetLinks": magnet_links})
+    except Exception as e:
+        logger.error(f"获取磁力链接失败: {e}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     logger.info("程序已启动")

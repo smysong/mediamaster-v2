@@ -24,6 +24,11 @@
                             <option value="move" {% if field.value == 'move' %}selected{% endif %}>移动</option>
                             <option value="copy" {% if field.value == 'copy' %}selected{% endif %}>复制</option>
                         </select>
+                    {% elif field.type == 'downloader' %}
+                        <select class="form-control" name="{{ key }}" id="{{ key }}" style="margin-bottom: 5px;">
+                            <option value="transmission" {% if field.value == 'transmission' %}selected{% endif %}>transmission</option>
+                            <option value="qbittorrent" {% if field.value == 'qbittorrent' %}selected{% endif %}>qbittorrent</option>
+                        </select>
                     {% elif field.type == 'switch' %}
                         <select class="form-control" name="{{ key }}" id="{{ key }}" style="margin-bottom: 5px;">
                             <option value="True" {% if field.value == 'True' %}selected{% endif %}>开启</option>

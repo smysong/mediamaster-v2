@@ -118,12 +118,6 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=Etc/UTC
-      - TRANSMISSION_WEB_HOME= #optional
-      - USER= #optional
-      - PASS= #optional
-      - WHITELIST= #optional
-      - PEERPORT= #optional
-      - HOST_WHITELIST= #optional
     volumes:
       - /vol1/1000/Docker/transmission:/config
       - /vol1/1000/Downloads:/downloads
@@ -202,3 +196,11 @@ docker run -it --name mediamaster \
 > 使用浏览器访问：http://your-ip:8888 \
 > 默认用户名：admin \
 > 默认密码：password
+
+### 配置Transmission用户名和密码认证（可选）
+> 编辑配置文件：settings.json \
+> 修改如下配置：
+> "rpc-authentication-required": true,
+> "rpc-username": "your-username",
+> "rpc-password": "your-password",
+> "rpc-bind-address": "0.0.0.0",
