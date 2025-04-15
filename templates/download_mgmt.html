@@ -244,6 +244,11 @@
         }).catch(() => showToast('任务添加失败，请重试。'));
     }
 
+    // 检测是否为移动端设备
+    function isMobileDevice() {
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    }
+
     // 复制选中的磁力链接
     async function copySelectedMagnetLinks() {
         const selectedIds = Array.from(document.querySelectorAll('.task-item.selected')).map(item => item.getAttribute('data-id'));
@@ -275,14 +280,23 @@
             // 拼接所有磁力链接
             const textToCopy = magnetLinks.join('\n');
 
-            // 尝试使用新版浏览器剪贴板 API
-            if (navigator.clipboard) {
-                await navigator.clipboard.writeText(textToCopy);
-                showToast('磁力链接已复制到剪贴板');
-            } else {
-                // 回退到旧版浏览器兼容方法
-                fallbackCopyTextToClipboard(textToCopy);
+            // 检查剪贴板权限
+            if (navigator.clipboard && navigator.permissions) {
+                try {
+                    const permission = await navigator.permissions.query({ name: 'clipboard-write' });
+                    if (permission.state === 'granted' || permission.state === 'prompt') {
+                        await navigator.clipboard.writeText(textToCopy);
+                        showToast('磁力链接已复制到剪贴板');
+                        return;
+                    }
+                } catch (permissionError) {
+                    console.warn('无法检查剪贴板权限:', permissionError);
+                }
             }
+
+            // 如果剪贴板权限不可用或复制失败，使用模态框显示内容供用户手动复制
+            showManualCopyModal(textToCopy);
+
         } catch (error) {
             showToast(`复制链接失败: ${error.message}`);
         }
@@ -292,15 +306,65 @@
     function fallbackCopyTextToClipboard(text) {
         const textarea = document.createElement('textarea');
         textarea.value = text;
+        textarea.style.position = 'fixed'; // 避免滚动条跳动
+        textarea.style.top = '0';
+        textarea.style.left = '0';
+        textarea.style.opacity = '0'; // 隐藏文本框
         document.body.appendChild(textarea);
-        textarea.select();
+
         try {
-            document.execCommand('copy');
-            showToast('磁力链接已复制到剪贴板');
+            // 选中文本并尝试复制
+            textarea.select();
+            const isCopied = document.execCommand('copy');
+            if (isCopied) {
+                showToast('磁力链接已复制到剪贴板');
+            } else {
+                throw new Error('execCommand 复制失败');
+            }
         } catch (err) {
-            showToast('复制链接失败，请重试');
+            // 如果复制失败，使用模态框显示内容供用户手动复制
+            showManualCopyModal(text);
+        } finally {
+            // 清理临时元素
+            document.body.removeChild(textarea);
         }
-        document.body.removeChild(textarea);
+    }
+
+    // 使用模态框显示需要复制的内容
+    function showManualCopyModal(text) {
+        // 创建模态框容器
+        const modalHtml = `
+            <div class="modal fade" id="manualCopyModal" tabindex="-1" aria-labelledby="manualCopyModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="manualCopyModalLabel">请手动复制以下内容</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <textarea class="form-control" rows="5" readonly style="font-size: 14px;">${text}</textarea>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // 将模态框添加到页面中
+        const modalContainer = document.createElement('div');
+        modalContainer.innerHTML = modalHtml;
+        document.body.appendChild(modalContainer);
+
+        // 初始化并显示模态框
+        const modal = new bootstrap.Modal(document.getElementById('manualCopyModal'));
+        modal.show();
+
+        // 模态框关闭后清理DOM
+        modal._element.addEventListener('hidden.bs.modal', () => {
+            document.body.removeChild(modalContainer);
+        });
     }
 
     // 显示Toast提示
@@ -320,7 +384,6 @@
 
     // 存储所有任务数据
     let torrents = [];
-
 </script>
 {% else %}
 <p>下载管理功能未启用，请在系统设置中启用下载管理并配置下载器相关参数</p>
