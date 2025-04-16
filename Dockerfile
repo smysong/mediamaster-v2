@@ -65,11 +65,6 @@ RUN pip install schedule
 COPY set_ulimits.sh /app/
 RUN chmod +x /app/set_ulimits.sh
 
-# 复制 html 模板
-COPY templates.zip .
-RUN unzip templates.zip -d /app/ && \
-    rm templates.zip
-
 # 声明监听端口
 EXPOSE 8888
 
