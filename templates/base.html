@@ -277,7 +277,7 @@
             justify-content: center;
             align-items: center;
             display: none;
-            z-index: 1000;
+            z-index: 1200;
         }
         .loader {
             border: 16px solid #f3f3f3; /* Light grey */
@@ -753,6 +753,10 @@
             </div>
         </div>
     </div>
+    <!-- 加载遮罩层 -->
+    <div class="loader-container" id="loading-overlay">
+        <div class="loader"></div>
+    </div>
 
 <script src="/static/js/popper.min.js"></script>
 <script src="/static/js/bootstrap.min.js"></script>
@@ -914,6 +918,10 @@
             return;
         }
 
+        // 显示加载遮罩层
+        const loadingOverlay = document.getElementById('loading-overlay');
+        loadingOverlay.style.display = 'flex';
+
         try {
             const response = await fetch('/perform_update', { method: 'POST' });
             const data = await response.json();
@@ -927,6 +935,9 @@
         } catch (error) {
             console.error('执行更新失败:', error);
             alert('执行更新失败，请稍后再试。');
+        } finally {
+            // 隐藏加载遮罩层
+            loadingOverlay.style.display = 'none';
         }
     });
 </script>
