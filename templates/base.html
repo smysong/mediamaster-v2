@@ -80,6 +80,55 @@
         .logout:hover {
             color: #0056b3;
         }
+        /* 版本信息样式 */
+        .version a {
+            color: #333;
+            text-decoration: none;
+        }
+        .version a:hover {
+            color: #198754;
+        }
+        /* 闪烁动画 */
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            50.01%, 100% { opacity: 0; }
+        }
+
+        .blinking {
+            animation: blink 1s infinite;
+            color: #ff7800;
+        }
+        #version-info p {
+            margin: 10px 0;
+        }
+        #release-notes {
+            font-size: clamp(10px, 1.2vw, 14px);
+            line-height: 1.6;
+            color: #333;
+        }
+        #release-notes h1,
+        #release-notes h2,
+        #release-notes h3 {
+            font-size: clamp(10px, 1.2vw, 16px);
+            line-height: 1.6;
+            color: #333;
+        }
+        #release-notes ul,
+        #release-notes ol {
+            font-size: clamp(10px, 1.2vw, 14px);
+            line-height: 1.6;
+            color: #333;
+        }
+        #release-notes a {
+            color: #333;
+            text-decoration: underline;
+        }
+        #release-notes a:hover {
+            text-decoration: none;
+        }
+        #update-actions button {
+            margin-right: 10px;
+        }
         .sidebar .version {
         position: absolute;
         bottom: 0;
@@ -643,7 +692,10 @@
                         <a class="nav-link logout" href="{{ url_for('logout') }}">退出登录</a>
                     </div>
                     <div class="version">
-                        <p>Version：{{ version }}</p>
+                        <p>
+                            <a href="#" id="open-version-modal">Version：{{ version }}
+                            <span id="new-version-indicator" style="display: none;">New</span></a>
+                        </p>
                     </div>
                 </div>
             </nav>
@@ -654,7 +706,7 @@
         </div>
     </div>
 
-    <!-- User Profile Modal -->
+    <!-- 用户信息模态框 -->
     <div class="modal fade" id="userProfileModal" tabindex="-1" aria-labelledby="userProfileModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
@@ -680,84 +732,203 @@
         </div>
     </div>
 
-    <script src="/static/js/popper.min.js"></script>
-    <script src="/static/js/bootstrap.min.js"></script>
-    <script src="/static/js/bootstrap.bundle.min.js"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            const sidebar = document.getElementById('sidebarMenu');
-            const content = document.querySelector('.content');
-            const navbarToggler = document.querySelector('.navbar-toggler');
-            const searchForm = document.getElementById('searchForm');
-            const searchIcon = document.querySelector('.search-icon');
+    <!-- 版本更新模态框 -->
+    <div class="modal fade" id="versionUpdateModal" tabindex="-1" aria-labelledby="versionUpdateModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="versionUpdateModalLabel">版本更新</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="version-info">
+                        <p>当前版本：<span id="current-version">{{ version }}</span></p>
+                        <p>最新版本：<span id="latest-version">检查中...</span></p>
+                        <p id="update-notes" style="display: none;">更新说明：<br><div id="release-notes"></div></p>
+                    </div>
+                    <div id="update-actions">
+                        <button id="perform-update-btn" class="btn btn-success" style="display: none;">立即更新</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
-            // 初始状态下，侧边栏默认展开
+<script src="/static/js/popper.min.js"></script>
+<script src="/static/js/bootstrap.min.js"></script>
+<script src="/static/js/bootstrap.bundle.min.js"></script>
+<script src="/static/js/marked.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const sidebar = document.getElementById('sidebarMenu');
+        const content = document.querySelector('.content');
+        const navbarToggler = document.querySelector('.navbar-toggler');
+        const searchForm = document.getElementById('searchForm');
+        const searchIcon = document.querySelector('.search-icon');
+
+        // 初始状态下，侧边栏默认展开
+        if (window.innerWidth > 768) {
+            sidebar.classList.remove('offcanvas');
+            content.classList.remove('collapsed');
+            searchForm.style.display = 'flex';
+        } else {
+            searchForm.style.display = 'none';
+        }
+
+        // 监听窗口大小变化
+        window.addEventListener('resize', function () {
             if (window.innerWidth > 768) {
                 sidebar.classList.remove('offcanvas');
                 content.classList.remove('collapsed');
                 searchForm.style.display = 'flex';
             } else {
+                sidebar.classList.add('offcanvas');
+                content.classList.add('collapsed');
                 searchForm.style.display = 'none';
             }
-
-            // 监听窗口大小变化
-            window.addEventListener('resize', function () {
-                if (window.innerWidth > 768) {
-                    sidebar.classList.remove('offcanvas');
-                    content.classList.remove('collapsed');
-                    searchForm.style.display = 'flex';
-                } else {
-                    sidebar.classList.add('offcanvas');
-                    content.classList.add('collapsed');
-                    searchForm.style.display = 'none';
-                }
-            });
-
-            // 确保 Offcanvas 组件正确初始化
-            const offcanvas = new bootstrap.Offcanvas(sidebar);
-            navbarToggler.addEventListener('click', function () {
-                offcanvas.show();
-            });
         });
 
-            // 打开用户资料Modal
-            const avatar = document.querySelector('.avatar');
-            avatar.addEventListener('click', function () {
-                const modal = new bootstrap.Modal(document.getElementById('userProfileModal'));
-                modal.show();
-            });
+        // 确保 Offcanvas 组件正确初始化
+        const offcanvas = new bootstrap.Offcanvas(sidebar);
+        navbarToggler.addEventListener('click', function () {
+            offcanvas.show();
+        });
+    });
 
-            // 处理用户资料表单提交
-            document.getElementById('userProfileForm').addEventListener('submit', function(event) {
-                event.preventDefault();
+    // 打开用户资料Modal
+    const avatar = document.querySelector('.avatar');
+    avatar.addEventListener('click', function () {
+        const modal = new bootstrap.Modal(document.getElementById('userProfileModal'));
+        modal.show();
+    });
 
-                const formData = new FormData();
-                formData.append('username', document.getElementById('username').value);
-                const avatarFile = document.getElementById('avatar').files[0];
-                if (avatarFile) {
-                    formData.append('avatar', avatarFile);
+    // 处理用户资料表单提交
+    document.getElementById('userProfileForm').addEventListener('submit', function(event) {
+        event.preventDefault();
+
+        const formData = new FormData();
+        formData.append('username', document.getElementById('username').value);
+        const avatarFile = document.getElementById('avatar').files[0];
+        if (avatarFile) {
+            formData.append('avatar', avatarFile);
+        }
+
+        fetch('/update_profile', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('个人资料已更新！');
+                location.reload(); // 刷新页面以更新显示
+            } else {
+                // 显示错误提示
+                alert(`更新失败：${data.message}`);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            // 捕获网络或其他错误并显示提示
+            alert('发生错误，请稍后再试或检查网络连接。');
+        });
+    });
+
+    document.addEventListener('DOMContentLoaded', async function () {
+        try {
+            // 调用检查更新接口
+            const response = await fetch('/check_update');
+            const data = await response.json();
+
+            if (data.error) {
+                console.error('检查更新失败:', data.error);
+                return;
+            }
+
+            // 如果有新版本，显示 "New" 标签
+            if (data.is_update_available) {
+                const newVersionIndicator = document.getElementById('new-version-indicator');
+                if (newVersionIndicator) {
+                    newVersionIndicator.style.display = 'inline';
+                    newVersionIndicator.classList.add('blinking'); // 添加闪烁效果
                 }
+            }
+        } catch (error) {
+            console.error('检查更新失败:', error);
+        }
+    });
 
-                fetch('/update_profile', {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        alert('个人资料已更新！');
-                        location.reload(); // 刷新页面以更新显示
-                    } else {
-                        // 显示错误提示
-                        alert(`更新失败：${data.message}`);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    // 捕获网络或其他错误并显示提示
-                    alert('发生错误，请稍后再试或检查网络连接。');
-                });
-            });
-    </script>
+    // 监听模态框显示事件（仅绑定一次）
+    document.getElementById('versionUpdateModal').addEventListener('show.bs.modal', async () => {
+        try {
+            // 提示检查中
+            document.getElementById('latest-version').textContent = '检查中...';
+            document.getElementById('release-notes').innerHTML = '';
+            document.getElementById('update-notes').style.display = 'none';
+            document.getElementById('perform-update-btn').style.display = 'none';
+
+            // 调用检查更新接口
+            const response = await fetch('/check_update');
+            const data = await response.json();
+
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+
+            // 更新模态框中的版本信息
+            const currentVersion = data.current_version.trim();
+            const latestVersion = data.latest_version.trim();
+            document.getElementById('current-version').textContent = currentVersion;
+            document.getElementById('latest-version').textContent = latestVersion;
+
+            const updateNotes = document.getElementById('update-notes');
+            const releaseNotes = document.getElementById('release-notes');
+            if (data.is_update_available) {
+                // 使用 marked.js 将 Markdown 转换为 HTML
+                releaseNotes.innerHTML = marked.parse(data.release_notes); // 渲染 Markdown
+                updateNotes.style.display = 'block';
+                document.getElementById('perform-update-btn').style.display = 'inline-block';
+            } else {
+                releaseNotes.textContent = "当前已是最新版本！";
+                updateNotes.style.display = 'block';
+                document.getElementById('perform-update-btn').style.display = 'none';
+            }
+        } catch (error) {
+            console.error('检查更新失败:', error);
+            alert('检查更新失败，请稍后再试。');
+        }
+    });
+
+    // 点击版本号打开模态框
+    document.getElementById('open-version-modal').addEventListener('click', function (event) {
+        event.preventDefault();
+        const modalElement = document.getElementById('versionUpdateModal');
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+    });
+
+    // 执行更新按钮点击事件
+    document.getElementById('perform-update-btn').addEventListener('click', async () => {
+        if (!confirm('确定要执行更新吗？更新后应用将自动重启。')) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/perform_update', { method: 'POST' });
+            const data = await response.json();
+
+            if (data.error) {
+                alert(data.error);
+            } else {
+                alert(data.message);
+                setTimeout(() => location.reload(), 5000); // 5秒后刷新页面
+            }
+        } catch (error) {
+            console.error('执行更新失败:', error);
+            alert('执行更新失败，请稍后再试。');
+        }
+    });
+</script>
 </body>
 </html>

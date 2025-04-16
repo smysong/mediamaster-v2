@@ -4,13 +4,13 @@ FROM ubuntu:24.04
 # 设置工作目录
 WORKDIR /app
 
-# 检测 CPU 架构并更新软件包列表并安装必要的软件包
+# 安装必要的工具
 RUN apt-get update && \
     apt-get install -y curl unzip python3-pip python3-venv cron wget fonts-liberation \
                        libasound2-plugins libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 \
                        libcairo2 libcups2 libdrm2 libgbm1 libgtk-3-0 libnspr4 libnss3 \
                        libpango-1.0-0 libvulkan1 libxcomposite1 libxdamage1 libxext6 \
-                       libxfixes3 libxkbcommon0 libxrandr2 xdg-utils && \
+                       libxfixes3 libxkbcommon0 libxrandr2 xdg-utils tini git && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -47,6 +47,9 @@ RUN wget -N https://storage.googleapis.com/chrome-for-testing-public/135.0.7049.
 && chmod +x /usr/local/bin/chromedriver \
 && rm -rf chromedriver-linux64.zip chromedriver-linux64
 
+# 克隆 Git 仓库到 /app 目录
+RUN git clone https://github.com/smysong/mediamaster-v2.git /app
+
 # 创建虚拟环境
 RUN python3 -m venv /app/venv
 ENV PATH="/app/venv/bin:$PATH"
@@ -62,33 +65,16 @@ RUN pip install schedule
 COPY set_ulimits.sh /app/
 RUN chmod +x /app/set_ulimits.sh
 
-# 复制 Python 脚本
-COPY tvshow_downloader.py .
-COPY movie_downloader.py .
-COPY actor_nfo.py .
-COPY episodes_nfo.py .
-COPY manual_search.py .
-COPY database_manager.py .
-COPY app.py .
-COPY check_subscr.py .
-COPY subscr.py .
-COPY scan_media.py .
-COPY sync.py .
-COPY tmdb_id.py .
-COPY auto_delete_tasks.py .
-COPY check_db_dir.py .
-COPY dateadded.py .
-
 # 复制 html 模板
 COPY templates.zip .
 RUN unzip templates.zip -d /app/ && \
     rm templates.zip
 
-# 创建定时任务脚本
-COPY main.py .
-
-# 运行定时任务脚本
-CMD ["python", "main.py"]
-
 # 声明监听端口
 EXPOSE 8888
+
+# 使用 tini 作为主进程管理工具
+ENTRYPOINT ["/usr/bin/tini", "--"]
+
+# 启动应用
+CMD ["python", "main.py"]

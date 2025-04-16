@@ -2,6 +2,11 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.0.4] - 2025-04-16
+
+### 新增
+- 新增在线升级功能，支持在线检查程序更新并且进行在线升级（依赖Github Api接口，网络不可达会导致检查更新失败）。
+
 ## [2.0.3] - 2025-04-15
 
 ### 优化
@@ -42,3 +47,4 @@
 [2.0.1]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.0.1
 [2.0.2]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.0.2
 [2.0.3]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.0.3
+[2.0.4]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.0.4

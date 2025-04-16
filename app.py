@@ -2,7 +2,9 @@ import re
 import sqlite3
 import subprocess
 import threading
+import requests
 import bcrypt
+import psutil
 from flask import Flask, g, render_template, request, redirect, url_for, jsonify, session, flash, session, Response
 from functools import wraps
 from werkzeug.exceptions import InternalServerError
@@ -42,7 +44,7 @@ if not logger.handlers:
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
 # 定义版本号
-APP_VERSION = '2.0.3'
+APP_VERSION = '2.0.4'
 downloader = MediaDownloader()
 app.secret_key = 'mediamaster'  # 设置一个密钥，用于会话管理
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)  # 设置会话有效期为24小时
@@ -932,6 +934,124 @@ def get_magnet_links():
     except Exception as e:
         logger.error(f"获取磁力链接失败: {e}")
         return jsonify({"error": str(e)}), 500
+
+@app.route('/check_update', methods=['GET'])
+@login_required
+def check_update():
+    try:
+        # 当前版本号
+        current_version = APP_VERSION
+
+        # 获取 GitHub 仓库的最新版本信息
+        repo_url = "https://api.github.com/repos/smysong/mediamaster-v2/releases/latest"
+        response = requests.get(repo_url)
+        if response.status_code != 200:
+            logger.error(f"无法获取 GitHub 版本信息: {response.text}")
+            return jsonify({"error": "无法连接到 GitHub，请稍后再试。"}), 500
+
+        latest_release = response.json()
+        latest_version = latest_release.get("tag_name", "").lstrip("v")  # 去掉可能的 'v' 前缀
+        release_notes = latest_release.get("body", "无更新说明")
+
+        # 比较版本号
+        is_update_available = compare_versions(current_version, latest_version)
+
+        return jsonify({
+            "current_version": current_version,
+            "latest_version": latest_version,
+            "is_update_available": is_update_available,
+            "release_notes": release_notes
+        })
+    except Exception as e:
+        logger.error(f"检查更新失败: {e}")
+        return jsonify({"error": "检查更新失败，请稍后再试。"}), 500
+
+def compare_versions(current, latest):
+    """比较版本号，返回是否需要更新"""
+    current_parts = list(map(int, current.split('.')))
+    latest_parts = list(map(int, latest.split('.')))
+    return latest_parts > current_parts
+
+@app.route('/perform_update', methods=['POST'])
+@login_required
+def perform_update():
+    try:
+        # 获取当前版本号
+        current_version = APP_VERSION
+
+        # 检查是否有更新权限
+        if not session.get('user_id'):
+            logger.warning("未授权用户尝试执行更新")
+            return jsonify({"error": "未授权的操作"}), 403
+
+        logger.info("开始执行更新操作...")
+
+        # 步骤1: 拉取最新代码
+        logger.info("正在从 Git 仓库拉取最新代码...")
+        result = subprocess.run(
+            ['git', 'pull'], 
+            capture_output=True, 
+            text=True, 
+            cwd='/app'
+        )
+
+        if result.returncode != 0:
+            error_message = f"Git 拉取失败: {result.stderr}"
+            logger.error(error_message)
+            return jsonify({"error": error_message}), 500
+
+        logger.info(f"Git 拉取成功: {result.stdout}")
+
+        # 步骤2: 安装依赖（如果有新的依赖）
+        logger.info("正在安装新依赖...")
+        install_result = subprocess.run(
+            ['pip', 'install', '-r', 'requirements.txt'], 
+            capture_output=True, 
+            text=True, 
+            cwd='/app'
+        )
+
+        if install_result.returncode != 0:
+            error_message = f"依赖安装失败: {install_result.stderr}"
+            logger.error(error_message)
+            return jsonify({"error": error_message}), 500
+
+        logger.info(f"依赖安装成功: {install_result.stdout}")
+
+        # 步骤3: 查找并结束 python main.py 进程
+        logger.info("正在查找并结束 python main.py 进程...")
+        target_process_name = "main.py"
+        found_process = False
+
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                # 检查进程是否运行了 main.py
+                if target_process_name in proc.info['cmdline']:
+                    logger.info(f"找到目标进程: PID={proc.info['pid']}, CMD={proc.info['cmdline']}")
+                    proc.terminate()  # 发送终止信号
+                    proc.wait(timeout=5)  # 等待进程结束
+                    found_process = True
+                    logger.info(f"已成功结束进程: PID={proc.info['pid']}")
+            except (psutil.NoSuchProcess, psutil.TimeoutExpired):
+                continue
+
+        if not found_process:
+            logger.warning("未找到运行中的 python main.py 进程")
+
+        # 步骤4: 重新启动 python main.py
+        logger.info("正在重新启动 python main.py...")
+        subprocess.Popen(['python', 'main.py'], cwd='/app')  # 启动新进程
+        logger.info("python main.py 已成功重启")
+
+        # 返回成功消息
+        return jsonify({
+            "message": "更新成功！应用将在几秒内自动重启。",
+            "current_version": current_version
+        }), 200
+
+    except Exception as e:
+        logger.error(f"执行更新失败: {e}")
+        return jsonify({"error": "更新失败，请稍后再试。"}), 500
 
 if __name__ == '__main__':
     logger.info("程序已启动")
