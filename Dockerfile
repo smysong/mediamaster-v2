@@ -55,7 +55,7 @@ RUN python3 -m venv /app/venv
 ENV PATH="/app/venv/bin:$PATH"
 
 # 安装 Python 依赖
-RUN pip install --no-cache-dir -r requirements.txt && rm requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # 安装 schedule 库
 RUN pip install schedule

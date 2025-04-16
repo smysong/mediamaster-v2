@@ -986,12 +986,22 @@ def perform_update():
 
         logger.info("开始执行更新操作...")
 
-        # 步骤1: 拉取最新代码
+        # 步骤1: 设置 Git 代理加速地址
+        proxy_url = "https://gh-proxy.com/github.com/smysong/mediamaster-v2.git"
+        logger.info(f"正在设置 Git 远程仓库代理地址: {proxy_url}")
+        subprocess.run(
+            ['git', 'remote', 'set-url', 'origin', proxy_url],
+            capture_output=True,
+            text=True,
+            cwd='/app'
+        )
+
+        # 步骤2: 拉取最新代码
         logger.info("正在从 Git 仓库拉取最新代码...")
         result = subprocess.run(
-            ['git', 'pull'], 
-            capture_output=True, 
-            text=True, 
+            ['git', 'pull'],
+            capture_output=True,
+            text=True,
             cwd='/app'
         )
 
@@ -1002,12 +1012,12 @@ def perform_update():
 
         logger.info(f"Git 拉取成功: {result.stdout}")
 
-        # 步骤2: 安装依赖（如果有新的依赖）
+        # 步骤3: 安装依赖（如果有新的依赖）
         logger.info("正在安装新依赖...")
         install_result = subprocess.run(
-            ['pip', 'install', '-r', 'requirements.txt'], 
-            capture_output=True, 
-            text=True, 
+            ['pip', 'install', '-r', 'requirements.txt'],
+            capture_output=True,
+            text=True,
             cwd='/app'
         )
 
@@ -1018,36 +1028,40 @@ def perform_update():
 
         logger.info(f"依赖安装成功: {install_result.stdout}")
 
-        # 步骤3: 查找并结束 python main.py 进程
-        logger.info("正在查找并结束 python main.py 进程...")
-        target_process_name = "main.py"
-        found_process = False
-
-        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-            try:
-                # 检查进程是否运行了 main.py
-                if target_process_name in proc.info['cmdline']:
-                    logger.info(f"找到目标进程: PID={proc.info['pid']}, CMD={proc.info['cmdline']}")
-                    proc.terminate()  # 发送终止信号
-                    proc.wait(timeout=5)  # 等待进程结束
-                    found_process = True
-                    logger.info(f"已成功结束进程: PID={proc.info['pid']}")
-            except (psutil.NoSuchProcess, psutil.TimeoutExpired):
-                continue
-
-        if not found_process:
-            logger.warning("未找到运行中的 python main.py 进程")
-
-        # 步骤4: 重新启动 python main.py
-        logger.info("正在重新启动 python main.py...")
-        subprocess.Popen(['python', 'main.py'], cwd='/app')  # 启动新进程
-        logger.info("python main.py 已成功重启")
-
-        # 返回成功消息
-        return jsonify({
-            "message": "更新成功！应用将在几秒内自动重启。",
+        # 步骤4: 返回成功消息
+        logger.info("执行更新已完成！")
+        response = jsonify({
+            "message": "更新成功！系统将结束主进程并自动重启。如未自动重启，请手动重启容器。",
             "current_version": current_version
         }), 200
+
+        # 步骤5: 异步查找并结束 python main.py 进程
+        def terminate_main_process():
+            logger.info("正在查找并结束 python main.py 进程...")
+            time.sleep(1)
+            target_process_name = "main.py"
+            found_process = False
+
+            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                try:
+                    # 检查进程是否运行了 main.py
+                    if target_process_name in proc.info['cmdline']:
+                        logger.info(f"找到目标进程: PID={proc.info['pid']}, CMD={proc.info['cmdline']}")
+                        proc.terminate()  # 发送终止信号
+                        proc.wait(timeout=5)  # 等待进程结束
+                        found_process = True
+                        logger.info(f"已成功结束进程: PID={proc.info['pid']}")
+                except (psutil.NoSuchProcess, psutil.TimeoutExpired):
+                    continue
+
+            if not found_process:
+                logger.warning("未找到运行中的 python main.py 进程")
+
+        # 启动一个后台线程来执行终止 main.py 的操作
+        threading.Thread(target=terminate_main_process).start()
+
+        # 返回成功消息
+        return response
 
     except Exception as e:
         logger.error(f"执行更新失败: {e}")
