@@ -55,14 +55,12 @@ RUN python3 -m venv /app/venv
 ENV PATH="/app/venv/bin:$PATH"
 
 # 安装 Python 依赖
-COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && rm requirements.txt
 
 # 安装 schedule 库
 RUN pip install schedule
 
 # 创建设置 ulimit 的脚本
-COPY set_ulimits.sh /app/
 RUN chmod +x /app/set_ulimits.sh
 
 # 声明监听端口
