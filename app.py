@@ -44,7 +44,7 @@ if not logger.handlers:
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
 # 定义版本号
-APP_VERSION = '2.0.4'
+APP_VERSION = '2.0.5'
 downloader = MediaDownloader()
 app.secret_key = 'mediamaster'  # 设置一个密钥，用于会话管理
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)  # 设置会话有效期为24小时
@@ -1066,6 +1066,10 @@ def perform_update():
     except Exception as e:
         logger.error(f"执行更新失败: {e}")
         return jsonify({"error": "更新失败，请稍后再试。"}), 500
+
+@app.route('/health_check', methods=['GET'])
+def health_check():
+    return jsonify({"status": "ok"}), 200
 
 if __name__ == '__main__':
     logger.info("程序已启动")

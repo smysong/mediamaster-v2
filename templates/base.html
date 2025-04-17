@@ -265,7 +265,7 @@
             padding: 10px;
             margin-bottom: 10px;
         }
-        /* 加载指示器样式 */
+        /* 加载遮罩层样式 */
         .loader-container {
             position: fixed;
             top: 0;
@@ -274,10 +274,18 @@
             height: 100%;
             background-color: rgba(0, 0, 0, 0.5);
             display: flex;
-            justify-content: center;
-            align-items: center;
-            display: none;
+            flex-direction: column; /* 垂直排列子元素 */
+            justify-content: center; /* 垂直居中 */
+            align-items: center; /* 水平居中 */
             z-index: 1200;
+            display: none; /* 默认隐藏 */
+        }
+        /* 提示文字样式 */
+        .loading-text {
+            margin-top: 15px; /* 与加载指示器的间距 */
+            color: white; /* 文字颜色 */
+            font-size: clamp(14px, 1.2vw, 18px); /* 自适应字体大小 */
+            text-align: center; /* 文字居中 */
         }
         .loader {
             border: 16px solid #f3f3f3; /* Light grey */
@@ -753,9 +761,10 @@
             </div>
         </div>
     </div>
-    <!-- 加载遮罩层 -->
+    <!-- 系统升级加载指示器遮罩层 -->
     <div class="loader-container" id="loading-overlay">
         <div class="loader"></div>
+        <div class="loading-text">系统正在升级中...</div>
     </div>
 
 <script src="/static/js/popper.min.js"></script>
@@ -923,6 +932,7 @@
         loadingOverlay.style.display = 'flex';
 
         try {
+            // 发送更新请求
             const response = await fetch('/perform_update', { method: 'POST' });
             const data = await response.json();
 
@@ -930,7 +940,41 @@
                 alert(data.error);
             } else {
                 alert(data.message);
-                setTimeout(() => location.reload(), 5000); // 5秒后刷新页面
+
+                // 定义最大等待时间（60秒）
+                const maxWaitTime = 60000; // 60秒
+                const checkInterval = 2000; // 每2秒检查一次
+                const startTime = Date.now();
+
+                // 定义检查后端服务是否启动的函数
+                const checkBackendStatus = async () => {
+                    try {
+                        const statusResponse = await fetch('/health_check'); // 假设后端提供健康检查接口
+                        if (statusResponse.ok) {
+                            return true; // 后端已启动
+                        }
+                    } catch (error) {
+                        // 忽略错误，继续检查
+                    }
+                    return false; // 后端未启动
+                };
+
+                // 循环检测后端服务状态
+                const pollBackendStatus = async () => {
+                    while (Date.now() - startTime < maxWaitTime) {
+                        const isBackendUp = await checkBackendStatus();
+                        if (isBackendUp) {
+                            location.reload(); // 如果后端已启动，立即刷新页面
+                            return;
+                        }
+                        await new Promise(resolve => setTimeout(resolve, checkInterval)); // 等待2秒后再次检查
+                    }
+                    // 超过最大等待时间后强制刷新页面
+                    location.reload();
+                };
+
+                // 开始检测后端服务状态
+                pollBackendStatus();
             }
         } catch (error) {
             console.error('执行更新失败:', error);
