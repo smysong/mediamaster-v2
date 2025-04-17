@@ -764,7 +764,7 @@
     <!-- 系统升级加载指示器遮罩层 -->
     <div class="loader-container" id="loading-overlay">
         <div class="loader"></div>
-        <div class="loading-text">系统正在升级中...</div>
+        <div class="loading-text">请稍后...</div>
     </div>
 
 <script src="/static/js/popper.min.js"></script>
@@ -923,14 +923,14 @@
 
     // 执行更新按钮点击事件
     document.getElementById('perform-update-btn').addEventListener('click', async () => {
-        if (!confirm('确定要执行更新吗？更新后应用将自动重启。')) {
+        if (!confirm('确定要执行更新吗？更新后系统将自动重启。')) {
             return;
         }
 
         // 显示加载遮罩层
         const loadingOverlay = document.getElementById('loading-overlay');
         const loadingText = document.querySelector('.loading-text');
-        loadingOverlay.style.display = 'flex';
+        showLoadingIndicator(loadingOverlay, loadingText, '系统更新中...');
 
         try {
             // 发送更新请求
@@ -943,52 +943,61 @@
                 alert(data.message);
 
                 // 修改加载指示器文字提示
-                loadingOverlay.style.display = 'flex';
-                loadingText.textContent = '系统重启中...';
+                showLoadingIndicator(loadingOverlay, loadingText, '系统重启中...');
 
-                // 定义最大等待时间（60秒）
-                const maxWaitTime = 60000; // 60秒
-                const checkInterval = 2000; // 每2秒检查一次
-                const startTime = Date.now();
-
-                // 定义检查后端服务是否启动的函数
-                const checkBackendStatus = async () => {
-                    try {
-                        const statusResponse = await fetch('/health_check'); // 假设后端提供健康检查接口
-                        if (statusResponse.ok) {
-                            return true; // 后端已启动
-                        }
-                    } catch (error) {
-                        // 忽略错误，继续检查
-                    }
-                    return false; // 后端未启动
-                };
-
-                // 循环检测后端服务状态
-                const pollBackendStatus = async () => {
-                    while (Date.now() - startTime < maxWaitTime) {
-                        const isBackendUp = await checkBackendStatus();
-                        if (isBackendUp) {
-                            location.reload(); // 如果后端已启动，立即刷新页面
-                            return;
-                        }
-                        await new Promise(resolve => setTimeout(resolve, checkInterval)); // 等待2秒后再次检查
-                    }
-                    // 超过最大等待时间后强制刷新页面
-                    location.reload();
-                };
-
-                // 开始检测后端服务状态
-                pollBackendStatus();
+                // 检查后端服务状态
+                const isBackendUp = await waitForBackendRestart();
+                if (isBackendUp) {
+                    location.reload(); // 刷新页面
+                } else {
+                    alert('系统重启超时，请手动刷新页面。');
+                }
             }
         } catch (error) {
             console.error('执行更新失败:', error);
             alert('执行更新失败，请稍后再试。');
         } finally {
             // 隐藏加载遮罩层
-            loadingOverlay.style.display = 'none';
+            hideLoadingIndicator(loadingOverlay);
         }
     });
+
+    // 显示加载指示器
+    function showLoadingIndicator(overlay, textElement, message) {
+        textElement.textContent = message;
+        overlay.style.display = 'flex';
+    }
+
+    // 隐藏加载指示器
+    function hideLoadingIndicator(overlay) {
+        overlay.style.display = 'none';
+    }
+
+    // 等待后端重启
+    async function waitForBackendRestart() {
+        const maxWaitTime = 60000; // 最大等待时间：60秒
+        const checkInterval = 2000; // 检查间隔：2秒
+        const startTime = Date.now();
+
+        while (Date.now() - startTime < maxWaitTime) {
+            const isBackendUp = await checkBackendStatus();
+            if (isBackendUp) {
+                return true; // 后端已启动
+            }
+            await new Promise(resolve => setTimeout(resolve, checkInterval)); // 等待下一次检查
+        }
+        return false; // 超时未启动
+    }
+
+    // 检查后端服务状态
+    async function checkBackendStatus() {
+        try {
+            const statusResponse = await fetch('/health_check'); // 假设后端提供健康检查接口
+            return statusResponse.ok; // 返回后端是否启动
+        } catch (error) {
+            return false; // 忽略错误，返回未启动状态
+        }
+    }
 </script>
 </body>
 </html>

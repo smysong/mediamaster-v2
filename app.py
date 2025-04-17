@@ -1038,7 +1038,7 @@ def perform_update():
         # 步骤5: 异步查找并结束 python main.py 进程
         def terminate_main_process():
             logger.info("正在查找并结束 python main.py 进程...")
-            time.sleep(1)
+            time.sleep(2)
             target_process_name = "main.py"
             found_process = False
 
