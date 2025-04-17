@@ -929,6 +929,7 @@
 
         // 显示加载遮罩层
         const loadingOverlay = document.getElementById('loading-overlay');
+        const loadingText = document.querySelector('.loading-text');
         loadingOverlay.style.display = 'flex';
 
         try {
@@ -940,6 +941,9 @@
                 alert(data.error);
             } else {
                 alert(data.message);
+
+                // 修改加载指示器文字提示
+                loadingText.textContent = '系统重启中...';
 
                 // 定义最大等待时间（60秒）
                 const maxWaitTime = 60000; // 60秒
