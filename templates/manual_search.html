@@ -1,73 +1,74 @@
 {% extends "base.html" %}
 {% block title %}资源搜索{% endblock %}
 {% block content %}
-    <!-- 加载指示器 -->
-    <div class="loader-container">
-        <div class="loader"></div>
-        <div class="loading-text">正在搜索中...</div>
+<main class="container mt-1">
+    <div class="row fade-in">
+        <!-- 加载指示器 -->
+        <div class="loader-container">
+            <div class="loader"></div>
+            <div class="loading-text">请求中，请稍后...</div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">资源搜索</div>
+            <div class="card-body">
+                <form id="search-form">
+                    <div class="mb-3" style="font-size: clamp(12px, 1.2vw, 16px);">
+                        <label for="keyword" class="form-label">关键词</label>
+                        <input class="form-control" type="text" id="keyword" placeholder="输入关键词" required>
+                    </div>
+                    <div class="mb-3" style="font-size: clamp(12px, 1.2vw, 16px);">
+                        <label for="year" class="form-label">年份</label>
+                        <input class="form-control" type="text" id="year" placeholder="输入年份（可选：结果更精准）">
+                    </div>
+                    <div class="mb-3" style="font-size: clamp(12px, 1.2vw, 16px);">
+                        <label for="type" class="form-label">类型</label>
+                        <select class="form-select" id="type" required>
+                            <option value="" disabled selected>选择类型</option>
+                            <option value="movie">电影</option>
+                            <option value="tvshow">剧集</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-outline-success search-button">搜索</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mb-4" id="search-results-card" style="display: none;">
+            <div class="card-header">搜索结果</div>
+            <div class="card-body">
+                <div class="results" id="results">
+                    <!-- 分辨率筛选 -->
+                    <div class="mb-3" id="resolution-filter-container" style="display: none; font-size: clamp(12px, 1.2vw, 16px);">
+                        <label for="resolution-filter" class="form-label">分辨率筛选</label>
+                        <select class="form-select" id="resolution-filter">
+                            <option value="" selected>全部</option>
+                            <option value="1080p">1080p</option>
+                            <option value="2160p">2160p</option>
+                        </select>
+                    </div>
+        
+                    <!-- 添加表头 -->
+                    <table class="table table-striped" id="results-table">
+                        <thead id="results-thead"></thead>
+                        <tbody id="results-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
-
-    <!-- Toast提示框 -->
-    <div id="toast" class="toast" role="alert" aria-live="assertive" aria-atomic="true" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1060;">
-        <div class="toast-header">
-            <strong class="me-auto">系统提示</strong>
-            <small>现在</small>
-            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
-        </div>
-        <div class="toast-body" id="toastMessage" style="text-align: center;">
-            默认消息
-        </div>
-    </div>
-
-    <h3>资源搜索</h3>
-    <form id="search-form">
-        <div class="mb-3" style="font-size: clamp(12px, 1.2vw, 16px);">
-            <label for="keyword" class="form-label">关键词</label>
-            <input class="form-control" type="text" id="keyword" placeholder="输入关键词" required>
-        </div>
-        <div class="mb-3" style="font-size: clamp(12px, 1.2vw, 16px);">
-            <label for="year" class="form-label">年份</label>
-            <input class="form-control" type="text" id="year" placeholder="输入年份（可选：结果更精准）">
-        </div>
-        <div class="mb-3" style="font-size: clamp(12px, 1.2vw, 16px);">
-            <label for="type" class="form-label">类型</label>
-            <select class="form-select" id="type" required>
-                <option value="" disabled selected>选择类型</option>
-                <option value="movie">电影</option>
-                <option value="tvshow">剧集</option>
-            </select>
-        </div>
-        <button type="submit" class="btn btn-sm btn-outline-success search-button">搜索</button>
-    </form>
-
-    <div class="results" id="results">
-        <!-- 分辨率筛选 -->
-        <div class="mb-3" id="resolution-filter-container" style="display: none; font-size: clamp(12px, 1.2vw, 16px);">
-            <label for="resolution-filter" class="form-label">分辨率筛选</label>
-            <select class="form-select" id="resolution-filter">
-                <option value="" selected>全部</option>
-                <option value="1080p">1080p</option>
-                <option value="2160p">2160p</option>
-            </select>
-        </div>
-
-        <!-- 添加表头 -->
-        <table class="table table-striped" id="results-table">
-            <thead id="results-thead"></thead>
-            <tbody id="results-tbody"></tbody>
-        </table>
-    </div>
+</main>
     <script>
         document.getElementById('search-form').addEventListener('submit', function(event) {
             event.preventDefault();
-
+        
             // 显示加载指示器
             showLoader();
-
+        
             const keyword = document.getElementById('keyword').value;
             const year = document.getElementById('year').value;
             const type = document.getElementById('type').value;
-
+        
             let apiUrl = '';
             let downloadUrl = '';
             if (type === 'movie') {
@@ -77,7 +78,7 @@
                 apiUrl = '/api/search_tv_show';
                 downloadUrl = '/api/download_tv_show';
             }
-
+        
             fetch(apiUrl, {
                 method: 'POST',
                 headers: {
@@ -89,7 +90,7 @@
             .then(data => {
                 const resultsTbody = document.getElementById('results-tbody');
                 resultsTbody.innerHTML = '';
-
+        
                 if (data.length === 0) {
                     resultsTbody.innerHTML = '<tr><td colspan="2">没有找到相关结果。</td></tr>';
                 } else {
@@ -101,7 +102,7 @@
                             <th scope="col" style="width: 20%; word-break: break-all;">操作</th>
                         </tr>
                     `;
-
+        
                     data.forEach(item => {
                         const row = document.createElement('tr');
                         row.innerHTML = `
@@ -110,23 +111,23 @@
                         `;
                         resultsTbody.appendChild(row);
                     });
-
+        
                     // 显示分辨率筛选控件
                     document.getElementById('resolution-filter-container').style.display = 'block';
-
+        
                     // 初始化筛选
                     applyResolutionFilter();
-
+        
                     // 添加下载按钮点击事件监听器
                     document.querySelectorAll('.download-button').forEach(button => {
                         button.addEventListener('click', function() {
                             // 显示加载指示器
                             showLoader();
-
+        
                             const link = this.getAttribute('data-link');
                             const title = this.getAttribute('data-title');
                             const year = this.getAttribute('data-year');
-
+        
                             fetch(`${downloadUrl}?link=${encodeURIComponent(link)}&title=${encodeURIComponent(title)}&year=${encodeURIComponent(year)}`)
                                 .then(response => response.json())
                                 .then(data => {
@@ -141,14 +142,17 @@
                         });
                     });
                 }
-
+        
+                // 显示搜索结果卡片
+                document.getElementById('search-results-card').style.display = 'block';
+        
                 // 隐藏加载指示器
                 hideLoader();
             })
             .catch(error => {
                 console.error('Error:', error);
                 showToast('搜索过程中发生错误，请重试。');
-
+        
                 // 隐藏加载指示器
                 hideLoader();
             });

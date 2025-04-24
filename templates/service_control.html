@@ -1,107 +1,102 @@
 {% extends "base.html" %}
 {% block title %}服务控制{% endblock %}
 {% block content %}
-<h3>服务控制</h3>
-<table class="table table-striped">
-    <thead>
-        <tr>
-            <th scope="col">服务名称</th>
-            <th scope="col">操作</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr>
-            <td>扫描媒体库</td>
-            <td>
-                <button class="btn btn-sm btn-primary" onclick="runService('scan_media')">运行</button>
-                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('scan_media')">实时日志</button>
-            </td>
-        </tr>
-        <tr>
-            <td>获取豆瓣订阅</td>
-            <td>
-                <button class="btn btn-sm btn-primary" onclick="runService('subscr')">运行</button>
-                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('subscr')">实时日志</button>
-            </td>
-        </tr>
-        <tr>
-            <td>刷新正在订阅</td>
-            <td>
-                <button class="btn btn-sm btn-primary" onclick="runService('check_subscr')">运行</button>
-                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('check_subscr')">实时日志</button>
-            </td>
-        </tr>
-        <tr>
-            <td>刷新TMDB ID</td>
-            <td>
-                <button class="btn btn-sm btn-primary" onclick="runService('tmdb_id')">运行</button>
-                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('tmdb_id')">实时日志</button>
-            </td>
-        </tr>
-        <tr>
-            <td>剧集检索下载</td>
-            <td>
-                <button class="btn btn-sm btn-primary" onclick="runService('tvshow_downloader')">运行</button>
-                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('tvshow_downloader')">实时日志</button>
-            </td>
-        </tr>
-        <tr>
-            <td>电影检索下载</td>
-            <td>
-                <button class="btn btn-sm btn-primary" onclick="runService('movie_downloader')">运行</button>
-                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('movie_downloader')">实时日志</button>
-            </td>
-        </tr>
-        <tr>
-            <td>更新添加日期</td>
-            <td>
-                <button class="btn btn-sm btn-primary" onclick="runService('dateadded')">运行</button>
-                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('dateadded')">实时日志</button>
-            </td>
-        </tr>
-        <tr>
-            <td>演职人员更新</td>
-            <td>
-                <button class="btn btn-sm btn-primary" onclick="runService('actor_nfo')">运行</button>
-                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('actor_nfo')">实时日志</button>
-            </td>
-        </tr>
-        <tr>
-            <td>目录监控服务</td>
-            <td>
-                <button class="btn btn-sm btn-primary" disabled>运行</button>
-                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('sync')">实时日志</button>
-            </td>
-        </tr>
-    </tbody>
-</table>
-
-<!-- Modal for Real-time Log -->
-<div class="modal fade" id="realTimeLogModal" tabindex="-1" aria-labelledby="realTimeLogModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header d-flex justify-content-between align-items-center">
-                <h5 class="modal-title" id="realTimeLogModalLabel">实时日志</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+<main class="container mt-1">
+    <div class="row fade-in">
+        <div class="card mb-4">
+            <div class="card-header">服务控制</div>
+            <div class="card-body">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th scope="col">服务名称</th>
+                            <th scope="col">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>扫描媒体库</td>
+                            <td>
+                                <button class="btn btn-sm btn-primary" onclick="runService('scan_media')">运行</button>
+                                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('scan_media')">实时日志</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>获取豆瓣订阅</td>
+                            <td>
+                                <button class="btn btn-sm btn-primary" onclick="runService('subscr')">运行</button>
+                                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('subscr')">实时日志</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>刷新正在订阅</td>
+                            <td>
+                                <button class="btn btn-sm btn-primary" onclick="runService('check_subscr')">运行</button>
+                                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('check_subscr')">实时日志</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>刷新TMDB ID</td>
+                            <td>
+                                <button class="btn btn-sm btn-primary" onclick="runService('tmdb_id')">运行</button>
+                                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('tmdb_id')">实时日志</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>剧集检索下载</td>
+                            <td>
+                                <button class="btn btn-sm btn-primary" onclick="runService('tvshow_downloader')">运行</button>
+                                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('tvshow_downloader')">实时日志</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>电影检索下载</td>
+                            <td>
+                                <button class="btn btn-sm btn-primary" onclick="runService('movie_downloader')">运行</button>
+                                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('movie_downloader')">实时日志</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>更新添加日期</td>
+                            <td>
+                                <button class="btn btn-sm btn-primary" onclick="runService('dateadded')">运行</button>
+                                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('dateadded')">实时日志</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>演职人员更新</td>
+                            <td>
+                                <button class="btn btn-sm btn-primary" onclick="runService('actor_nfo')">运行</button>
+                                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('actor_nfo')">实时日志</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>目录监控服务</td>
+                            <td>
+                                <button class="btn btn-sm btn-primary" disabled>运行</button>
+                                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('sync')">实时日志</button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
-            <div class="modal-body" id="realTimeLogContent">
-                <!-- 实时日志内容将显示在这里 -->
+        </div>
+        <!-- Modal for Real-time Log -->
+        <div class="modal fade" id="realTimeLogModal" tabindex="-1" aria-labelledby="realTimeLogModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header d-flex justify-content-between align-items-center">
+                        <h5 class="modal-title" id="realTimeLogModalLabel">实时日志</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body" id="realTimeLogContent">
+                        <!-- 实时日志内容将显示在这里 -->
+                    </div>
+                </div>
             </div>
         </div>
     </div>
-</div>
-
-<!-- Toast for Notifications -->
-<div class="toast" role="alert" aria-live="assertive" aria-atomic="true" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1060;">
-    <div class="toast-header">
-        <strong class="me-auto">系统提示</strong>
-        <small>现在</small>
-        <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
-    </div>
-    <div class="toast-body" id="toastMessage" style="text-align: center;">
-        默认消息
-    </div>
-</div>
+</main>
 
 <script>
 function runService(serviceName) {

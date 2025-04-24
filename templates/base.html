@@ -4,13 +4,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}影视订阅管理{% endblock %}</title>
+    <title>{% block title %}影视订阅管理系统{% endblock %}</title>
     <link rel="shortcut icon" href="/static/img/favicon.ico" type="image/x-icon">
-    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/css/bootstrap.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
     <script src="/static/js/jquery.min.js"></script>
     <style>
         body {
             padding-top: 60px;
+            background: #f9f9f9;
         }
         .h3 {
             font-size: clamp(14px, 1.2vw, 18px);
@@ -21,33 +23,55 @@
             font-size: clamp(12px, 1.2vw, 16px);
             vertical-align: middle; /* 文字垂直居中 */
         }
+        .offcanvas-backdrop {
+            z-index: 110;
+        }
+        nav.navbar {
+            z-index: 100;
+        }
+        .logo {
+            height: 40px;
+            font-size: 17px;
+            padding-left: 10px;
+        }
+        .navbar-brand {
+            color: #adb5bd;
+        }
+        .navbar-brand:hover {
+            color: #adb5bd;
+        }
         .sidebar {
             position: fixed;
             top: 0;
             bottom: 0;
             left: 0;
-            padding: 48px 0 0;
-            /* box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1); */
+            padding: 0 0 0;
             background-color: #f8f9fa;
             transition: transform 0.3s ease-in-out;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* 添加阴影效果 */
+            z-index: 120;
         }
         .sidebar-sticky {
             position: relative;
             top: 0;
             height: calc(100vh - 48px);
-            padding-top: .5rem;
+            padding-top: 1rem;
             overflow-x: hidden;
             overflow-y: auto;
         }
         .sidebar .nav-link {
             font-weight: 500;
             color: #333;
+            transition: color 0.3s ease, transform 0.3s ease; /* 添加颜色和变换过渡 */
         }
         .sidebar .nav-link:hover {
+            background-color: #e9ecef;
             color: #007bff;
         }
         .sidebar .active {
             background-color: #e9ecef;
+            transition: background-color 0.3s ease;
+            color: #007bff; /* 改变颜色 */
         }
         .sidebar .user{
             position: absolute;
@@ -56,6 +80,12 @@
             text-align: center;
             padding: 1rem; /* 可以根据需要调整内边距 */
             padding-bottom: 60px;
+        }
+        i.bi {
+            margin-right: 5px;
+        }
+        li.nav-item {
+            margin-bottom: 5px;
         }
         /* 头像样式 */
         .avatar {
@@ -74,11 +104,11 @@
         /* 退出登录样式 */
         .logout {
             font-size: clamp(14px, 1.2vw, 15px);
-            color: #007bff;
             text-decoration: none;
         }
         .logout:hover {
-            color: #0056b3;
+            background-color: rgba(var(--bs-light-rgb), var(--bs-bg-opacity)) !important;
+            color: #007bff !important;
         }
         /* 版本信息样式 */
         .version a {
@@ -147,6 +177,7 @@
         .search-form {
             display: flex;
             align-items: center;
+            margin-right: 10px;
         }
         .search-form input[type="search"] {
             display: block;
@@ -222,7 +253,13 @@
         .offcanvas-header {
             display: none;
         }
-        @media (max-width: 800px) {
+        @media (max-width: 768px) {
+            nav#sidebarMenu {
+                width: 300px;
+            }
+            div#searchOffcanvas {
+                width: 300px;
+            }
             .sidebar {
                 display: block;
                 padding-top: 0; 
@@ -245,7 +282,11 @@
             }
             .offcanvas-header {
             display: flex;
-        }
+            }
+            /* 隐藏 logo 和 文字 */
+            .logo {
+                display: none;
+            }
         }
         .episode-text {
             word-break: break-all; /* 强制在任何字符处换行 */
@@ -277,7 +318,7 @@
             flex-direction: column; /* 垂直排列子元素 */
             justify-content: center; /* 垂直居中 */
             align-items: center; /* 水平居中 */
-            z-index: 1200;
+            z-index: 1000;
             display: none; /* 默认隐藏 */
         }
         /* 提示文字样式 */
@@ -340,12 +381,12 @@
             font-size: 0.8rem; /* 默认字体大小 */
             margin-bottom: 2px;
         }
-        @media (min-width: 801px) {
+        @media (min-width: 768px) {
             .poster-wall {
                 grid-template-columns: repeat(6, 1fr); /* 默认6列 */
             }
         }
-        @media (max-width: 800px) {
+        @media (max-width: 768px) {
             .poster-wall {
                 grid-template-columns: repeat(4, 1fr); /* 默认4列 */
             }
@@ -388,7 +429,7 @@
             display: inline-block; /* 鼠标悬停时显示 */
         }
 
-        @media (max-width: 800px) {
+        @media (max-width: 768px) {
             .rating, .episode-count {
             padding: 1px 3px;
             font-size: 0.5rem;
@@ -488,7 +529,7 @@
         }
  
         /* 小屏布局 */
-        @media (max-width: 800px) {
+        @media (max-width: 768px) {
             .modal-content {
                 width: 90%;
             }
@@ -600,15 +641,46 @@
             from { background-position: 0 0; }
             to { background-position: 1rem 0; }
         }
+        /* 卡片样式 */
+        .card {
+            padding: 0;
+            border: none;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+        .card-header {
+            background-color: #4770dc;
+            color: #fff;
+            border-radius: 10px 10px 0 0;
+            padding: 8px;
+            font-size: clamp(12px, 1.2vw, 16px);
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
+    <!-- Toast 消息通知 -->
+    <div class="toast" id="toast" role="alert" aria-live="assertive" aria-atomic="true" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1060;">
+        <div class="toast-header">
+            <strong class="me-auto">系统提示</strong>
+            <small>现在</small>
+            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body" id="toastMessage" style="text-align: center;">
+            默认消息
+        </div>
+    </div>
+
     <nav class="navbar navbar-expand-lg navbar-light bg-light fixed-top">
         <div class="container-fluid">
             <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebarMenu" aria-controls="sidebarMenu" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
-            <a class="navbar-brand" href="/" style="margin-left: 5px;">影视订阅管理</a>
             <div class="search-form ms-auto">
                 <button class="btn btn-sm btn-outline-success search-icon" type="button" data-bs-toggle="offcanvas" data-bs-target="#searchOffcanvas" aria-controls="searchOffcanvas">
                     <i class="fas fa-search" style="font-style: normal;">搜索</i>
@@ -630,7 +702,7 @@
         <div class="offcanvas-body">
             <form action="/search" method="GET">
                 <input class="form-control me-2" type="search" name="q" placeholder="请输入名称" aria-label="Search">
-                <button class="btn btn-sm btn-outline-success mt-2 search-button" type="submit">搜索</button>
+                <button class="btn btn-sm btn-outline-success mt-2 search-button" type="submit" style="margin-right: 5px;">搜索</button>
             </form>
         </div>
     </div>
@@ -643,56 +715,61 @@
                     <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="Close"></button>
                 </div>
                 <div class="position-sticky sidebar-sticky">
+                    <div class="logo">
+                        <a class="navbar-brand" href="/">
+                            <img src="/static/img/favicon.ico" alt="Logo" style="height: 25px; margin-left: 5px; margin-right: 5px; vertical-align: text-bottom;">
+                            MediaMaster
+                        </a>
+                    </div>
                     <ul class="nav flex-column">
                         <li class="nav-item">
-                            <a class="nav-link {% if request.path == url_for('index') and request.args.get('type', 'movies') == 'movies' %}active{% endif %}" href="{{ url_for('index', type='movies') }}">
-                                <span data-feather="home"></span>
-                                电影库
+                            <a class="nav-link {% if request.path == url_for('dashboard') %}active{% endif %}" href="{{ url_for('dashboard') }}">
+                                <i class="bi bi-speedometer2"></i>
+                                系统仪表
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link {% if request.path == url_for('index') and request.args.get('type', 'movies') == 'tvs' %}active{% endif %}" href="{{ url_for('index', type='tvs') }}">
-                                <span data-feather="home"></span>
-                                电视剧库
+                            <a class="nav-link {% if request.path == url_for('recommendations') %}active{% endif %}" href="{{ url_for('recommendations') }}">
+                                <i class="bi bi-calendar3"></i>
+                                热门推荐
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.path == url_for('subscriptions') %}active{% endif %}" href="{{ url_for('subscriptions') }}">
-                                <span data-feather="file"></span>
+                                <i class="bi bi-calendar-check"></i>
                                 正在订阅
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.path == url_for('douban_subscriptions') %}active{% endif %}" href="{{ url_for('douban_subscriptions') }}">
-                                <span data-feather="shopping-cart"></span>
-                                豆瓣订阅
+                                <i class="bi bi-calendar-heart"></i>
+                                豆瓣想看
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.path == url_for('manual_search') %}active{% endif %}" href="{{ url_for('manual_search') }}">
-                                <span data-feather="file"></span>
+                                <i class="bi bi-search"></i>
                                 资源搜索
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.path == url_for('service_control') %}active{% endif %}" href="{{ url_for('service_control') }}">
-                                <span data-feather="service"></span>
+                                <i class="bi bi-list-task"></i>
                                 服务控制
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.path == url_for('download_mgmt_page') %}active{% endif %}" href="{{ url_for('download_mgmt_page') }}">
-                                <span data-feather="download"></span>
+                                <i class="bi bi-download"></i>
                                 下载管理
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.path == url_for('settings_page') %}active{% endif %}" href="{{ url_for('settings_page') }}">
-                                <span data-feather="settings"></span>
+                                <i class="bi bi-gear"></i>
                                 系统设置
                             </a>
                         </li>
-
                     </ul>
                     <div class="user">
                         <img src="{{ avatar_url }}" alt="avatar" class="avatar">
@@ -768,8 +845,7 @@
     </div>
 
 <script src="/static/js/popper.min.js"></script>
-<script src="/static/js/bootstrap.min.js"></script>
-<script src="/static/js/bootstrap.bundle.min.js"></script>
+<script src="/static/js/bootstrap.bundle.js"></script>
 <script src="/static/js/marked.min.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
@@ -799,12 +875,6 @@
                 content.classList.add('collapsed');
                 searchForm.style.display = 'none';
             }
-        });
-
-        // 确保 Offcanvas 组件正确初始化
-        const offcanvas = new bootstrap.Offcanvas(sidebar);
-        navbarToggler.addEventListener('click', function () {
-            offcanvas.show();
         });
     });
 

@@ -76,13 +76,13 @@ class DouBanRSSParser:
         try:
             response = requests.get(self.rss_url, headers=headers, timeout=10)
             if response.status_code == 200:
-                logging.info("成功获取豆瓣订阅数据")
+                logging.info("成功获取豆瓣想看数据")
                 return response.text
             else:
-                logging.error(f"获取豆瓣订阅数据失败，状态码: {response.status_code}")
+                logging.error(f"获取豆瓣想看数据失败，状态码: {response.status_code}")
                 return None
         except requests.RequestException as e:
-            logging.error(f"请求豆瓣订阅数据时发生错误: {e}")
+            logging.error(f"请求豆瓣想看数据时发生错误: {e}")
             return None
 
     def parse_rss_data(self, rss_data):
@@ -107,10 +107,10 @@ class DouBanRSSParser:
                 title = title.replace('想看', '', 1) if title.startswith('想看') else title
 
                 parsed_items.append((title, douban_id))
-            logging.info("成功解析豆瓣订阅数据")
+            logging.info("成功解析豆瓣想看数据")
             return parsed_items
         except ET.ParseError as e:
-            logging.error(f"解析豆瓣订阅数据时发生错误: {e}")
+            logging.error(f"解析豆瓣想看数据时发生错误: {e}")
             return []
 
     def fetch_existing_douban_ids(self):
@@ -223,7 +223,7 @@ class DouBanRSSParser:
                 # 删除数据库中不在新RSS数据中的过时数据
                 self.delete_old_data(existing_douban_ids, new_douban_ids)
 
-                logging.info("开始处理豆瓣订阅中的所有项目")
+                logging.info("开始处理豆瓣想看中的所有项目")
                 for title, douban_id in items:
                     # 检查数据库中是否已存在相同的豆瓣ID
                     if douban_id in existing_douban_ids:
@@ -249,9 +249,9 @@ class DouBanRSSParser:
                     sleep_time = random.uniform(10, 15)
                     time.sleep(sleep_time)
             else:
-                logging.warning("豆瓣订阅中没有找到项目")
+                logging.warning("豆瓣想看中没有找到项目")
         else:
-            logging.error("未能获取豆瓣订阅数据")
+            logging.error("未能获取豆瓣想看数据")
 
     def close_db(self):
         self.db_connection.close()

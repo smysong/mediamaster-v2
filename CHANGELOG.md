@@ -2,6 +2,18 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.1.0] - 2025-04-24
+
+### 优化
+- 调整WEB UI界面样式，页面观感更加美观，提升用户体验。
+
+### 修复
+- 修复一些已知问题，提升用户体验。
+
+### 新增
+- 上线系统仪表盘统计功能，支持显示当前媒体库中的媒体统计，以及系统硬件资源使用情况、系统进程显示、下载器实时速率显示等。
+- 上线TMDB热门推荐功能，支持从推荐中直接添加订阅。（此功能依赖TMDB API接口，网络不可达或API密钥无效时无法正常使用。）
+
 ## [2.0.5] - 2025-04-17
 
 ### 优化
@@ -55,3 +67,4 @@
 [2.0.3]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.0.3
 [2.0.4]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.0.4
 [2.0.5]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.0.5
+[2.1.0]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.1.0

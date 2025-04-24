@@ -1,63 +1,75 @@
 {% extends "base.html" %}
 {% block title %}正在订阅{% endblock %}
 {% block content %}
-<h3>正在订阅的电影</h3>
-{% if miss_movies %}
-<table class="table table-striped">
-    <thead>
-        <tr>
-            <th>标题</th>
-            <th>年份</th>
-            <th>操作</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for movie in miss_movies %}
-        <tr>
-            <td>{{ movie['title'] }}</td>
-            <td>{{ movie['year'] }}</td>
-            <td>
-                <a href="{{ url_for('edit_subscription', type='movie', id=movie['id']) }}" class="btn btn-sm btn-warning">编辑</a>
-                <form action="{{ url_for('delete_subscription', type='movie', id=movie['id']) }}" method="POST" style="display:inline;">
-                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('确定要删除吗？')">删除</button>
-                </form>
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-{% else %}
-<p>目前没有正在订阅的电影。</p>
-{% endif %}
+<main class="container mt-1">
+    <div class="row fade-in">
+        <div class="card mb-4">
+            <div class="card-header">正在订阅的电影</div>
+            <div class="card-body">
+                {% if miss_movies %}
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>标题</th>
+                            <th>年份</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for movie in miss_movies %}
+                        <tr>
+                            <td>{{ movie['title'] }}</td>
+                            <td>{{ movie['year'] }}</td>
+                            <td>
+                                <a href="{{ url_for('edit_subscription', type='movie', id=movie['id']) }}" class="btn btn-sm btn-warning">编辑</a>
+                                <form action="{{ url_for('delete_subscription', type='movie', id=movie['id']) }}" method="POST" style="display:inline;">
+                                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('确定要删除吗？')">删除</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p>目前没有正在订阅的电影。</p>
+                {% endif %}
+            </div>
+        </div>
 
-<h3>正在订阅的电视剧</h3>
-{% if miss_tvs %}
-<table class="table table-striped">
-    <thead>
-        <tr>
-            <th>标题</th>
-            <th>季</th>
-            <th>缺失的集</th>
-            <th>操作</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for tv in miss_tvs %}
-        <tr class="miss-episode-text">
-            <td>{{ tv['title'] }}</td>
-            <td>{{ tv['season'] }}</td>
-            <td class="miss-episode-text">{{ tv['missing_episodes'] }}</td>
-            <td style="flex-wrap: nowrap;">
-                <a href="{{ url_for('edit_subscription', type='tv', id=tv['id']) }}" class="btn btn-sm btn-warning">编辑</a>
-                <form action="{{ url_for('delete_subscription', type='tv', id=tv['id']) }}" method="POST" style="display:inline;">
-                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('确定要删除吗？')">删除</button>
-                </form>
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-{% else %}
-<p>目前没有正在订阅的电视剧。</p>
+        <div class="card mb-4">
+            <div class="card-header">正在订阅的电视剧</div>
+            <div class="card-body">
+                {% if miss_tvs %}
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>标题</th>
+                            <th>季</th>
+                            <th>缺失的集</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for tv in miss_tvs %}
+                        <tr class="miss-episode-text">
+                            <td>{{ tv['title'] }}</td>
+                            <td>{{ tv['season'] }}</td>
+                            <td class="miss-episode-text">{{ tv['missing_episodes'] }}</td>
+                            <td style="flex-wrap: nowrap;">
+                                <a href="{{ url_for('edit_subscription', type='tv', id=tv['id']) }}" class="btn btn-sm btn-warning">编辑</a>
+                                <form action="{{ url_for('delete_subscription', type='tv', id=tv['id']) }}" method="POST" style="display:inline;">
+                                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('确定要删除吗？')">删除</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p>目前没有正在订阅的电视剧。</p>
+            </div>
+        </div>
+    </div>
+</main>
 {% endif %}
 {% endblock %}

@@ -1,63 +1,75 @@
 {% extends "base.html" %}
-{% block title %}豆瓣订阅{% endblock %}
+{% block title %}豆瓣想看{% endblock %}
 {% block content %}
-<h3>豆瓣订阅的电影</h3>
-{% if rss_movies %}
-<table class="table table-striped">
-    <thead>
-        <tr>
-            <th>标题</th>
-            <th class="douban">副标题</th>
-            <th>年份</th>
-            <th class="douban">豆瓣ID</th>
-            <th>豆瓣</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for movie in rss_movies %}
-        <tr>
-            <td>{{ movie['title'] }}</td>
-            <td class="douban">{{ movie['sub_title'] }}</td>
-            <td>{{ movie['year'] }}</td>
-            <td class="douban">{{ movie['douban_id'] }}</td>
-            <td><a href="{{ movie['url'] }}" target="_blank" class="btn btn-sm btn-primary">详情</a></td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-{% else %}
-<p>目前没有豆瓣订阅的电影。</p>
-{% endif %}
+<main class="container mt-1">
+    <div class="row fade-in">
+        <div class="card mb-4">
+            <div class="card-header">豆瓣想看的电影</div>
+            <div class="card-body">
+                {% if rss_movies %}
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>标题</th>
+                            <th class="douban">副标题</th>
+                            <th>年份</th>
+                            <th class="douban">豆瓣ID</th>
+                            <th>豆瓣</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for movie in rss_movies %}
+                        <tr>
+                            <td>{{ movie['title'] }}</td>
+                            <td class="douban">{{ movie['sub_title'] }}</td>
+                            <td>{{ movie['year'] }}</td>
+                            <td class="douban">{{ movie['douban_id'] }}</td>
+                            <td><a href="{{ movie['url'] }}" target="_blank" class="btn btn-sm btn-primary">详情</a></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p>目前没有豆瓣想看的电影。</p>
+                {% endif %}
+            </div>
+        </div>
 
-<h3>豆瓣订阅的电视剧</h3>
-{% if rss_tvs %}
-<table class="table table-striped">
-    <thead>
-        <tr>
-            <th>标题</th>
-            <th class="douban">副标题</th>
-            <th>年份</th>
-            <th class="douban">季</th>
-            <th class="douban">集</th>
-            <th class="douban">豆瓣ID</th>
-            <th>豆瓣</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for tv in rss_tvs %}
-        <tr>
-            <td>{{ tv['title'] }}</td>
-            <td class="douban">{{ tv['sub_title'] }}</td>
-            <td>{{ tv['year'] }}</td>
-            <td class="douban">{{ tv['season'] }}</td>
-            <td class="douban">{{ tv['episode'] }}</td>
-            <td class="douban">{{ tv['douban_id'] }}</td>
-            <td><a href="{{ tv['url'] }}" target="_blank" class="btn btn-sm btn-primary">详情</a></td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-{% else %}
-<p>目前没有豆瓣订阅的电视剧。</p>
+        <div class="card mb-4">
+            <div class="card-header">豆瓣想看的电视剧</div>
+            <div class="card-body">
+                {% if rss_tvs %}
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>标题</th>
+                            <th class="douban">副标题</th>
+                            <th>年份</th>
+                            <th class="douban">季</th>
+                            <th class="douban">集</th>
+                            <th class="douban">豆瓣ID</th>
+                            <th>豆瓣</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for tv in rss_tvs %}
+                        <tr>
+                            <td>{{ tv['title'] }}</td>
+                            <td class="douban">{{ tv['sub_title'] }}</td>
+                            <td>{{ tv['year'] }}</td>
+                            <td class="douban">{{ tv['season'] }}</td>
+                            <td class="douban">{{ tv['episode'] }}</td>
+                            <td class="douban">{{ tv['douban_id'] }}</td>
+                            <td><a href="{{ tv['url'] }}" target="_blank" class="btn btn-sm btn-primary">详情</a></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p>目前没有豆瓣想看的电视剧。</p>
+            </div>
+        </div>
+    </div>
+</main>
 {% endif %}
 {% endblock %}

@@ -1,0 +1,789 @@
+{% extends "base.html" %}
+{% block title %}热门推荐{% endblock %}
+{% block content %}
+    <style>
+        /* 全局样式 */
+        body {
+            padding: 0;
+        }
+
+        h1, h2 {
+            text-align: center;
+            margin: 20px 0;
+            color: #333333; /* 深灰色标题 */
+            text-shadow: none; /* 移除阴影 */
+        }
+
+        section {
+            max-width: 1200px;
+            padding: 0 20px;
+        }
+
+        /* Banner 样式 */
+        .banner {
+            position: relative;
+            width: 100%;
+            height: 400px; /* 固定高度 */
+            margin-top: 40px;
+            overflow: hidden;
+            margin-bottom: 10px;
+            border-radius: 10px; /* 圆角效果 */
+        }
+
+        .banner-item {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: cover; /* 保持纵横比缩放填充 */
+            background-position: center top; /* 水平居中，顶部对齐 */
+            opacity: 0;
+            transition: opacity 1s ease-in-out;
+            display: flex;
+            flex-direction: column; /* 垂直排列内容 */
+            justify-content: flex-end; /* 内容对齐到底部 */
+            color: white; /* 白色字体 */
+            padding: 20px; /* 底部内边距 */
+            box-sizing: border-box;
+        }
+
+        .banner-item.active {
+            opacity: 1;
+        }
+
+        .banner-item .textcontent {
+            max-width: 100%;
+            padding: 10px 20px; /* 内容区域内边距 */
+            border-radius: 5px; /* 圆角效果 */
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8); /* 半透明灰色阴影 */
+        }
+
+        .banner-item p.title {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 0 0 5px 0; /* 减小间距 */
+        }
+
+        .banner-item p.overview {
+            font-size: 14px;
+            margin: 0;
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 3; /* 限制显示的行数 */
+            line-clamp: 3; /* 标准属性 */
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* 进度条容器样式 */
+        .progress-bar-container {
+            position: absolute;
+            bottom: 0; /* 固定在容器底部 */
+            left: 0;
+            width: 100%;
+            height: 3px; /* 进度条高度 */
+            background: rgba(255, 255, 255, 0.3); /* 半透明背景 */
+            overflow: hidden;
+            border-radius: 3px; /* 圆角效果 */
+        }
+        
+        /* 进度条样式 */
+        .progress-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 0%;
+            height: 100%;
+            background: #adb5bd; /* 进度条颜色 */
+            transition: width 0.3s linear; /* 平滑过渡效果 */
+        }
+
+        /* Carousel 容器样式 */
+        .carousel-container {
+            position: relative;
+            overflow: hidden;
+            white-space: nowrap; /* 防止内容换行 */
+        }
+
+        /* 滚动列表样式 */
+        .movie-list, .tv-list {
+            white-space: nowrap;
+            overflow-x: auto;
+            scroll-behavior: smooth;
+            padding: 8px; /* 内边距 */
+        }
+
+        /* 隐藏滚动条 */
+        .movie-list::-webkit-scrollbar, .tv-list::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* 箭头按钮样式 */
+        .carousel-arrow {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            color: rgba(0, 0, 0, 0.5);
+            border: none;
+            font-size: 30px;
+            cursor: pointer;
+            z-index: 10;
+        }
+
+        .carousel-arrow.prev {
+            left: 0px;
+            width: 40px; 
+            height: 100%;
+            background: linear-gradient(to right, #f9f9f9, rgba(249, 249, 249, 0)); /* 从浅灰色到透明 */
+        }
+        
+        .carousel-arrow.next {
+            right: 0px;
+            width: 40px;
+            height: 100%;
+            background: linear-gradient(to left, #f9f9f9, rgba(249, 249, 249, 0)); /* 从浅灰色到透明 */
+        }
+        
+        .carousel-arrow:hover {
+            font-size: 35px;
+        }
+
+        /* 推荐列表样式 */
+        .movie-item, .tv-item {
+            display: inline-block; /* 确保水平排列 */
+            position: relative; /* 为评分和标题定位 */
+            width: 150px; /* 固定宽度 */
+            height: 225px; /* 固定高度 */
+            margin-right: 20px; /* 项目之间的间距 */
+            border-radius: 10px; /* 圆角效果 */
+            overflow: hidden; /* 隐藏溢出内容 */
+            background: #f0f0f0; /* 默认背景色 */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* 浅色阴影 */
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+    
+        .movie-item:hover, .tv-item:hover {
+            transform: scale(1.05); /* 鼠标悬停放大效果 */
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.2); /* 稍深的阴影 */
+        }
+    
+        .movie-item img, .tv-item img {
+            width: 100%; /* 图片宽度填充容器 */
+            height: 100%; /* 图片高度填充容器 */
+            object-fit: cover; /* 保持图片比例裁剪 */
+        }
+    
+        /* 评分显示在左上角 */
+        .movie-item .rating, .tv-item .rating, .banner-item .rating {
+            position: absolute;
+            top: 5px;
+            left: 5px; /* 左上角 */
+            background: rgba(0, 0, 0, 0.7); /* 半透明黑色背景 */
+            color: #fff; /* 白色文字 */
+            font-size: 14px;
+            border-radius: 5px; /* 圆角效果 */
+            display: block;
+        }
+    
+        /* 标题样式 */
+        .movie-item .title, .tv-item .title {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.7); /* 半透明黑灰色背景 */
+            color: #fff; /* 白色文字 */
+            font-size: 14px;
+            text-align: center;
+            padding: 5px 0;
+            box-sizing: border-box;
+        }
+
+        button.bi.bi-bookmark-star-fill {
+            color: #495057;
+            border: none;
+            margin: 5px 0;
+            font-size: 0.8em;
+            padding: 0;
+            background-color: unset;
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .movie-item, .tv-item {
+                width: 150px; /* 在小屏幕上适当缩小宽度 */
+            }
+
+            .banner {
+                height: 300px; /* 减小高度 */
+            }
+
+            .banner-item {
+                padding: 10px; /* 减小内边距 */
+            }
+
+            .banner-item p.title {
+                font-size: 20px; /* 减小标题字体 */
+            }
+
+            .banner-item p.overview {
+                font-size: 14px; /* 减小简介字体 */
+            }
+        }
+
+        /* 加载动画 */
+        .loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.9); /* 浅色背景 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+
+        .loading span {
+            font-size: 24px;
+            color: #333333; /* 深灰色文字 */
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+<main class="container mt-4">
+    <div class="row fade-in">
+        <!-- 加载动画 -->
+        <div class="loading" id="loading">
+            <span>加载中...</span>
+        </div>
+
+        <div id="banner" class="banner">
+            <div class="banner-list">
+                <!-- 随机推荐内容将在这里填充 -->
+            </div>
+        </div>
+
+        <section id="now-playing">
+            <h2>影院热映</h2>
+            <div class="carousel-container">
+                <button class="carousel-arrow prev" onclick="scrollCarousel('now-playing-list', -1)">&#10094;</button>
+                <div class="movie-list" id="now-playing-list"></div>
+                <button class="carousel-arrow next" onclick="scrollCarousel('now-playing-list', 1)">&#10095;</button>
+            </div>
+        </section>
+
+        <section id="today-movies">
+            <h2>热门电影</h2>
+            <div class="carousel-container">
+                <button class="carousel-arrow prev" onclick="scrollCarousel('today-movies-list', -1)">&#10094;</button>
+                <div class="movie-list" id="today-movies-list"></div>
+                <button class="carousel-arrow next" onclick="scrollCarousel('today-movies-list', 1)">&#10095;</button>
+            </div>
+        </section>
+
+        <section id="today-tv-shows">
+            <h2>热门剧集</h2>
+            <div class="carousel-container">
+                <button class="carousel-arrow prev" onclick="scrollCarousel('today-tv-shows-list', -1)">&#10094;</button>
+                <div class="tv-list" id="today-tv-shows-list"></div>
+                <button class="carousel-arrow next" onclick="scrollCarousel('today-tv-shows-list', 1)">&#10095;</button>
+            </div>
+        </section>
+        <!-- Modal -->
+        <div id="mediaDetailsModal" class="modal fade" tabindex="-1" aria-labelledby="InfoCardLabel">
+            <div class="modal-dialog modal-dialog-centered modal-lg">
+                <div class="modal-content">
+                    <div class="InfoCard-header d-flex justify-content-between align-items-center">
+                        <h5 class="InfoCard-title" id="InfoCardLabel">影片简介</h5>
+                        <button type="button" class="btn-close text-reset" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="modal-header">
+                            <div class="modal-poster">
+                                <img id="modalPoster" src="" alt="海报"> <!-- 海报图 -->
+                            </div>
+                            <div class="modal-details">
+                                <div class="d-flex align-items-center justify-content-between">
+                                    <h3 id="modalTitle" class="me-3"></h3> <!-- 标题 -->
+                                    <button type="button" class="bi bi-bookmark-star-fill" id="subscribeButton">订阅</button> <!-- 订阅按钮 -->
+                                </div>
+                                <p id="modalRating" class="text-muted"></p> <!-- 评分 -->
+                                <p id="modalSeasons" style="display: none;"></p> <!-- 季数 -->
+                                <p id="modalEpisodeCount" style="display: none;"></p> <!-- 集数 -->
+                                <p id="modalYear"></p> <!-- 发行年份 -->
+                                <p id="modalOverview"></p> <!-- 剧情简介 -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+<script>
+    // 获取从后端传递的 tmdb_api_key
+    const tmdbApiKey = "{{ tmdb_api_key }}";
+
+    // 显示加载动画
+    const loadingElement = document.getElementById('loading');
+    function hideLoading() {
+        loadingElement.style.display = 'none';
+    }
+
+    // 使用API Key获取电影热门推荐
+    function fetchTrendingMovies(apiKey) {
+        const url = `https://api.tmdb.org/3/trending/movie/day?api_key=${apiKey}&language=zh-CN`;
+
+        return fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                console.log('电影热门推荐数据:', data.results); // 添加日志
+                displayRecommendations(data.results, 'today-movies-list');
+                return data.results;
+            })
+            .catch(error => {
+                console.error('获取电影热门推荐时出错:', error);
+                return []; // 返回空数组以避免 undefined
+            });
+    }
+
+    // 使用API Key获取影院热映推荐
+    function fetchNowPlayingMovies(apiKey) {
+        const url = `https://api.tmdb.org/3/movie/now_playing?api_key=${apiKey}&language=zh-CN`;
+
+        return fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                console.log('影院热映推荐数据:', data.results); // 添加日志
+                displayRecommendations(data.results, 'now-playing-list');
+                return data.results;
+            })
+            .catch(error => {
+                console.error('获取影院热映推荐时出错:', error);
+                return []; // 返回空数组以避免 undefined
+            });
+    }
+
+    // 使用API Key获取热门剧集推荐
+    function fetchTrendingTVShows(apiKey) {
+        const url = `https://api.tmdb.org/3/trending/tv/day?api_key=${apiKey}&language=zh-CN`;
+
+        return fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                console.log('热门剧集推荐数据:', data.results); // 添加日志
+                displayRecommendations(data.results, 'today-tv-shows-list');
+                return data.results;
+            })
+            .catch(error => {
+                console.error('获取热门剧集推荐时出错:', error);
+                return []; // 返回空数组以避免 undefined
+            });
+    }
+
+    // 显示推荐资源
+    function displayRecommendations(recommendations, listId) {
+        const listElement = document.getElementById(listId);
+        listElement.innerHTML = ''; // 清空原有内容
+    
+        recommendations.forEach(item => {
+            if (item) {
+                const listItem = document.createElement('div');
+                listItem.className = listId.includes('tv') ? 'tv-item' : 'movie-item';
+    
+                // 海报图片
+                const posterElement = document.createElement('img');
+                posterElement.src = item.poster_path 
+                    ? `https://static-mdb.v.geilijiasu.com/t/p/w500${item.poster_path}` 
+                    : '/static/img/no-image.png';
+                posterElement.alt = item.title || item.name || '无标题';
+    
+                // 添加点击事件，显示模态框
+                posterElement.addEventListener('click', () => {
+                    showMovieDetails(item.id, item.media_type || (listId.includes('tv') ? 'tv' : 'movie'));
+                });
+    
+                // 评分
+                const ratingElement = document.createElement('div');
+                ratingElement.className = 'rating';
+                ratingElement.textContent = item.vote_average ? item.vote_average.toFixed(1) : 'N/A';
+    
+                // 标题
+                const titleElement = document.createElement('div');
+                titleElement.className = 'title';
+                titleElement.textContent = item.title || item.name || '无标题';
+    
+                // 组装元素
+                listItem.appendChild(posterElement);
+                listItem.appendChild(ratingElement);
+                listItem.appendChild(titleElement);
+                listElement.appendChild(listItem);
+            }
+        });
+    
+        // 添加占位内容以确保滚动
+        if (recommendations.length < 10) {
+            for (let i = 0; i < 10 - recommendations.length; i++) {
+                const placeholder = document.createElement('div');
+                placeholder.className = 'movie-item';
+                placeholder.textContent = '占位内容';
+                listElement.appendChild(placeholder);
+            }
+        }
+    }
+
+    // 获取影片详细信息
+    function fetchMovieDetails(tmdbId, mediaType, apiKey) {
+        // 根据 mediaType 动态选择请求路径
+        const url = `https://api.tmdb.org/3/${mediaType}/${tmdbId}?api_key=${apiKey}&language=zh-CN`;
+    
+        return fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                console.log('影片详细信息:', data); // 添加日志
+                return data;
+            })
+            .catch(error => {
+                console.error('获取影片详细信息时出错:', error);
+                return null;
+            });
+    }
+
+    function populateBanner(trendingMovies, nowPlayingMovies, trendingTVShows) {
+        const bannerListElement = document.querySelector('.banner-list');
+        const bannerElement = document.getElementById('banner');
+        bannerListElement.innerHTML = ''; // 清空原有内容
+    
+        // 从每个分类中选择两个 popularity 指数最高的推荐项
+        const selectedMovies = trendingMovies
+            .sort((a, b) => b.popularity - a.popularity)
+            .slice(0, 2);
+    
+        const selectedNowPlaying = nowPlayingMovies
+            .sort((a, b) => b.popularity - a.popularity)
+            .slice(0, 2);
+    
+        const selectedTVShows = trendingTVShows
+            .sort((a, b) => b.popularity - a.popularity)
+            .slice(0, 2);
+    
+        // 合并所有推荐项
+        const allRecommendations = [...selectedMovies, ...selectedNowPlaying, ...selectedTVShows];
+    
+        // 去重逻辑：使用 tmdbId 或 title 作为唯一标识
+        const uniqueRecommendations = [];
+        const seenIds = new Set();
+    
+        allRecommendations.forEach(item => {
+            const uniqueKey = item.id || item.title; // 使用 tmdbId 或 title 作为唯一标识
+            if (!seenIds.has(uniqueKey)) {
+                seenIds.add(uniqueKey);
+                uniqueRecommendations.push(item);
+            }
+        });
+    
+        // 确保最终只有 6 个推荐项
+        const selectedRecommendations = uniqueRecommendations.slice(0, 6);
+        console.log('选择的推荐项:', selectedRecommendations);
+    
+        let currentIndex = 0;
+        const intervalTime = 30000; // 每30秒切换一次
+    
+        // 动态创建进度条容器和进度条
+        let progressBarContainer = bannerElement.querySelector('.progress-bar-container');
+        if (!progressBarContainer) {
+            progressBarContainer = document.createElement('div');
+            progressBarContainer.className = 'progress-bar-container';
+            const progressBar = document.createElement('div');
+            progressBar.className = 'progress-bar';
+            progressBarContainer.appendChild(progressBar);
+            bannerElement.appendChild(progressBarContainer); // 插入到 banner 容器内的最下方
+        }
+        const progressBar = progressBarContainer.querySelector('.progress-bar');
+    
+        function showNextBannerItem() {
+            const item = selectedRecommendations[currentIndex];
+            if (item) {
+                const mediaType = item.media_type || 'movie'; // 默认类型为 movie
+                fetchMovieDetails(item.id, mediaType, tmdbApiKey).then(movieDetails => {
+                    if (movieDetails) {
+                        const bannerItem = document.createElement('div');
+                        bannerItem.className = 'banner-item';
+    
+                        // 设置背景图片
+                        if (movieDetails.backdrop_path) {
+                            bannerItem.style.backgroundImage = `url(https://static-mdb.v.geilijiasu.com/t/p/original${movieDetails.backdrop_path})`;
+                        } else {
+                            bannerItem.style.backgroundImage = `url(https://dailybing.com/api/v1)`;
+                        }
+    
+                        // 创建评分元素
+                        const ratingElement = document.createElement('div');
+                        ratingElement.className = 'rating';
+                        ratingElement.textContent = movieDetails.vote_average 
+                            ? movieDetails.vote_average.toFixed(1) 
+                            : 'N/A';
+    
+                        // 创建内容容器
+                        const contentContainer = document.createElement('div');
+                        contentContainer.className = 'textcontent';
+    
+                        // 创建标题
+                        const titleElement = document.createElement('p');
+                        titleElement.className = 'title'; // 添加类名
+                        titleElement.textContent = movieDetails.title || movieDetails.name || '无标题';
+    
+                        // 创建剧情简介
+                        const overviewElement = document.createElement('p');
+                        overviewElement.className = 'overview'; // 添加类名
+                        overviewElement.textContent = movieDetails.overview || '无简介';
+    
+                        // 将评分、标题和简介添加到内容容器
+                        bannerItem.appendChild(ratingElement); // 添加评分到右上角
+                        contentContainer.appendChild(titleElement);
+                        contentContainer.appendChild(overviewElement);
+    
+                        // 将内容容器添加到banner项
+                        bannerItem.appendChild(contentContainer);
+    
+                        // 添加点击事件，显示模态框
+                        bannerItem.addEventListener('click', () => {
+                            showMovieDetails(item.id, mediaType);
+                        });
+    
+                        // 将banner项添加到banner区域
+                        bannerListElement.innerHTML = ''; // 清空原有内容
+                        bannerListElement.appendChild(bannerItem);
+    
+                        // 添加动画效果
+                        setTimeout(() => {
+                            bannerItem.classList.add('active');
+                        }, 10);
+                    }
+                });
+            }
+    
+            // 更新进度条
+            progressBar.style.transition = 'none'; // 禁用过渡效果以重置宽度
+            progressBar.style.width = '0%';
+            setTimeout(() => {
+                progressBar.style.transition = `width ${intervalTime}ms linear`; // 设置过渡效果
+                progressBar.style.width = '100%';
+            }, 50);
+    
+            // 更新当前索引
+            currentIndex = (currentIndex + 1) % selectedRecommendations.length;
+        }
+    
+        // 初始显示
+        showNextBannerItem();
+    
+        // 每隔30秒切换下一个推荐项
+        setInterval(showNextBannerItem, intervalTime);
+    }
+
+    // 初始化时获取推荐资源
+    if (tmdbApiKey) {
+        Promise.all([
+            fetchTrendingMovies(tmdbApiKey),
+            fetchNowPlayingMovies(tmdbApiKey),
+            fetchTrendingTVShows(tmdbApiKey)
+        ]).then(results => {
+            const [trendingMovies, nowPlayingMovies, trendingTVShows] = results;
+            // 正确传递三个分类的数据
+            populateBanner(trendingMovies, nowPlayingMovies, trendingTVShows);
+            hideLoading(); // 隐藏加载动画
+        }).catch(error => {
+            console.error('获取推荐内容时出错:', error);
+            hideLoading(); // 隐藏加载动画
+        });
+    } else {
+        console.error('TMDB API Key 未找到');
+        hideLoading(); // 隐藏加载动画
+    }
+
+    // 滚动推荐列表
+    function scrollCarousel(listId, direction) {
+        const listElement = document.getElementById(listId);
+        if (!listElement) {
+            console.error(`未找到列表元素: ${listId}`);
+            return;
+        }
+    
+        const itemWidth = listElement.firstElementChild 
+            ? listElement.firstElementChild.offsetWidth + 20 
+            : 0; // 20 是项目之间的间距
+        const scrollAmount = itemWidth * 3; // 每次滚动 3 个项目
+    
+        console.log(`滚动列表: ${listId}, 方向: ${direction}, 滚动距离: ${scrollAmount}`);
+        listElement.scrollLeft += direction * scrollAmount;
+    }
+
+    // 触摸滑动事件处理
+    document.querySelectorAll('.movie-list, .tv-list').forEach(list => {
+        let startX = 0;
+        let scrollLeft = 0;
+    
+        list.addEventListener('touchstart', (e) => {
+            startX = e.touches[0].pageX; // 记录触摸起点
+            scrollLeft = list.scrollLeft; // 记录当前滚动位置
+        });
+    
+        list.addEventListener('touchmove', (e) => {
+            const deltaX = e.touches[0].pageX - startX; // 计算滑动距离
+            list.scrollLeft = scrollLeft - deltaX; // 更新滚动位置
+        });
+    });
+
+    // 显示 Toast 消息
+    function showToast(message, isSuccess = true) {
+        const toastElement = document.querySelector('.toast');
+        const toastMessage = document.getElementById('toastMessage');
+        toastMessage.textContent = message;
+
+        // 显示 Toast
+        const toast = new bootstrap.Toast(toastElement);
+        toast.show();
+
+        // 2秒后自动隐藏
+        setTimeout(() => {
+            toast.hide();
+        }, 2000);
+    }
+
+    function showMovieDetails(tmdbId, mediaType) {
+        fetchMovieDetails(tmdbId, mediaType, tmdbApiKey).then(movieDetails => {
+            if (movieDetails) {
+                // 填充模态框内容
+                document.getElementById('modalPoster').src = movieDetails.poster_path 
+                    ? `https://static-mdb.v.geilijiasu.com/t/p/w500${movieDetails.poster_path}` 
+                    : '/static/img/no-image.png';
+                document.getElementById('modalTitle').textContent = movieDetails.title || movieDetails.name || '无标题';
+    
+                // 填充评分数据，保留小数点后一位
+                document.getElementById('modalRating').textContent = movieDetails.vote_average 
+                    ? `评分: ${movieDetails.vote_average.toFixed(1)}` 
+                    : '评分: 暂无';
+    
+                // 根据 mediaType 动态显示内容
+                if (mediaType === 'movie') {
+                    document.getElementById('modalSeasons').style.display = 'none'; // 隐藏季数信息
+                    document.getElementById('modalEpisodeCount').style.display = 'none'; // 隐藏集数信息
+                    document.getElementById('modalYear').textContent = movieDetails.release_date 
+                        ? `年份: ${new Date(movieDetails.release_date).getFullYear()}` 
+                        : '年份: 未知';
+                } else if (mediaType === 'tv') {
+                    document.getElementById('modalSeasons').style.display = 'block'; // 显示季数信息
+                    document.getElementById('modalEpisodeCount').style.display = 'block'; // 显示集数信息
+                    document.getElementById('modalSeasons').textContent = movieDetails.number_of_seasons 
+                        ? `第 ${movieDetails.number_of_seasons} 季` 
+                        : '季数: 未知';
+                    document.getElementById('modalEpisodeCount').textContent = movieDetails.number_of_episodes 
+                        ? `共 ${movieDetails.number_of_episodes} 集` 
+                        : '集数: 未知';
+    
+                    const lastSeason = movieDetails.seasons && movieDetails.seasons[movieDetails.seasons.length - 1];
+                    const airDate = lastSeason && lastSeason.air_date;
+                    document.getElementById('modalYear').textContent = airDate 
+                        ? `年份: ${new Date(airDate).getFullYear()}` 
+                        : '年份: 未知';
+                }
+    
+                document.getElementById('modalOverview').textContent = movieDetails.overview || '暂无简介';
+    
+                // 设置订阅按钮的点击事件
+                const subscribeButton = document.getElementById('subscribeButton');
+    
+                // 检查订阅状态
+                const subscriptionData = {
+                    title: movieDetails.title || movieDetails.name || '无标题',
+                    year: mediaType === 'movie' 
+                        ? (movieDetails.release_date ? new Date(movieDetails.release_date).getFullYear() : '未知') 
+                        : (movieDetails.first_air_date ? new Date(movieDetails.first_air_date).getFullYear() : '未知'),
+                    season: mediaType === 'tv' ? movieDetails.number_of_seasons || '未知' : undefined,
+                };
+    
+                fetch('/check_subscriptions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(subscriptionData),
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.subscribed) {
+                        // 如果已订阅，设置按钮为已订阅状态
+                        subscribeButton.style.color = '#198754';
+                        subscribeButton.textContent = '已订阅';
+                        subscribeButton.disabled = true; // 禁用按钮
+                    } else {
+                        // 如果未订阅，设置按钮为可订阅状态
+                        subscribeButton.style.color = '#495057';
+                        subscribeButton.textContent = '订阅';
+                        subscribeButton.disabled = false;
+    
+                        // 设置订阅按钮的点击事件
+                        subscribeButton.onclick = () => {
+                            fetch('/tmdb_subscriptions', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify(subscriptionData),
+                            })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.success) {
+                                    // 显示成功消息
+                                    showToast(data.message, true);
+    
+                                    // 修改按钮样式和文字
+                                    subscribeButton.style.color = '#198754';
+                                    subscribeButton.textContent = '已订阅';
+                                    subscribeButton.disabled = true; // 禁用按钮
+                                } else {
+                                    // 显示失败消息
+                                    showToast(data.message, false);
+                                }
+                            })
+                            .catch(error => {
+                                console.error('订阅请求出错:', error);
+                                showToast('订阅失败，请稍后重试。', false);
+                            });
+                        };
+                    }
+                })
+                .catch(error => {
+                    console.error('检查订阅状态时出错:', error);
+                });
+    
+                // 显示模态框
+                const modal = new bootstrap.Modal(document.getElementById('mediaDetailsModal'));
+                modal.show();
+            }
+        }).catch(error => {
+            console.error('获取影片详细信息时出错:', error);
+        });
+    }
+
+    // 关闭模态框时清空内容
+    document.getElementById('mediaDetailsModal').addEventListener('hidden.bs.modal', () => {
+        document.getElementById('modalPoster').src = '';
+        document.getElementById('modalTitle').textContent = '';
+        document.getElementById('modalRating').textContent = '';
+        document.getElementById('modalSeasons').textContent = '';
+        document.getElementById('modalEpisodeCount').textContent = '';
+        document.getElementById('modalYear').textContent = '';
+        document.getElementById('modalOverview').textContent = '';
+        document.getElementById('modalSeasons').style.display = 'none';
+        document.getElementById('modalEpisodeCount').style.display = 'none';
+    });
+</script>
+{% endblock %}

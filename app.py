@@ -44,7 +44,7 @@ if not logger.handlers:
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
 # 定义版本号
-APP_VERSION = '2.0.5'
+APP_VERSION = '2.1.0'
 downloader = MediaDownloader()
 app.secret_key = 'mediamaster'  # 设置一个密钥，用于会话管理
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)  # 设置会话有效期为24小时
@@ -120,7 +120,7 @@ def login():
             session['_permanent'] = True
             session.modified = True
             logger.info(f"用户 {username} 登录成功")
-            return jsonify(success=True, message='登录成功。', redirect_url=url_for('index'))
+            return jsonify(success=True, message='登录成功。', redirect_url=url_for('dashboard'))
 
         logger.warning(f"用户 {username} 登录失败: {error}")
         return jsonify(success=False, message=error)
@@ -227,7 +227,7 @@ def change_password():
             db.execute('UPDATE USERS SET PASSWORD = ? WHERE ID = ?', (new_hashed_password, user_id))
             db.commit()
             logger.info(f"用户 {nickname} 密码修改成功")
-            return jsonify(success=True, message='您的密码已成功更新。', redirect_url=url_for('index'))
+            return jsonify(success=True, message='您的密码已成功更新。', redirect_url=url_for('dashboard'))
 
         logger.warning(f"用户 {nickname} 密码修改失败: 旧密码错误")
         return jsonify(success=False, message='旧密码错误。', redirect_url=url_for('change_password'))
@@ -241,7 +241,138 @@ def handle_500(error):
 
 @app.route('/')
 @login_required
-def index():
+def dashboard():
+    db = get_db()
+    
+    # 获取电影数量
+    total_movies = db.execute('SELECT COUNT(*) FROM LIB_MOVIES').fetchone()[0]
+    
+    # 获取电视剧数量
+    total_tvs = db.execute('SELECT COUNT(DISTINCT id) FROM LIB_TVS').fetchone()[0]
+    
+    # 获取剧集数量
+    total_episodes = db.execute('SELECT SUM(LENGTH(episodes) - LENGTH(REPLACE(episodes, \',\', \'\')) + 1) FROM LIB_TV_SEASONS').fetchone()[0] or 0
+     
+    # 从会话中获取用户昵称和头像
+    nickname = session.get('nickname')
+    avatar_url = session.get('avatar_url')
+    
+    return render_template('dashboard.html', 
+                           total_movies=total_movies, 
+                           total_tvs=total_tvs, 
+                           total_episodes=total_episodes, 
+                           nickname=nickname, 
+                           avatar_url=avatar_url, 
+                           version=APP_VERSION)
+
+@app.route('/api/system_resources', methods=['GET'])
+@login_required
+def system_resources():
+    # 获取存储空间信息
+    disk_usage = psutil.disk_usage('/Media')
+    disk_total_gb = disk_usage.total / (1024 ** 3)  # 总容量，单位为GB
+    disk_used_gb = disk_usage.used / (1024 ** 3)    # 已用容量，单位为GB
+    disk_usage_percent = disk_usage.percent         # 使用百分比
+
+    # 获取 CPU 利用率
+    cpu_usage_percent = psutil.cpu_percent(interval=1)
+
+    # 获取 CPU 数量和核心数
+    cpu_count_logical = psutil.cpu_count(logical=True)  # 逻辑 CPU 数量
+    cpu_count_physical = psutil.cpu_count(logical=False)  # 物理 CPU 核心数
+
+    # 获取内存信息
+    memory = psutil.virtual_memory()
+    memory_total_gb = memory.total / (1024 ** 3)  # 内存总量，单位为GB
+    memory_used_gb = memory.used / (1024 ** 3)    # 已用内存，单位为GB
+    memory_usage_percent = memory.percent         # 内存使用百分比
+
+    # 获取下载器客户端
+    try:
+        client = get_downloader_client()
+        if isinstance(client, TransmissionClient):
+            torrents = client.get_torrents()
+            net_io_recv_per_sec = sum(t.rate_download for t in torrents) / 1024  # 转换为 KB/s
+            net_io_sent_per_sec = sum(t.rate_upload for t in torrents) / 1024    # 转换为 KB/s
+        elif isinstance(client, QbittorrentClient):
+            torrents = client.torrents_info()
+            net_io_recv_per_sec = sum(t.dlspeed for t in torrents) / 1024  # 转换为 KB/s
+            net_io_sent_per_sec = sum(t.upspeed for t in torrents) / 1024    # 转换为 KB/s
+        else:
+            net_io_sent_per_sec = 0
+            net_io_recv_per_sec = 0
+    except Exception as e:
+        logger.error(f"获取下载器信息失败: {e}")
+        net_io_sent_per_sec = 0
+        net_io_recv_per_sec = 0
+
+    # 返回系统资源数据
+    return jsonify({
+        "disk_total_gb": round(disk_total_gb, 2),         # 存储空间总量（GB）
+        "disk_used_gb": round(disk_used_gb, 2),           # 存储空间已用容量（GB）
+        "disk_usage_percent": disk_usage_percent,         # 存储空间使用百分比
+        "net_io_sent": round(net_io_sent_per_sec, 2),   # 网络上传速率（KB/s）
+        "net_io_recv": round(net_io_recv_per_sec, 2),   # 网络下载速率（KB/s）
+        "cpu_usage_percent": cpu_usage_percent,           # CPU 利用率
+        "cpu_count_logical": cpu_count_logical,           # 逻辑 CPU 数量
+        "cpu_count_physical": cpu_count_physical,         # 物理 CPU 核心数
+        "memory_total_gb": round(memory_total_gb, 2),     # 内存总量（GB）
+        "memory_used_gb": round(memory_used_gb, 2),       # 已用内存（GB）
+        "memory_usage_percent": memory_usage_percent      # 内存使用百分比
+    })
+
+@app.route('/api/system_processes', methods=['GET'])
+@login_required
+def system_processes():
+    processes = []
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'cpu_percent', 'memory_percent', 'create_time']):
+        try:
+            # 计算运行时长
+            uptime = time.time() - proc.info['create_time']
+            # 将运行时长格式化为小时、分钟、秒
+            uptime_formatted = time.strftime('%H:%M:%S', time.gmtime(uptime))
+            
+            # 获取命令行参数
+            cmdline = proc.info['cmdline']
+            
+            # 初始化文件名为 None
+            file_name = None
+            
+            # 如果进程名为 'python' 或 'python3'，则尝试获取文件名
+            if proc.info['name'] in ['python', 'python3'] and len(cmdline) > 1:
+                file_name = os.path.basename(cmdline[1])
+            
+            # 添加进程信息到列表
+            processes.append({
+                "pid": proc.info['pid'],
+                "name": proc.info['name'],
+                "file_name": file_name,
+                "cpu_percent": proc.info['cpu_percent'],
+                "memory_percent": proc.info['memory_percent'],
+                "uptime": uptime_formatted
+            })
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            # 忽略不存在的进程、访问被拒绝的进程和僵尸进程
+            continue
+
+    return jsonify({
+        "processes": processes
+    })
+
+@app.route('/recommendations')
+@login_required
+def recommendations():
+    nickname = session.get('nickname')
+    avatar_url = session.get('avatar_url')
+    db = get_db()
+    # 从数据库中读取 tmdb_api_key
+    tmdb_api_key = db.execute('SELECT VALUE FROM CONFIG WHERE OPTION = ?', ('tmdb_api_key',)).fetchone()
+    tmdb_api_key = tmdb_api_key['VALUE'] if tmdb_api_key else None
+    return render_template('recommendations.html', nickname=nickname, avatar_url=avatar_url, tmdb_api_key=tmdb_api_key, version=APP_VERSION)
+
+@app.route('/library')
+@login_required
+def library():
     try:
         db = get_db()
         page = int(request.args.get('page', 1))
@@ -306,7 +437,7 @@ def index():
         nickname = session.get('nickname')
         avatar_url = session.get('avatar_url')
 
-        return render_template('index.html', 
+        return render_template('library.html', 
                                movies=movies, 
                                tv_data=tv_data, 
                                page=page, 
@@ -343,6 +474,97 @@ def douban_subscriptions():
     nickname = session.get('nickname')
     avatar_url = session.get('avatar_url')
     return render_template('douban_subscriptions.html', rss_movies=rss_movies, rss_tvs=rss_tvs, nickname=nickname, avatar_url=avatar_url, version=APP_VERSION)
+
+@app.route('/tmdb_subscriptions', methods=['POST'])
+@login_required
+def tmdb_subscriptions():
+    try:
+        # 获取请求数据
+        data = request.json
+        title = data.get('title')
+        year = data.get('year')
+        season = data.get('season')  # 如果是电视剧，获取季编号
+        episodes = data.get('episodes')  # 如果是电视剧，获取总集数
+
+        # 检查必要字段
+        if not title or not year:
+            return jsonify({"success": False, "message": "缺少必要的订阅信息"}), 400
+
+        db = get_db()
+
+        if season and episodes:  # 如果包含季编号和集数，则为电视剧订阅
+            # 生成缺失的集数字符串，例如 "1,2,3,...,episodes"
+            missing_episodes = ','.join(map(str, range(1, episodes + 1)))
+
+            # 检查是否已存在相同的订阅
+            existing_tv = db.execute(
+                'SELECT * FROM MISS_TVS WHERE title = ? AND year = ? AND season = ?',
+                (title, year, season)
+            ).fetchone()
+
+            if existing_tv:
+                return jsonify({"success": False, "message": "该电视剧订阅已存在"}), 400
+
+            # 插入电视剧订阅
+            db.execute(
+                'INSERT INTO MISS_TVS (title, year, season, missing_episodes) VALUES (?, ?, ?, ?)',
+                (title, year, season, missing_episodes)
+            )
+            db.commit()
+            return jsonify({"success": True, "message": "电视剧订阅成功"})
+
+        else:  # 否则为电影订阅
+            # 检查是否已存在相同的订阅
+            existing_movie = db.execute(
+                'SELECT * FROM MISS_MOVIES WHERE title = ? AND year = ?',
+                (title, year)
+            ).fetchone()
+
+            if existing_movie:
+                return jsonify({"success": False, "message": "该电影订阅已存在"}), 400
+
+            # 插入电影订阅
+            db.execute(
+                'INSERT INTO MISS_MOVIES (title, year) VALUES (?, ?)',
+                (title, year)
+            )
+            db.commit()
+            return jsonify({"success": True, "message": "电影订阅成功"})
+
+    except Exception as e:
+        logger.error(f"订阅处理失败: {e}")
+        return jsonify({"success": False, "message": "订阅失败，请稍后再试"}), 500
+
+@app.route('/check_subscriptions', methods=['POST'])
+@login_required
+def check_subscriptions():
+    try:
+        data = request.json
+        title = data.get('title')
+        year = data.get('year')
+        season = data.get('season')  # 如果是电视剧，获取季编号
+
+        db = get_db()
+
+        if season:  # 检查电视剧订阅
+            existing_tv = db.execute(
+                'SELECT * FROM MISS_TVS WHERE title = ? AND year = ? AND season = ?',
+                (title, year, season)
+            ).fetchone()
+            if existing_tv:
+                return jsonify({"subscribed": True})
+        else:  # 检查电影订阅
+            existing_movie = db.execute(
+                'SELECT * FROM MISS_MOVIES WHERE title = ? AND year = ?',
+                (title, year)
+            ).fetchone()
+            if existing_movie:
+                return jsonify({"subscribed": True})
+
+        return jsonify({"subscribed": False})
+    except Exception as e:
+        logger.error(f"检查订阅状态失败: {e}")
+        return jsonify({"subscribed": False, "error": "检查失败"}), 500
 
 @app.route('/search', methods=['GET'])
 @login_required
