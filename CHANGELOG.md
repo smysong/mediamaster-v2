@@ -2,6 +2,15 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.1.1] - 2025-04-27
+
+### 优化
+- 优化版本号读取逻辑，版本号不再直接写在程序代码中，通过读取版本文件获取版本号。
+- 优化版本统计报告，程序启动后将随机生成一个UUID，并向服务器报告当前程序的UUID和当前版本号（仅用于统计使用情况，程序不会收集任何用户个人数据）。
+
+### 修复
+- 修复系统仪表CPU、内存、存储使用情况显示，超80%以上使用率时仪表颜色变为橙色，超90%以上使用率时仪表颜色变为红色，提升用户体验。
+
 ## [2.1.0] - 2025-04-24
 
 ### 优化
@@ -68,3 +77,4 @@
 [2.0.4]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.0.4
 [2.0.5]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.0.5
 [2.1.0]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.1.0
+[2.1.1]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.1.1

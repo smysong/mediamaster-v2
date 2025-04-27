@@ -128,7 +128,7 @@
 .gauge-container .gauge-text {
     font-size: clamp(8px, 1vw, 12px); /* 仪表字体大小 */
     font-weight: bold;
-    fill: #007bff;
+    fill: #6c757db0;
     position: absolute;
     top: 50%;
     left: 50%;
@@ -627,6 +627,15 @@ $(document).ready(function() {
             if (foreground) {
                 var dashoffset = 251.32741228718345 - (value / 100 * 251.32741228718345);
                 foreground.style.strokeDashoffset = dashoffset;
+    
+                // 根据值动态设置颜色
+                if (value >= 90) {
+                    foreground.style.stroke = '#dc3545'; // 红色
+                } else if (value >= 80) {
+                    foreground.style.stroke = '#ff7507'; // 橙色
+                } else {
+                    foreground.style.stroke = '#007bff'; // 蓝色（默认）
+                }
             } else {
                 console.error('未找到仪表的前景元素:', id);
             }

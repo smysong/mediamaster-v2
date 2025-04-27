@@ -44,7 +44,18 @@ if not logger.handlers:
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
 # 定义版本号
-APP_VERSION = '2.1.0'
+def get_app_version():
+    """
+    从 versions 文件中读取版本号
+    """
+    try:
+        with open("versions", "r") as file:
+            return file.read().strip()
+    except FileNotFoundError:
+        logger.warning("versions 文件未找到，使用默认版本号")
+        return "unknown"
+
+APP_VERSION = get_app_version()
 downloader = MediaDownloader()
 app.secret_key = 'mediamaster'  # 设置一个密钥，用于会话管理
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)  # 设置会话有效期为24小时

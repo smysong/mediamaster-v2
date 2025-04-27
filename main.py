@@ -80,6 +80,15 @@ def start_check_db_dir():
         logging.error(f"无法启动数据库和目录检查服务: {e}")
         sys.exit(0)
 
+def report_versions():
+    try:
+        process = subprocess.Popen(['python', 'report_versions.py'])
+        logging.info("启动版本检测及统计服务")
+        return process.pid
+    except Exception as e:
+        logging.error(f"无法启动版本检测及统计服务: {e}")
+        sys.exit(0)
+
 # 全局变量，用于控制主循环
 running = True
 app_pid = None
@@ -194,8 +203,8 @@ def main():
         time.sleep(run_interval_seconds)
 
 if __name__ == "__main__":
-    # 启动 check_db_dir.py
     start_check_db_dir()
+    report_versions()
     logging.info("等待初始化检查...")
     time.sleep(5)
     main()
