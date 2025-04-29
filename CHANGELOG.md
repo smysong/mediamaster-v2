@@ -2,6 +2,12 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.1.2] - 2025-04-29
+
+### 优化
+- 在线升级时，加载指示器遮罩层被升级窗口遮挡的问题。
+- 使用qbittorrent下载器时，任务暂停状态显示为未知的问题。
+
 ## [2.1.1] - 2025-04-27
 
 ### 优化
@@ -78,3 +84,4 @@
 [2.0.5]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.0.5
 [2.1.0]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.1.0
 [2.1.1]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.1.1
+[2.1.2]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.1.2
