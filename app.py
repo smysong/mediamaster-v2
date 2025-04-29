@@ -1205,6 +1205,34 @@ def compare_versions(current, latest):
     latest_parts = list(map(int, latest.split('.')))
     return latest_parts > current_parts
 
+def get_fastest_proxy(original_url):
+    """
+    测试所有代理站点的响应时间，返回最快的代理地址
+    """
+    proxy_sites = [
+        "https://gitproxy.click/",
+        "https://github-proxy.lixxing.top/",
+        "https://jiashu.1win.eu.org/",
+        "https://gh.llkk.cc/"
+    ]
+    response_times = {}
+
+    for proxy in proxy_sites:
+        proxy_url = proxy + original_url
+        try:
+            start_time = time.time()
+            response = requests.head(proxy_url, timeout=5)  # 使用 HEAD 请求测试响应时间
+            response_times[proxy_url] = time.time() - start_time
+            if response.status_code != 200:
+                response_times[proxy_url] = float('inf')  # 如果响应状态码不是 200，视为不可用
+        except requests.RequestException:
+            response_times[proxy_url] = float('inf')  # 如果请求失败，视为不可用
+
+    # 找到响应时间最短的代理地址
+    fastest_proxy = min(response_times, key=response_times.get)
+    logger.info(f"最快的代理地址是: {fastest_proxy}，响应时间: {response_times[fastest_proxy]:.2f} 秒")
+    return fastest_proxy
+
 @app.route('/perform_update', methods=['POST'])
 @login_required
 def perform_update():
@@ -1220,7 +1248,8 @@ def perform_update():
         logger.info("开始执行更新操作...")
 
         # 步骤1: 设置 Git 代理加速地址
-        proxy_url = "https://gh-proxy.com/github.com/smysong/mediamaster-v2.git"
+        original_url = "https://github.com/smysong/mediamaster-v2.git"
+        proxy_url = get_fastest_proxy(original_url)
         logger.info(f"正在设置 Git 远程仓库代理地址: {proxy_url}")
         subprocess.run(
             ['git', 'remote', 'set-url', 'origin', proxy_url],
