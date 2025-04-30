@@ -664,11 +664,6 @@ def service_control():
     avatar_url = session.get('avatar_url')
     return render_template('service_control.html', nickname=nickname, avatar_url=avatar_url, version=APP_VERSION)
 
-def run_script_and_cleanup(process, log_file_path):
-    process.wait()  # 等待子进程完成
-    if os.path.exists(log_file_path):
-        os.remove(log_file_path)  # 删除日志文件
-
 @app.route('/run_service', methods=['POST'])
 @login_required
 def run_service():
@@ -677,11 +672,11 @@ def run_service():
     try:
         logger.info(f"尝试启动服务: {service}")
         log_file_path = f'/tmp/log/{service}.log'
+        os.makedirs(os.path.dirname(log_file_path), exist_ok=True)  # 确保日志目录存在
         with open(log_file_path, 'w', encoding='utf-8') as log_file:
             process = subprocess.Popen(['python3', f'/app/{service}.py'], stdout=log_file, stderr=log_file)
             pid = process.pid
             running_services[service] = pid
-            threading.Thread(target=run_script_and_cleanup, args=(process, log_file_path)).start()
         logger.info(f"服务 {service} 启动成功，PID: {pid}")
         return jsonify({"message": "服务运行成功！", "pid": pid}), 200
     except Exception as e:

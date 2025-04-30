@@ -31,12 +31,15 @@ def load_config(db_path):
 
 def subscribe_movies(cursor):
     """订阅电影"""
-    cursor.execute('SELECT title, year FROM RSS_MOVIES')
+    cursor.execute('SELECT title, year, douban_id FROM RSS_MOVIES')
     rss_movies = cursor.fetchall()
 
-    for title, year in rss_movies:
+    for title, year, douban_id in rss_movies:
         if not cursor.execute('SELECT 1 FROM LIB_MOVIES WHERE title = ? AND year = ?', (title, year)).fetchone():
-            cursor.execute('INSERT OR IGNORE INTO MISS_MOVIES (title, year) VALUES (?, ?)', (title, year))
+            cursor.execute(
+                'INSERT OR IGNORE INTO MISS_MOVIES (title, year, douban_id) VALUES (?, ?, ?)',
+                (title, year, douban_id)
+            )
             if cursor.rowcount > 0:
                 logging.info(f"影片：{title}（{year}) 已添加订阅！")
                 send_notification(f"影片：{title}（{year}) 已添加订阅！")
@@ -47,10 +50,10 @@ def subscribe_movies(cursor):
 
 def subscribe_tvs(cursor):
     """订阅电视剧"""
-    cursor.execute('SELECT title, season, episode, year FROM RSS_TVS')
+    cursor.execute('SELECT title, season, episode, year, douban_id FROM RSS_TVS')
     rss_tvs = cursor.fetchall()
 
-    for title, season, total_episodes, year in rss_tvs:
+    for title, season, total_episodes, year, douban_id in rss_tvs:
         if total_episodes is None:
             logging.warning(f"电视剧：{title} 第{season}季 缺少总集数信息，跳过处理！")
             continue
@@ -60,13 +63,19 @@ def subscribe_tvs(cursor):
             missing_episodes_str = ','.join(map(str, range(1, total_episodes + 1)))
             # 检查是否已经存在于 MISS_TVS 表中
             if not cursor.execute('SELECT 1 FROM MISS_TVS WHERE title = ? AND year = ? AND season = ?', (title, year, season)).fetchone():
-                cursor.execute('INSERT INTO MISS_TVS (title, year, season, missing_episodes) VALUES (?, ?, ?, ?)', (title, year, season, missing_episodes_str))
+                cursor.execute(
+                    'INSERT INTO MISS_TVS (title, year, season, missing_episodes, douban_id) VALUES (?, ?, ?, ?, ?)',
+                    (title, year, season, missing_episodes_str, douban_id)
+                )
                 logging.info(f"电视剧：{title} 第{season}季 已添加订阅！")
                 send_notification(f"电视剧：{title} 第{season}季 已添加订阅！")
             else:
                 logging.warning(f"电视剧：{title} 第{season}季 已存在于订阅列表中，跳过插入。")
         else:
-            existing_episodes_str = cursor.execute('''SELECT episodes FROM LIB_TV_SEASONS WHERE tv_id = (SELECT id FROM LIB_TVS WHERE title = ? AND year = ?) AND season = ?''', (title, year, season)).fetchone()
+            existing_episodes_str = cursor.execute(
+                '''SELECT episodes FROM LIB_TV_SEASONS WHERE tv_id = (SELECT id FROM LIB_TVS WHERE title = ? AND year = ?) AND season = ?''',
+                (title, year, season)
+            ).fetchone()
 
             if existing_episodes_str:
                 existing_episodes = set(map(int, existing_episodes_str[0].split(',')))
