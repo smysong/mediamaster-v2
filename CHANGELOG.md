@@ -97,3 +97,4 @@
 [2.1.0]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.1.0
 [2.1.1]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.1.1
 [2.1.2]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.1.2
+[2.1.3]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.1.3
