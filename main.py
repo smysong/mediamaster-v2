@@ -154,15 +154,15 @@ def main():
         logging.info("-" * 80)
         time.sleep(10)
 
-        run_script('tvshow_downloader.py')
+        run_script('indexer.py')
         logging.info("-" * 80)
-        logging.info("电视剧检索下载，已执行完毕，等待10秒...")
+        logging.info("建立订阅资源索引，已执行完毕，等待10秒...")
         logging.info("-" * 80)
         time.sleep(10)
 
-        run_script('movie_downloader.py')
+        run_script('downloader.py')
         logging.info("-" * 80)
-        logging.info("电影检索下载，已执行完毕，等待10秒...")
+        logging.info("下载订阅媒体资源，已执行完毕，等待10秒...")
         logging.info("-" * 80)
         time.sleep(10)
 

@@ -8,7 +8,6 @@ import psutil
 from flask import Flask, g, render_template, request, redirect, url_for, jsonify, session, flash, session, Response
 from functools import wraps
 from werkzeug.exceptions import InternalServerError
-from manual_search import MediaDownloader  # 导入 MediaDownloader 类
 from datetime import timedelta
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
@@ -18,6 +17,8 @@ from qbittorrentapi import Client as QbittorrentClient
 import os
 import time
 import logging
+import json
+import glob
 
 # 配置日志
 # 创建独立的 logger 实例
@@ -56,7 +57,6 @@ def get_app_version():
         return "unknown"
 
 APP_VERSION = get_app_version()
-downloader = MediaDownloader()
 app.secret_key = 'mediamaster'  # 设置一个密钥，用于会话管理
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)  # 设置会话有效期为24小时
 app.config['SESSION_COOKIE_NAME'] = 'mediamaster'  # 设置会话 cookie 名称为 mediamaster
@@ -349,8 +349,8 @@ def system_processes():
             # 初始化文件名为 None
             file_name = None
             
-            # 如果进程名为 'python' 或 'python3'，则尝试获取文件名
-            if proc.info['name'] in ['python', 'python3'] and len(cmdline) > 1:
+            # 如果进程名为 'python' 或 'python3'，且 cmdline 不为 None，则尝试获取文件名
+            if proc.info['name'] in ['python', 'python3'] and cmdline and len(cmdline) > 1:
                 file_name = os.path.basename(cmdline[1])
             
             # 添加进程信息到列表
@@ -557,22 +557,43 @@ def check_subscriptions():
 
         db = get_db()
 
+        # 检查是否已订阅
         if season:  # 检查电视剧订阅
             existing_tv = db.execute(
                 'SELECT * FROM MISS_TVS WHERE title = ? AND year = ? AND season = ?',
                 (title, year, season)
             ).fetchone()
             if existing_tv:
-                return jsonify({"subscribed": True})
+                return jsonify({"subscribed": True, "status": "subscribed"})
+
+            # 检查是否已入库
+            existing_tv_in_library = db.execute(
+                '''
+                SELECT t1.id FROM LIB_TVS AS t1
+                JOIN LIB_TV_SEASONS AS t2 ON t1.id = t2.tv_id
+                WHERE t1.title = ? AND t1.year = ? AND t2.season = ?
+                ''',
+                (title, year, season)
+            ).fetchone()
+            if existing_tv_in_library:
+                return jsonify({"subscribed": True, "status": "in_library"})
         else:  # 检查电影订阅
             existing_movie = db.execute(
                 'SELECT * FROM MISS_MOVIES WHERE title = ? AND year = ?',
                 (title, year)
             ).fetchone()
             if existing_movie:
-                return jsonify({"subscribed": True})
+                return jsonify({"subscribed": True, "status": "subscribed"})
 
-        return jsonify({"subscribed": False})
+            # 检查是否已入库
+            existing_movie_in_library = db.execute(
+                'SELECT id FROM LIB_MOVIES WHERE title = ? AND year = ?',
+                (title, year)
+            ).fetchone()
+            if existing_movie_in_library:
+                return jsonify({"subscribed": True, "status": "in_library"})
+
+        return jsonify({"subscribed": False, "status": "not_found"})
     except Exception as e:
         logger.error(f"检查订阅状态失败: {e}")
         return jsonify({"subscribed": False, "error": "检查失败"}), 500
@@ -735,97 +756,160 @@ def manual_search():
     logger.info(f"用户 {nickname} 访问手动搜索页面")
     return render_template('manual_search.html', nickname=nickname, avatar_url=avatar_url, version=APP_VERSION)
 
-@app.route('/api/search_movie', methods=['POST'])
+def search_media(media_type, title, year):
+    """
+    统一资源搜索方法，根据媒体类型和标题调用不同的脚本进行搜索。
+    搜索结果将按照站点分类保存到 /tmp/index/ 目录中。
+    """
+    search_scripts = [
+        {
+            "script": "python movie_bthd.py --manual --title \"{title}\" --year {year}",
+            "type": "movie",
+            "site": "BTHD"
+        },
+        {
+            "script": "python tvshow_hdtv.py --manual --title \"{title}\" --year {year}",
+            "type": "tv",
+            "site": "HDTV"
+        },
+        {
+            "script": "python movie_tvshow_bt0.py --manual --type {type} --title \"{title}\" --year {year}",
+            "type": "both",
+            "site": "BT0"
+        },
+        {
+            "script": "python movie_tvshow_gy.py --manual --type {type} --title \"{title}\" --year {year}",
+            "type": "both",
+            "site": "GY"
+        }
+    ]
+
+    results_dir = "/tmp/index/"
+    os.makedirs(results_dir, exist_ok=True)
+
+    all_results = {}
+
+    for script_info in search_scripts:
+        if script_info["type"] == "both" or script_info["type"] == media_type:
+            script_command = script_info["script"].format(
+                type=media_type,
+                title=title,
+                year=year
+            )
+            try:
+                # 执行搜索脚本
+                subprocess.run(script_command, shell=True, check=True)
+                logger.info(f"成功执行脚本: {script_command}")
+            except subprocess.CalledProcessError as e:
+                logger.error(f"执行脚本失败: {script_command}, 错误: {e}")
+                continue
+
+            # 使用通配符匹配结果文件
+            result_pattern = os.path.join(results_dir, f"{title}*{script_info['site']}*.json")
+            result_files = glob.glob(result_pattern)
+
+            if not result_files:
+                logger.warning(f"未找到匹配的结果文件: {result_pattern}")
+                continue
+
+            for result_file in result_files:
+                try:
+                    with open(result_file, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        logger.info(f"成功读取搜索结果: {result_file}")
+
+                        # 按站点分类结果
+                        site = script_info["site"]
+                        if site not in all_results:
+                            all_results[site] = []
+
+                        # 提取需要的字段
+                        for resolution_key in ["首选分辨率", "备选分辨率", "其他分辨率"]:
+                            if resolution_key in data:
+                                if media_type == "tv":
+                                    # 针对 电视节目 数据
+                                    for category_key in ["单集", "集数范围", "全集"]:
+                                        if category_key in data[resolution_key]:
+                                            for item in data[resolution_key][category_key]:
+                                                all_results[site].append({
+                                                    "title": item.get("title"),
+                                                    "link": item.get("link"),
+                                                    "resolution": item.get("resolution")
+                                                })
+                                else:
+                                    # 针对 电影 数据
+                                    for item in data[resolution_key]:
+                                        all_results[site].append({
+                                            "title": item.get("title"),
+                                            "link": item.get("link"),
+                                            "resolution": item.get("resolution")
+                                        })
+                except Exception as e:
+                    logger.error(f"读取搜索结果失败: {result_file}, 错误: {e}")
+
+    return all_results
+
+@app.route('/api/search_media', methods=['POST'])
 @login_required
-def api_search_movie():
+def api_search_media():
+    """
+    统一资源搜索接口，支持电影和电视剧的搜索。
+    """
     data = request.json
-    keyword = data.get('keyword')
+    media_type = data.get('type')  # 'movie' 或 'tv'
+    title = data.get('title')
     year = data.get('year')
     nickname = session.get('nickname')
 
-    if not keyword:
-        logger.warning(f"用户 {nickname} 搜索电影失败: 缺少关键词")
-        return jsonify({'error': '缺少关键词'}), 400
-
-    logger.info(f"用户 {nickname} 搜索电影: 关键词={keyword}, 年份={year}")
-    try:
-        results = downloader.search_movie(keyword, year)
-        logger.info(f"用户 {nickname} 搜索电影成功: 返回结果数量={len(results)}")
-        return jsonify(results)
-    except Exception as e:
-        logger.error(f"用户 {nickname} 搜索电影失败: {e}")
-        return jsonify({'error': '搜索失败，请稍后再试。'}), 500
-
-@app.route('/api/search_tv_show', methods=['POST'])
-@login_required
-def api_search_tv_show():
-    data = request.json
-    keyword = data.get('keyword')
-    year = data.get('year')
-    nickname = session.get('nickname')
-
-    if not keyword:
-        logger.warning(f"用户 {nickname} 搜索电视剧失败: 缺少关键词")
-        return jsonify({'error': '缺少关键词'}), 400
-
-    logger.info(f"用户 {nickname} 搜索电视剧: 关键词={keyword}, 年份={year}")
-    try:
-        results = downloader.search_tv_show(keyword, year)
-        logger.info(f"用户 {nickname} 搜索电视剧成功: 返回结果数量={len(results)}")
-        return jsonify(results)
-    except Exception as e:
-        logger.error(f"用户 {nickname} 搜索电视剧失败: {e}")
-        return jsonify({'error': '搜索失败，请稍后再试。'}), 500
-
-@app.route('/api/download_movie', methods=['GET'])
-@login_required
-def api_download_movie():
-    link = request.args.get('link')
-    title = request.args.get('title')
-    year = request.args.get('year')
-    nickname = session.get('nickname')
-
-    if not link or not title or not year:
-        logger.warning(f"用户 {nickname} 下载电影失败: 缺少参数")
+    if not media_type or not title or not year:
+        logger.warning(f"用户 {nickname} 搜索资源失败: 缺少参数")
         return jsonify({'error': '缺少参数'}), 400
 
-    logger.info(f"用户 {nickname} 尝试下载电影: 标题={title}, 年份={year}, 链接={link}")
+    logger.info(f"用户 {nickname} 搜索资源: 类型={media_type}, 标题={title}, 年份={year}")
     try:
-        success = downloader.download_movie(link, title, year)
-        if success:
-            logger.info(f"用户 {nickname} 下载电影成功: 标题={title}, 年份={year}")
-            return jsonify({'success': True})
-        else:
-            logger.warning(f"用户 {nickname} 下载电影失败: 标题={title}, 年份={year}")
-            return jsonify({'success': False}), 400
+        search_results = search_media(media_type, title, year)
+        logger.info(f"用户 {nickname} 搜索资源成功: 类型={media_type}, 标题={title}, 年份={year}")
+        return jsonify({'success': True, 'results': search_results})
     except Exception as e:
-        logger.error(f"用户 {nickname} 下载电影失败: {e}")
-        return jsonify({'error': '下载失败，请稍后再试。'}), 500
+        logger.error(f"用户 {nickname} 搜索资源失败: {e}")
+        return jsonify({'error': '搜索失败，请稍后再试。'}), 500
 
-@app.route('/api/download_tv_show', methods=['GET'])
+@app.route('/api/download_resource', methods=['POST'])
 @login_required
-def api_download_tv_show():
-    link = request.args.get('link')
-    title = request.args.get('title')
-    year = request.args.get('year')
-    nickname = session.get('nickname')
-
-    if not link or not title or not year:
-        logger.warning(f"用户 {nickname} 下载电视剧失败: 缺少参数")
-        return jsonify({'error': '缺少参数'}), 400
-
-    logger.info(f"用户 {nickname} 尝试下载电视剧: 标题={title}, 年份={year}, 链接={link}")
+def download_resource():
+    """
+    接收前端选择的资源数据，并调用 downloader.py 脚本进行下载。
+    """
     try:
-        success = downloader.download_tv_show(link, title, year)
-        if success:
-            logger.info(f"用户 {nickname} 下载电视剧成功: 标题={title}, 年份={year}")
-            return jsonify({'success': True})
-        else:
-            logger.warning(f"用户 {nickname} 下载电视剧失败: 标题={title}, 年份={year}")
-            return jsonify({'success': False}), 400
+        # 获取请求数据
+        data = request.json
+        site = data.get('site')  # 资源站点，例如 "BT0"
+        title = data.get('title')  # 资源标题
+        link = data.get('link')  # 资源下载链接
+
+        # 检查必要参数
+        if not site or not title or not link:
+            logger.warning("下载资源失败: 缺少必要参数")
+            return jsonify({"error": "缺少必要参数"}), 400
+
+        # 构建下载命令
+        command = f'python downloader.py --site {site} --title "{title}" --link "{link}"'
+
+        # 执行下载命令
+        logger.info(f"执行下载命令: {command}")
+        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+
+        # 检查命令执行结果
+        if result.returncode != 0:
+            logger.error(f"下载失败: {result.stderr}")
+            return jsonify({"error": f"下载失败: {result.stderr}"}), 500
+
+        logger.info(f"下载成功: {result.stdout}")
+        return jsonify({"message": "下载成功"}), 200
+
     except Exception as e:
-        logger.error(f"用户 {nickname} 下载电视剧失败: {e}")
-        return jsonify({'error': '下载失败，请稍后再试。'}), 500
+        logger.error(f"下载资源失败: {e}")
+        return jsonify({"error": "下载失败，请稍后再试"}), 500
 
 GROUP_MAPPING = {
     "定时任务": {
@@ -873,15 +957,19 @@ GROUP_MAPPING = {
         "download_host": {"type": "text", "label": "下载器地址"},
         "download_port": {"type": "text", "label": "下载器端口"}
     },
-    "资源站点设置": {
+    "私有资源站点设置": {
         "bt_login_username": {"type": "text", "label": "站点登录用户名"},
         "bt_login_password": {"type": "password", "label": "站点登录密码"},
-        "bt_movie_login_url": {"type": "text", "label": "电影站点登录地址"},
-        "bt_movie_search_url": {"type": "text", "label": "电影站点搜索地址"},
-        "bt_tv_login_url": {"type": "text", "label": "电视剧站点登录地址"},
         "bt_movie_base_url": {"type": "text", "label": "电影站点"},
-        "bt_tv_base_url": {"type": "text", "label": "电视剧站点"},
-        "bt_tv_search_url": {"type": "text", "label": "电视剧站点搜索地址"}
+        "bt_tv_base_url": {"type": "text", "label": "电视剧站点"}
+    },
+    "公开资源站点设置": {
+        "bt0_login_username": {"type": "text", "label": "不太灵影视登录用户名"},
+        "bt0_login_password": {"type": "password", "label": "不太灵影视登录密码"},
+        "gy_login_username": {"type": "text", "label": "观影登录用户名"},
+        "gy_login_password": {"type": "password", "label": "观影登录密码"},
+        "bt0_base_url": {"type": "text", "label": "不太灵影视站点"},
+        "gy_base_url": {"type": "text", "label": "观影站点"}
     }
 }
 @app.route('/settings')
@@ -909,9 +997,16 @@ def settings_page():
                     **group_items[option]  # 合并类型和标签信息
                 }
                 break
+
+    # 确保 "定时任务" 始终是最后一项
+    if "定时任务" in grouped_config_data:
+        timed_task = grouped_config_data.pop("定时任务")
+        grouped_config_data["定时任务"] = timed_task
+
     # 从会话中获取用户昵称和头像
     nickname = session.get('nickname')
     avatar_url = session.get('avatar_url')
+
     # 渲染模板并传递分组后的配置数据
     return render_template('settings.html', config=grouped_config_data, nickname=nickname, avatar_url=avatar_url, version=APP_VERSION)
 

@@ -234,8 +234,28 @@ def extract_info(filename, folder_name=None):
     else:
         return extract_movie_info(filename, folder_name)
 
-def move_or_copy_file(src, dst, action):
+def move_or_copy_file(src, dst, action, media_type):
     try:
+        # 检查目标文件夹中是否存在相同的文件
+        target_dir = os.path.dirname(dst)
+        target_filename = os.path.basename(dst)
+        if os.path.exists(target_dir):
+            for existing_file in os.listdir(target_dir):
+                if media_type == 'tv':
+                    # 检查是否为相同的剧集文件（SxxExx）
+                    if re.search(r'S\d{2}E\d{2}', existing_file) and re.search(r'S\d{2}E\d{2}', target_filename):
+                        if existing_file.split(' - ')[1] == target_filename.split(' - ')[1]:
+                            existing_file_path = os.path.join(target_dir, existing_file)
+                            os.remove(existing_file_path)
+                            logging.info(f"删除旧剧集文件: {existing_file_path}")
+                elif media_type == 'movie':
+                    # 检查是否为相同的电影文件（标题 + 年份）
+                    if existing_file.split(' - ')[0] == target_filename.split(' - ')[0]:
+                        existing_file_path = os.path.join(target_dir, existing_file)
+                        os.remove(existing_file_path)
+                        logging.info(f"删除旧电影文件: {existing_file_path}")
+
+        # 执行文件转移操作
         if action == 'move':
             shutil.move(src, dst)
             logging.info(f"文件已移动: {src} -> {dst}")
@@ -339,7 +359,7 @@ def process_file(file_path, processed_filenames):
                     logging.debug(f"文件已处理，跳过: {filename}")
                     return
 
-                move_or_copy_file(file_path, target_file_path, action)
+                move_or_copy_file(file_path, target_file_path, action, media_type)
                 processed_filenames.add(filename)
 
                 video_dir = os.path.dirname(file_path)
@@ -348,7 +368,7 @@ def process_file(file_path, processed_filenames):
                 if os.path.exists(nfo_file_path):
                     new_nfo_filename = f"{title} - S{season_number}E{episode_number.zfill(2)} - {episode_name}.nfo" if media_type == 'tv' else f"{title} - ({year}) {result['视频质量']}.nfo"
                     nfo_target_path = os.path.join(target_base_dir if media_type == 'movie' else season_dir, new_nfo_filename)
-                    move_or_copy_file(nfo_file_path, nfo_target_path, action)
+                    move_or_copy_file(file_path, target_file_path, action, media_type)
                     logging.info(f"转移NFO文件: {nfo_file_path} -> {nfo_target_path}")
 
                 send_notification(new_filename)

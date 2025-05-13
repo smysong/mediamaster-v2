@@ -5,6 +5,7 @@ import sys
 
 # 定义日志保存目录和处理记录保存目录
 log_dir = "/tmp/log"  # 日志保存目录
+indexer = "/tmp/index"  # 资源索引保存目录
 config_dir = "/config"  # 配置文件目录
 uploads_dir = "/app/static/uploads"  # 上传文件目录
 avatars_dir = "/config/avatars"  # 配置文件目录
@@ -77,6 +78,7 @@ def check_database():
 if __name__ == "__main__":
     # 确保必要的目录存在
     ensure_directory_exists(log_dir)
+    ensure_directory_exists(indexer)
     ensure_directory_exists(config_dir)
     ensure_directory_exists(uploads_dir)
     ensure_directory_exists(avatars_dir)

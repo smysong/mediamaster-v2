@@ -34,10 +34,12 @@ def initialize_database():
     if not os.path.exists(DB_PATH):
         logging.info("数据库文件不存在，正在创建...")
         create_tables()
+        ensure_all_configs_exist()  # 检查配置项完整性
         return CONFIG_DEFAULT
     else:
         logging.info("数据库文件已存在，正在检查表结构...")
         check_and_update_tables()
+        ensure_all_configs_exist()  # 检查配置项完整性
         return check_config_data()
 
 def create_tables():
@@ -198,11 +200,17 @@ def create_tables():
         ("download_port", "port"),
         ("bt_login_username", "username"),
         ("bt_login_password", "password"),
+        ("bt0_login_username", "username"),
+        ("bt0_login_password", "password"),
+        ("gy_login_username", "username"),
+        ("gy_login_password", "password"),
         ("preferred_resolution", "1080p"),
         ("fallback_resolution", "2160p"),
         ("resources_exclude_keywords", "120帧,60帧,高码版,杜比视界,hdr"),
         ("bt_movie_base_url", "https://100.tudoutudou.top"),
         ("bt_tv_base_url", "https://200.tudoutudou.top"),
+        ("bt0_base_url", "https://www.7bt0.com"),
+        ("gy_base_url", "https://www.gyg.si"),
         ("run_interval_hours", "6")
     ]
 
@@ -237,6 +245,65 @@ def check_and_update_tables():
 
     conn.close()
 
+def ensure_all_configs_exist():
+    """
+    检查是否每一个配置项都存在，如果有缺失的配置项，则插入默认值。
+    """
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    # 默认配置项
+    default_configs = [
+        ("notification", "False"),
+        ("notification_api_key", "your_api_key"),
+        ("dateadded", "False"),
+        ("nfo_exclude_dirs", "Season,Movie,Music,Unknown,backdrops,.actors,.deletedByTMM"),
+        ("nfo_excluded_filenames", "season.nfo,video1.nfo"),
+        ("nfo_excluded_subdir_keywords", "Season,Music,Unknown,backdrops,.actors,.deletedByTMM"),
+        ("media_dir", "/Media"),
+        ("movies_path", "/Media/Movie"),
+        ("episodes_path", "/Media/Episodes"),
+        ("download_dir", "/Downloads"),
+        ("download_action", "copy"),
+        ("download_excluded_filenames", "【更多"),
+        ("douban_api_key", "0ac44ae016490db2204ce0a042db2916"),
+        ("douban_cookie", "your_douban_cookie_here"),
+        ("douban_rss_url", "https://www.douban.com/feed/people/your_douban_id/interests"),
+        ("tmdb_base_url", "https://api.tmdb.org"),
+        ("tmdb_api_key", "your_api_key"),
+        ("download_mgmt", "False"),
+        ("download_type", "transmission"),
+        ("download_username", "username"),
+        ("download_password", "password"),
+        ("download_host", "download_ip"),
+        ("download_port", "port"),
+        ("bt_login_username", "username"),
+        ("bt_login_password", "password"),
+        ("bt0_login_username", "username"),
+        ("bt0_login_password", "password"),
+        ("gy_login_username", "username"),
+        ("gy_login_password", "password"),
+        ("preferred_resolution", "1080p"),
+        ("fallback_resolution", "2160p"),
+        ("resources_exclude_keywords", "120帧,60帧,高码版,杜比视界,hdr"),
+        ("bt_movie_base_url", "https://100.tudoutudou.top"),
+        ("bt_tv_base_url", "https://200.tudoutudou.top"),
+        ("bt0_base_url", "https://www.7bt0.com"),
+        ("gy_base_url", "https://www.gyg.si"),
+        ("run_interval_hours", "6")
+    ]
+
+    # 检查并插入缺失的配置项
+    for option, value in default_configs:
+        cursor.execute("SELECT COUNT(*) FROM CONFIG WHERE OPTION = ?", (option,))
+        if cursor.fetchone()[0] == 0:
+            logging.info(f"配置项 {option} 缺失，正在更新配置项...")
+            cursor.execute("INSERT INTO CONFIG (OPTION, VALUE) VALUES (?, ?)", (option, value))
+
+    conn.commit()
+    conn.close()
+    logging.info("配置项已更新。")
+
 def check_config_data():
     """
     检查配置数据是否为默认数据。
@@ -269,11 +336,17 @@ def check_config_data():
         "download_port": "port",
         "bt_login_username": "username",
         "bt_login_password": "password",
+        "bt0_login_username": "username",
+        "bt0_login_password": "password",
+        "gy_login_username": "username",
+        "gy_login_password": "password",
         "preferred_resolution": "1080p",
         "fallback_resolution": "2160p",
         "resources_exclude_keywords": "120帧,60帧,高码版,杜比视界,hdr",
         "bt_movie_base_url": "https://100.tudoutudou.top",
         "bt_tv_base_url": "https://200.tudoutudou.top",
+        "bt0_base_url": "https://www.7bt0.com",
+        "gy_base_url": "https://www.gyg.si",
         "run_interval_hours": "6"
     }
 

@@ -707,8 +707,10 @@
                         ? (movieDetails.release_date ? new Date(movieDetails.release_date).getFullYear() : '未知') 
                         : (movieDetails.first_air_date ? new Date(movieDetails.first_air_date).getFullYear() : '未知'),
                     season: mediaType === 'tv' ? movieDetails.number_of_seasons || '未知' : undefined,
+                    episodes: mediaType === 'tv' ? movieDetails.number_of_episodes || '未知' : undefined, // 添加集数信息
+                    mediaType: mediaType, // 添加媒体类型
                 };
-    
+                
                 fetch('/check_subscriptions', {
                     method: 'POST',
                     headers: {
@@ -719,16 +721,22 @@
                 .then(response => response.json())
                 .then(data => {
                     if (data.subscribed) {
-                        // 如果已订阅，设置按钮为已订阅状态
-                        subscribeButton.style.color = '#198754';
-                        subscribeButton.textContent = '已订阅';
+                        if (data.status === 'subscribed') {
+                            // 如果已订阅，设置按钮为已订阅状态
+                            subscribeButton.style.color = '#198754';
+                            subscribeButton.textContent = '已订阅';
+                        } else if (data.status === 'in_library') {
+                            // 如果已入库，设置按钮为已入库状态
+                            subscribeButton.style.color = '#007bff';
+                            subscribeButton.textContent = '已入库';
+                        }
                         subscribeButton.disabled = true; // 禁用按钮
                     } else {
-                        // 如果未订阅，设置按钮为可订阅状态
+                        // 如果未订阅或未入库，设置按钮为可订阅状态
                         subscribeButton.style.color = '#495057';
                         subscribeButton.textContent = '订阅';
                         subscribeButton.disabled = false;
-    
+                
                         // 设置订阅按钮的点击事件
                         subscribeButton.onclick = () => {
                             fetch('/tmdb_subscriptions', {
@@ -743,7 +751,7 @@
                                 if (data.success) {
                                     // 显示成功消息
                                     showToast(data.message, true);
-    
+                
                                     // 修改按钮样式和文字
                                     subscribeButton.style.color = '#198754';
                                     subscribeButton.textContent = '已订阅';

@@ -12,20 +12,19 @@ from selenium.webdriver.common.action_chains import ActionChains
 import logging
 import os
 import re
-import time
-import requests
+import argparse
 
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,  # 设置日志级别为 INFO
     format="%(levelname)s - %(message)s",  # 设置日志格式
     handlers=[
-        logging.FileHandler("/tmp/log/movie_downloader.log", mode='w'),  # 输出到文件
+        logging.FileHandler("/tmp/log/movie_bthd.log", mode='w'),  # 输出到文件
         logging.StreamHandler()  # 输出到控制台
     ]
 )
 
-class MovieDownloader:
+class MovieIndexer:
     def __init__(self, db_path='/config/data.db'):
         self.db_path = db_path
         self.driver = None
@@ -84,33 +83,6 @@ class MovieDownloader:
         except sqlite3.Error as e:
             logging.error(f"数据库加载配置错误: {e}")
             exit(0)
-
-    def send_notification(self, item, title_text, resolution):
-        # 通知功能
-        try:
-            notification_enabled = self.config.get("notification", "")
-            if notification_enabled.lower() != "true":  # 显式检查是否为 "true"
-                logging.info("通知功能未启用，跳过发送通知。")
-                return
-            api_key = self.config.get("notification_api_key", "")
-            if not api_key:
-                logging.error("通知API Key未在配置文件中找到，无法发送通知。")
-                return
-            api_url = f"https://api.day.app/{api_key}"
-            data = {
-                "title": "下载通知",
-                "body": f"{item['剧集']} - {resolution} - {title_text}"  # 使用 title_text 作为 body 内容
-            }
-            headers = {'Content-Type': 'application/json'}
-            response = requests.post(api_url, data=json.dumps(data), headers=headers)
-            if response.status_code == 200:
-                logging.info("通知发送成功: %s", response.text)
-            else:
-                logging.error("通知发送失败: %s %s", response.status_code, response.text)
-        except KeyError as e:
-            logging.error(f"配置文件中缺少必要的键: {e}")
-        except requests.RequestException as e:
-            logging.error(f"网络请求出现错误: {e}")
 
     def site_captcha(self, url):
         self.driver.get(url)
@@ -224,7 +196,7 @@ class MovieDownloader:
             return []
 
     def search(self, search_url, all_movie_info):
-        # 搜索电影
+        # 搜索电影并保存索引
         for item in all_movie_info:
             logging.info(f"开始搜索电影: {item['标题']}  年份: {item['年份']}")
             search_query = f"{item['标题']} {item['年份']}"
@@ -236,7 +208,7 @@ class MovieDownloader:
                 search_box.send_keys(search_query)
                 search_box.send_keys(Keys.RETURN)
                 logging.debug(f"搜索关键词: {search_query}")
-
+    
                 # 等待搜索结果加载
                 WebDriverWait(self.driver, 10).until(
                     EC.presence_of_element_located((By.ID, "threadlist"))
@@ -251,12 +223,14 @@ class MovieDownloader:
                         "title": title_text,
                         "link": link
                     })
+    
+                logging.info(f"找到 {len(search_results)} 个资源项")
 
                 # 过滤搜索结果
                 filtered_results = []
                 for result in search_results:
-                    # 检查年份是否匹配
-                    if str(item['年份']) not in result['title']:  # 将 item['年份'] 转换为字符串
+                    # 检查年份是否匹配（允许年份为空）
+                    if item['年份'] and str(item['年份']) not in result['title']:
                         continue
                     
                     # 检查是否包含排除关键词
@@ -265,11 +239,13 @@ class MovieDownloader:
                         continue
                     
                     filtered_results.append(result)
+    
+                logging.info(f"过滤后剩余 {len(filtered_results)} 个资源项")
 
                 # 获取首选分辨率和备选分辨率
                 preferred_resolution = self.config.get('preferred_resolution', "未知分辨率")
                 fallback_resolution = self.config.get('fallback_resolution', "未知分辨率")
-
+    
                 # 按分辨率分类搜索结果
                 categorized_results = {
                     "首选分辨率": [],
@@ -280,6 +256,7 @@ class MovieDownloader:
                     details = self.extract_details(result['title'])
                     resolution = details['resolution']
                     
+                    # 分类逻辑修复
                     if resolution == preferred_resolution:
                         categorized_results["首选分辨率"].append({
                             "title": result['title'],
@@ -304,39 +281,34 @@ class MovieDownloader:
                             "audio_tracks": details['audio_tracks'],
                             "subtitles": details['subtitles']
                         })
-
-                # 定义一个函数来评估结果的优先级
-                def evaluate_result(result):
-                    # 优先级评分
-                    score = 0
-                    if result['audio_tracks']:
-                        score += 1  # 有音轨
-                    if result['subtitles']:
-                        score += 1  # 有字幕
-                    return score
-
-                # 对每个分辨率类别的结果进行排序
-                categorized_results["首选分辨率"].sort(key=evaluate_result, reverse=True)
-                categorized_results["备选分辨率"].sort(key=evaluate_result, reverse=True)
-                categorized_results["其他分辨率"].sort(key=evaluate_result, reverse=True)
-
-                # 匹配结果
-                matched_results = categorized_results["首选分辨率"] + categorized_results["备选分辨率"] + categorized_results["其他分辨率"]
-                
-                # 下载种子文件
-                if matched_results:
-                    for result in matched_results:
-                        title_text = result['title']
-                        resolution = result['resolution']
-                        self.download_torrent(result, item, title_text, resolution)
-                        break  # 只下载第一个匹配的结果
-                else:
-                    logging.info(f"没有找到匹配的搜索结果: {item['标题']}  年份: {item['年份']}")
-
+    
+                # 保存结果到 JSON 文件
+                self.save_results_to_json(item['标题'], item['年份'], categorized_results)
+    
             except TimeoutException:
-                logging.error("搜索结果加载超时")
+                logging.error("搜索结果为空或加载超时")
             except Exception as e:
                 logging.error(f"搜索过程中出错: {e}")
+    
+    def save_results_to_json(self, title, year, categorized_results):
+        """将结果保存到 JSON 文件"""
+        file_name = f"{title}-{year}-BTHD.json"
+        file_path = os.path.join("/tmp/index", file_name)  # 替换为实际保存路径
+    
+        try:
+            # 检查并创建目录
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    
+            # 检查文件是否存在
+            if os.path.exists(file_path):
+                logging.info(f"索引已存在，将覆盖: {file_path}")
+    
+            # 保存文件
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(categorized_results, f, ensure_ascii=False, indent=4)
+            logging.info(f"结果已保存到 {file_path}")
+        except Exception as e:
+            logging.error(f"保存结果到 JSON 文件时出错: {e}")
 
     def extract_details(self, title):
         """从标题中提取详细信息，如分辨率、音轨、字幕"""
@@ -345,86 +317,54 @@ class MovieDownloader:
             "audio_tracks": [],
             "subtitles": []
         }
-        
+    
         # 使用正则表达式提取分辨率
         resolution_match = re.search(r'(\d{3,4}p)', title, re.IGNORECASE)
         if resolution_match:
-            details["resolution"] = resolution_match.group(1).upper()
-        
-        # 使用正则表达式提取音轨信息
-        audio_track_match = re.search(r'\[(.*?)音轨', title)
-        if audio_track_match:
-            audio_tracks_str = audio_track_match.group(1).strip()
-            details["audio_tracks"] = [track.strip() for track in audio_tracks_str.split('/')]
-        
-        # 使用正则表达式提取字幕信息
-        subtitle_match = re.search(r'\[(.*?)字幕', title)
-        if subtitle_match:
-            subtitles_str = subtitle_match.group(1).strip()
-            details["subtitles"] = [subtitle.strip() for subtitle in subtitles_str.split('/')]
-        
+            details["resolution"] = resolution_match.group(1).lower()
+        elif "4K" in title.upper():  # 匹配4K规则
+            details["resolution"] = "2160p"
+    
+        # 提取方括号内的内容
+        bracket_content_matches = re.findall(r'\[([^\]]+)\]', title)
+        for content in bracket_content_matches:
+            # 检查是否包含 "+" 或 "/"，如果有则分隔为多个信息
+            parts = [part.strip() for part in re.split(r'[+/]', content)]
+    
+            for part in parts:
+                # 匹配音轨信息
+                if re.search(r'(音轨|配音)', part):
+                    details["audio_tracks"].append(part)
+    
+                # 匹配字幕信息
+                if re.search(r'(字幕)', part):
+                    details["subtitles"].append(part)
+    
+        # 增加对 "国语中字" 的匹配
+        if "国语中字" in title:
+            details["audio_tracks"].append("国语配音")
+            details["subtitles"].append("中文字幕")
+    
         return details
-
-    def download_torrent(self, result, item, title_text, resolution):
-        """解析并下载种子文件"""
-        try:
-            self.driver.get(result['link'])
-            logging.info(f"进入：{title_text} 详情页面...")
-            logging.info(f"开始查找种子文件下载链接...")
-
-            # 等待种子文件下载链接加载
-            WebDriverWait(self.driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "cl")))
-            logging.info("页面加载完成")
-
-            attachment_url = None
-            max_retries = 5
-            retries = 0
-
-            while not attachment_url and retries < max_retries:
-                # 等待所有链接元素加载完成
-                WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_all_elements_located((By.TAG_NAME, "a"))
-                )
-                links = self.driver.find_elements(By.TAG_NAME, "a")  # 每次循环重新获取元素
-                for link in links:
-                    link_text = link.text.strip().lower()
-                    if "torrent" in link_text:
-                        attachment_url = link.get_attribute('href')
-                        break
-
-                if not attachment_url:
-                    logging.warning(f"没有找到种子文件下载链接，重试中... ({retries + 1}/{max_retries})")
-                    time.sleep(2)  # 等待2秒后重新尝试
-                    retries += 1
-
-            if attachment_url:
-                logging.info(f"找到种子文件下载链接: {attachment_url}")
-                # 请求下载链接
-                self.driver.get(attachment_url)
-                logging.info("开始下载种子文件...")
-                # 等待下载完成
-                time.sleep(10)  # 等待10秒，确保文件下载完成
-                # 发送通知
-                self.send_notification(item, title_text, resolution)
-            else:
-                logging.error("经过多次重试后仍未找到种子文件下载链接。")
-
-        except TimeoutException:
-            logging.error("种子文件下载链接加载超时")
-        except Exception as e:
-            logging.error(f"下载种子文件过程中出错: {e}")
 
     def run(self):
         # 加载配置文件
         self.load_config()
         
-        # 提取电视节目信息
+        # 获取订阅电影信息
         all_movie_info = self.extract_movie_info()
 
         # 检查数据库中是否有有效订阅
         if not all_movie_info:
             logging.info("数据库中没有有效订阅，无需执行后续操作")
             exit(0)  # 退出程序
+
+        # 检查配置中的用户名和密码是否有效
+        username = self.config.get("bt_login_username", "")
+        password = self.config.get("bt_login_password", "")
+        if username == "username" and password == "password":
+            logging.error("用户名和密码为系统默认值，程序将不会继续运行，请在系统设置中配置有效的用户名和密码！")
+            exit(0)
 
         # 初始化WebDriver
         self.setup_webdriver()
@@ -438,7 +378,7 @@ class MovieDownloader:
         self.site_captcha(login_url)  # 检查并处理滑动验证码
         self.login(login_url, self.config["bt_login_username"], self.config["bt_login_password"])
 
-        # 搜索和下载操作
+        # 搜索和建立索引
         self.search(search_url, all_movie_info)
 
         # 清理工作，关闭浏览器
@@ -446,5 +386,47 @@ class MovieDownloader:
         logging.info("WebDriver关闭完成")
 
 if __name__ == "__main__":
-    downloader = MovieDownloader()
-    downloader.run()
+    parser = argparse.ArgumentParser(description="电影索引器")
+    parser.add_argument("--manual", action="store_true", help="手动搜索模式")
+    parser.add_argument("--title", type=str, help="电影标题")
+    parser.add_argument("--year", type=int, help="电影年份（可选）")
+    args = parser.parse_args()
+
+    indexer = MovieIndexer()
+
+    if args.manual:
+        # 加载配置文件
+        indexer.load_config()
+    
+        # 检查配置中的用户名和密码是否有效
+        username = indexer.config.get("bt_login_username", "")
+        password = indexer.config.get("bt_login_password", "")
+        if username == "username" and password == "password":
+            logging.error("用户名和密码为系统默认值，程序将不会继续运行，请在系统设置中配置有效的用户名和密码！")
+            exit(0)
+
+        # 初始化 WebDriver
+        indexer.setup_webdriver()
+    
+        # 获取基础 URL
+        bt_movie_base_url = indexer.config.get("bt_movie_base_url", "")
+        login_url = f"{bt_movie_base_url}/member.php?mod=logging&action=login"
+        search_url = f"{bt_movie_base_url}/search.php?mod=forum"
+    
+        # 登录操作前先检查滑动验证码
+        indexer.site_captcha(login_url)  # 检查并处理滑动验证码
+        indexer.login(login_url, indexer.config["bt_login_username"], indexer.config["bt_login_password"])
+    
+        # 执行手动搜索
+        if args.title:
+            # 将单个电影信息封装为列表并调用 search 方法
+            movie_info = [{"标题": args.title, "年份": str(args.year) if args.year else ""}]
+            indexer.search(search_url, movie_info)
+        else:
+            logging.error("手动搜索模式需要提供 --title 参数")
+    
+        # 清理工作，关闭浏览器
+        indexer.driver.quit()
+        logging.info("WebDriver关闭完成")
+    else:
+        indexer.run()
