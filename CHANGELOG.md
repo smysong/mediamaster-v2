@@ -2,6 +2,14 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.2.1] - 2025-05-14
+
+### 修复
+- 修复媒体目录中不存在NFO文件时扫描不到电影的问题。
+
+### 优化
+- 系统设置页面优化，增加设置项提示文字。
+
 ## [2.2.0] - 2025-05-13
 
 ### 新增
@@ -115,3 +123,4 @@
 [2.1.2]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.1.2
 [2.1.3]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.1.3
 [2.2.0]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.2.0
+[2.2.1]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.2.1

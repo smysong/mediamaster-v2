@@ -87,6 +87,19 @@ def scan_movies(path):
                 logging.warning(f"无法解析 NFO 文件: {nfo_path}")
                 continue
 
+        # 如果没有 NFO 文件，通过媒体文件名提取标题和年份
+        for file in files:
+            if any(file.lower().endswith(ext) for ext in media_extensions):
+                # 匹配文件名格式：标题 - (年份) 其他信息.扩展名
+                match = re.match(r'^(.*?)\s*-\s*\((\d{4})\)', file)
+                if match:
+                    movie_name = match.group(1).strip()
+                    year = int(match.group(2))
+                    tmdb_id = None  # 无法从文件名中提取 TMDB ID
+                    movies.append((movie_name, year, tmdb_id))
+                else:
+                    logging.warning(f"无法从文件名提取标题和年份: {file}")
+
     return movies
 
 def scan_episodes(path):
