@@ -33,61 +33,10 @@ def scan_movies(path):
     movies = []
 
     # 定义所有可能的媒体文件后缀
-    media_extensions = ['.mkv', '.mp4', '.avi', '.mov', '.flv', '.wmv', '.webm']
+    media_extensions = ['.mkv', '.mp4', '.avi', '.mov', '.flv', '.wmv', '.iso']
 
     for root, _, files in os.walk(path):
-        nfo_files = [f for f in files if f.lower().endswith('.nfo')]
-
-        for nfo_file in nfo_files:
-            nfo_path = os.path.join(root, nfo_file)
-            try:
-                tree = ET.parse(nfo_path)
-                root_element = tree.getroot()
-
-                # 提取电影标题
-                title_element = root_element.find('title')
-                if title_element is not None:
-                    movie_name = title_element.text.strip()
-                else:
-                    logging.warning(f"NFO 文件中未找到标题元素: {nfo_path}")
-                    continue
-
-                # 提取电影年份
-                year_element = root_element.find('year')
-                if year_element is not None:
-                    year = int(year_element.text.strip())  # 确保 year 是整数类型
-                else:
-                    logging.warning(f"NFO 文件中未找到年份元素: {nfo_path}")
-                    continue
-
-                # 提取 TMDB ID
-                tmdb_id = None
-                uniqueid_elements = root_element.findall('uniqueid')
-                for uniqueid in uniqueid_elements:
-                    if uniqueid.attrib.get('type') == 'tmdb':
-                        tmdb_id = uniqueid.text.strip()
-                        break
-
-                # 构建媒体文件名
-                media_file_name = nfo_file[:-4]  # 去掉 .nfo 后缀
-
-                # 检查是否存在匹配的媒体文件
-                media_file_found = False
-                for ext in media_extensions:
-                    media_file_path = os.path.join(root, media_file_name + ext)
-                    if os.path.exists(media_file_path):
-                        movies.append((movie_name, year, tmdb_id))  # 确保 year 是整数类型
-                        media_file_found = True
-                        break
-
-                if not media_file_found:
-                    logging.warning(f"未找到匹配的媒体文件: {nfo_path}")
-
-            except ET.ParseError:
-                logging.warning(f"无法解析 NFO 文件: {nfo_path}")
-                continue
-
-        # 如果没有 NFO 文件，通过媒体文件名提取标题和年份
+        # 先扫描媒体文件
         for file in files:
             if any(file.lower().endswith(ext) for ext in media_extensions):
                 # 匹配文件名格式：标题 - (年份) 其他信息.扩展名
@@ -95,7 +44,26 @@ def scan_movies(path):
                 if match:
                     movie_name = match.group(1).strip()
                     year = int(match.group(2))
-                    tmdb_id = None  # 无法从文件名中提取 TMDB ID
+                    tmdb_id = None  # 默认 TMDB ID 为 None
+
+                    # 检查是否存在同名的 NFO 文件
+                    media_file_name = os.path.splitext(file)[0]  # 去掉扩展名
+                    nfo_file_path = os.path.join(root, media_file_name + '.nfo')
+                    if os.path.exists(nfo_file_path):
+                        try:
+                            tree = ET.parse(nfo_file_path)
+                            root_element = tree.getroot()
+
+                            # 提取 TMDB ID
+                            uniqueid_elements = root_element.findall('uniqueid')
+                            for uniqueid in uniqueid_elements:
+                                if uniqueid.attrib.get('type') == 'tmdb':
+                                    tmdb_id = uniqueid.text.strip()
+                                    break
+                        except ET.ParseError:
+                            logging.warning(f"无法解析 NFO 文件: {nfo_file_path}")
+
+                    # 添加电影信息到列表
                     movies.append((movie_name, year, tmdb_id))
                 else:
                     logging.warning(f"无法从文件名提取标题和年份: {file}")
@@ -164,8 +132,8 @@ def scan_episodes(path):
 
                                 # 扫描该季的媒体文件
                                 for file in os.listdir(season_path):
-                                    if file.lower().endswith(('.mkv', '.mp4', '.avi', '.mov', '.flv', '.wmv', '.webm')):
-                                        episode_match = re.match(r'^(.*) - S(\d+)E(\d+) - (.*)\.(mkv|mp4|avi|mov|flv|wmv|webm)$', file, re.IGNORECASE)
+                                    if file.lower().endswith(('.mkv', '.mp4', '.avi', '.mov', '.flv', '.wmv', '.iso')):
+                                        episode_match = re.match(r'^(.*) - S(\d+)E(\d+) - (.*)\.(mkv|mp4|avi|mov|flv|wmv|iso)$', file, re.IGNORECASE)
                                         if episode_match:
                                             episode_number = int(episode_match.group(3))
                                             if episode_number not in episodes[show_name]['seasons'][season_number]['episodes']:
@@ -179,9 +147,9 @@ def scan_episodes(path):
 
         for file in files:
             # 将文件扩展名转换为小写
-            if file.lower().endswith(('.mkv', '.mp4', '.avi', '.mov', '.flv', '.wmv', '.webm')):
+            if file.lower().endswith(('.mkv', '.mp4', '.avi', '.mov', '.flv', '.wmv', '.iso')):
                 # 匹配电视剧文件名模式
-                episode_match = re.match(r'^(.*) - S(\d+)E(\d+) - (.*)\.(mkv|mp4|avi|mov|flv|wmv|webm)$', file, re.IGNORECASE)
+                episode_match = re.match(r'^(.*) - S(\d+)E(\d+) - (.*)\.(mkv|mp4|avi|mov|flv|wmv|iso)$', file, re.IGNORECASE)
                 if episode_match:
                     show_name = episode_match.group(1).strip()
                     season = int(episode_match.group(2))

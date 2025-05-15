@@ -268,7 +268,7 @@ def move_or_copy_file(src, dst, action, media_type):
         logging.error(f"文件操作失败: {e}")
 
 def is_common_video_file(filename):
-    common_video_extensions = ['.mkv', '.mp4', '.avi', '.mov']
+    common_video_extensions = ['.mkv', '.mp4', '.avi', '.mov', '.flv', '.wmv', '.iso']
     extension = os.path.splitext(filename)[1].lower()
     return extension in common_video_extensions
 

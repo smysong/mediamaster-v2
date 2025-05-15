@@ -2,6 +2,14 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.2.2] - 2025-05-15
+
+### 修复
+- 扫描媒体库时，媒体文件标题与NFO文件中标题不一致时，会判定为不同的影片，导致同一部影片在媒体库中存在重复数据的问题。
+
+### 优化
+- 扫描媒体库和下载文件转移支持ISO文件格式。
+
 ## [2.2.1] - 2025-05-14
 
 ### 修复
@@ -124,3 +132,4 @@
 [2.1.3]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.1.3
 [2.2.0]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.2.0
 [2.2.1]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.2.1
+[2.2.2]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.2.2
