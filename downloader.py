@@ -687,8 +687,8 @@ class MediaDownloader:
             title = tvshow["剧集"]
             year = tvshow["年份"]
             season = tvshow["季"]
-            missing_episodes = set(map(int, tvshow["缺失集数"]))  # 转换为整数集合
-            logging.debug(f"缺失集数: {sorted(missing_episodes)}")
+            missing_episodes = sorted(map(int, tvshow["缺失集数"]))  # 转换为整数集合并排序
+            logging.debug(f"缺失集数: {missing_episodes}")
             download_results = []  # 存储所有匹配的下载结果
     
             # 遍历来源优先级
@@ -714,40 +714,45 @@ class MediaDownloader:
     
                 # 遍历分辨率优先级
                 for resolution_priority in resolution_priorities:
+                    # 对全集、集数范围和单集数据按 start_episode 排序
+                    for key in ["全集", "集数范围", "单集"]:
+                        if key in index_data.get(resolution_priority, {}):
+                            index_data[resolution_priority][key] = sorted(
+                                index_data[resolution_priority][key],
+                                key=lambda x: int(x.get("start_episode", 0))
+                            )
+    
                     # 优先匹配全集
                     for item in index_data.get(resolution_priority, {}).get("全集", []):
-                        # 检查 start_episode 和 end_episode 是否为 None
                         if item.get("start_episode") is None or item.get("end_episode") is None:
                             logging.warning(f"无效数据，跳过处理: {item}")
                             continue
                         episode_range = set(range(int(item["start_episode"]), int(item["end_episode"]) + 1))
                         logging.debug(f"尝试匹配全集 ({resolution_priority}): {item['title']} 集数范围: {sorted(episode_range)}")
                         if episode_range.issubset(missing_episodes):
-                            download_results.append((item, source))  # 存储匹配结果和来源
-                            missing_episodes -= episode_range
-                
+                            download_results.append((item, source))
+                            missing_episodes = [ep for ep in missing_episodes if ep not in episode_range]
+    
                     # 匹配集数范围
                     for item in index_data.get(resolution_priority, {}).get("集数范围", []):
-                        # 检查 start_episode 和 end_episode 是否为 None
                         if item.get("start_episode") is None or item.get("end_episode") is None:
                             logging.warning(f"无效数据，跳过处理: {item}")
                             continue
                         episode_range = set(range(int(item["start_episode"]), int(item["end_episode"]) + 1))
                         logging.debug(f"尝试匹配集数范围 ({resolution_priority}): {item['title']} 集数范围: {sorted(episode_range)}")
                         if episode_range.intersection(missing_episodes):
-                            download_results.append((item, source))  # 存储匹配结果和来源
-                            missing_episodes -= episode_range
-                
+                            download_results.append((item, source))
+                            missing_episodes = [ep for ep in missing_episodes if ep not in episode_range]
+    
                     # 匹配单集
                     for item in index_data.get(resolution_priority, {}).get("单集", []):
-                        # 检查 start_episode 是否为 None
                         if item.get("start_episode") is None:
                             logging.warning(f"无效数据，跳过处理: {item}")
                             continue
                         episode = int(item["start_episode"])
                         logging.debug(f"尝试匹配单集 ({resolution_priority}): {item['title']} 集数: {episode}")
                         if episode in missing_episodes:
-                            download_results.append((item, source))  # 存储匹配结果和来源
+                            download_results.append((item, source))
                             missing_episodes.remove(episode)
     
                     # 如果没有缺失集数，跳出分辨率优先级循环
@@ -759,7 +764,7 @@ class MediaDownloader:
                     break
     
             # 下载所有匹配的结果
-            for result, result_source in download_results:  # 解包匹配结果和来源
+            for result, result_source in download_results:
                 logging.info(f"在来源 {result_source} 中找到匹配结果: {result['title']}")
                 if result_source == "HDTV":
                     self.hdtv_download_torrent(result, result["title"])
@@ -771,7 +776,7 @@ class MediaDownloader:
     
             # 如果仍有未匹配的缺失集数
             if missing_episodes:
-                logging.warning(f"未找到匹配的下载结果: {title} S{season} ({year}) 缺失集数: {sorted(missing_episodes)}")
+                logging.warning(f"未找到匹配的下载结果: {title} S{season} ({year}) 缺失集数: {missing_episodes}")
     def close_driver(self):
         if self.driver:
             self.driver.quit()
