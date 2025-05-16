@@ -68,29 +68,10 @@ networks:
         - subnet: 172.16.238.0/24
         - subnet: 2001:db8:1::/64
 ```
-**（包含相关服务）docker-compose.yml 如下：**
+**（包含下载器）docker-compose.yml 如下：**
 ```
 version: '3.8'
 services:
-  emby:
-    image: docker.1ms.run/amilys/embyserver:latest
-    container_name: embyserver
-    networks:
-      media-network:
-    environment:
-      - UID=1000
-      - GID=100
-      - GIDLIST=100
-    volumes:
-      - /vol1/1000/Docker/emby/config:/config
-      - /vol1/1000/Media:/Media
-    ports:
-      - 8096:8096
-      - 8920:8920
-    devices:
-      - "/dev/dri/renderD128:/dev/dri/renderD128"
-    restart: always
-
   mediamaster:
     image: docker.1ms.run/smysong/mediamaster-mediamaster-v2:latest
     container_name: mediamaster
@@ -144,7 +125,7 @@ networks:
 
 
 ```
-docker pull smysong/mediamaster-mediamaster-v2:latest
+docker pull docker.1ms.run/smysong/mediamaster-mediamaster-v2:latest
 ```
 
 
@@ -160,7 +141,7 @@ docker run -it --name mediamaster \
            -v /Media:/Media \
            -v /Torrent:/Torrent \
            -v /Downloads:/Downloads \
-           smysong/mediamaster-mediamaster-v2:latest
+           docker.1ms.run/smysong/mediamaster-mediamaster-v2:latest
 ```
 
 在这个命令中：
@@ -183,7 +164,7 @@ docker run -it --name mediamaster \
 > -v /Downloads:/Downloads \
 > 目录监控，将主机上下载器的下载目录挂载到容器/Downloads目录，可以实现自动转移并重命名下载完成的影片文件。
 >  
-> smysong/mediamaster-mediamaster-v2:latest \
+> docker.1ms.run/smysong/mediamaster-mediamaster-v2:latest \
 > 是要运行的镜像名称。
 
 ```

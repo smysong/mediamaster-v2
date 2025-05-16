@@ -2,6 +2,17 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.2.3] - 2025-05-16
+
+### 说明
+- 修复较为严重的BUG，在特定情况下该BUG会引起程序崩溃无法使用，建议所有用户安装更新。可通过在线更新或拉取最新Docker镜像更新。
+
+### 修复
+- 修复检查订阅时，如果已入库的剧集只有1集时，程序读取的数据是整数而不是字符串，导致程序异常崩溃的问题。
+
+### 优化
+- 优化下载管理页面下载任务状态解析，更新常用状态及对应文字提示。
+
 ## [2.2.2] - 2025-05-15
 
 ### 修复
@@ -134,3 +145,4 @@
 [2.2.0]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.2.0
 [2.2.1]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.2.1
 [2.2.2]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.2.2
+[2.2.3]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.2.3

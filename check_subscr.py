@@ -78,7 +78,14 @@ def subscribe_tvs(cursor):
             ).fetchone()
 
             if existing_episodes_str:
-                existing_episodes = set(map(int, existing_episodes_str[0].split(',')))
+                # 兼容 episodes 字段为 int 或 str
+                val = existing_episodes_str[0]
+                if isinstance(val, int):
+                    existing_episodes = set([val])
+                elif isinstance(val, str):
+                    existing_episodes = set(int(ep) for ep in val.split(',') if ep.strip().isdigit())
+                else:
+                    existing_episodes = set()
                 total_episodes_set = set(range(1, total_episodes + 1))
                 missing_episodes = total_episodes_set - existing_episodes
 
@@ -104,17 +111,24 @@ def update_subscriptions(cursor):
     miss_tvs = cursor.fetchall()
 
     for title, year, season, missing_episodes in miss_tvs:
-        existing_episodes_str = cursor.execute('''SELECT episodes FROM LIB_TV_SEASONS WHERE tv_id = (SELECT id FROM LIB_TVS WHERE title = ? AND year = ?) AND season = ?''', (title, year, season)).fetchone()
+        existing_episodes_str = cursor.execute(
+            '''SELECT episodes FROM LIB_TV_SEASONS WHERE tv_id = (SELECT id FROM LIB_TVS WHERE title = ? AND year = ?) AND season = ?''',
+            (title, year, season)
+        ).fetchone()
 
         if existing_episodes_str:
-            # 清理和验证 existing_episodes_str
-            existing_episodes = set()
-            if existing_episodes_str[0]:
+            # 兼容 episodes 字段为 int 或 str
+            val = existing_episodes_str[0]
+            if isinstance(val, int):
+                existing_episodes = set([val])
+            elif isinstance(val, str):
                 try:
-                    existing_episodes = set(int(ep) for ep in existing_episodes_str[0].split(',') if ep.strip().isdigit())
+                    existing_episodes = set(int(ep) for ep in val.split(',') if ep.strip().isdigit())
                 except ValueError as e:
-                    logging.error(f"无效的集数数据：{existing_episodes_str[0]}，跳过处理。")
+                    logging.error(f"无效的集数数据：{val}，跳过处理。")
                     continue
+            else:
+                existing_episodes = set()
 
             if missing_episodes:
                 missing_episodes_set = set(map(int, missing_episodes.split(',')))
