@@ -426,8 +426,13 @@ def library():
                         'total_episodes': 0
                     }
                 
+                # 兼容处理 episodes 字段（可能是整数或字符串）
+                episodes = tv['episodes']
+                if isinstance(episodes, int):
+                    episodes = str(episodes)
+
                 # 解析 episodes 字符串，计算总集数
-                episodes_list = tv['episodes'].split(',')
+                episodes_list = episodes.split(',')
                 num_episodes = len(episodes_list)
 
                 tv_data[tv['id']]['seasons'].append({
@@ -1300,9 +1305,9 @@ def get_fastest_proxy(original_url):
     测试所有代理站点的响应时间，返回最快的代理地址
     """
     proxy_sites = [
-        "https://gitproxy.click/",
-        "https://github-proxy.lixxing.top/",
         "https://jiashu.1win.eu.org/",
+        "https://github.moeyy.xyz/",
+        "https://github-proxy.lixxing.top/",
         "https://gh.llkk.cc/"
     ]
     response_times = {}
