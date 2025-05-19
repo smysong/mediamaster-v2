@@ -2,6 +2,11 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.2.4] - 2025-05-19
+
+### 修复
+- 修复“观影”站点建立索引失败的问题（站点策略更新需要登录后才有权限进行搜索、下载等操作）。
+
 ## [2.2.3] - 2025-05-16
 
 ### 说明
@@ -147,3 +152,4 @@
 [2.2.1]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.2.1
 [2.2.2]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.2.2
 [2.2.3]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.2.3
+[2.2.4]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.2.4

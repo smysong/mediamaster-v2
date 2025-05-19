@@ -138,6 +138,55 @@ class MediaIndexer:
         except TimeoutException:
             logging.info("未检测到提示框，无需操作")
 
+    def is_logged_in_gy(self):
+        try:
+            # 检查页面中是否存在特定的提示文本
+            WebDriverWait(self.driver, 5).until(
+                EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '登录成功')]"))
+            )
+            return True
+        except TimeoutException:
+            return False
+
+    def login_gy_site(self, username, password):
+        login_url = self.gy_login_url
+        user_info_url = self.gy_user_info_url
+        self.site_captcha(login_url)  # 调用 gy_site_captcha 方法
+        self.driver.get(login_url)
+        try:
+            # 检查是否已经自动登录
+            if self.is_logged_in_gy():
+                logging.info("自动登录成功，无需再次登录")
+                return
+            
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.NAME, "username"))
+            )
+            logging.info("观影站点登录页面加载完成")
+            username_input = self.driver.find_element(By.NAME, 'username')
+            password_input = self.driver.find_element(By.NAME, 'password')
+            username_input.send_keys(username)
+            password_input.send_keys(password)
+            # 勾选自动登录选项
+            auto_login_checkbox = self.driver.find_element(By.NAME, 'cookietime')
+            auto_login_checkbox.click()
+            submit_button = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((By.NAME, 'button'))
+            )
+            submit_button.click()
+            # 等待页面跳转完成后去访问用户信息页面
+            time.sleep(5)  # 等待页面跳转
+            self.driver.get(user_info_url)
+            # 检查页面中是否存在<h2>账户设置</h2>元素
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, "//h2[contains(text(), '账户设置')]"))
+            )
+            logging.info("观影站点登录成功！")
+        except TimeoutException:
+            logging.error("观影站点登录失败或页面未正确加载，未找到预期元素！")
+            self.close_driver()
+            raise
+
     def extract_movie_info(self):
         """从数据库读取订阅电影信息"""
         all_movie_info = []
@@ -655,9 +704,11 @@ class MediaIndexer:
         # 获取基础 URL
         gy_base_url = self.config.get("gy_base_url", "")
         search_url = f"{gy_base_url}/s/1---1/"
+        self.gy_login_url = f"{gy_base_url}/user/login"
+        self.gy_user_info_url = f"{gy_base_url}/user/account"
 
-        # 检查验证码
-        self.site_captcha(gy_base_url)
+        # 检查登录状态
+        self.login_gy_site(self.config["gy_login_username"], self.config["gy_login_password"])
 
         # 搜索电影和建立索引
         if all_movie_info:
@@ -700,9 +751,11 @@ if __name__ == "__main__":
         # 获取基础 URL
         gy_base_url = indexer.config.get("gy_base_url", "")
         search_url = f"{gy_base_url}/s/1---1/"
-    
-        # 检查验证码
-        indexer.site_captcha(gy_base_url)
+        indexer.gy_login_url = f"{gy_base_url}/user/login"
+        indexer.gy_user_info_url = f"{gy_base_url}/user/account"
+
+        # 检查登录状态
+        indexer.login_gy_site(indexer.config["gy_login_username"], indexer.config["gy_login_password"])
     
         # 执行手动搜索
         if args.type == "movie":
