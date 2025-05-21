@@ -338,10 +338,19 @@ def system_processes():
     processes = []
     for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'cpu_percent', 'memory_percent', 'create_time']):
         try:
-            # 计算运行时长
+            # 计算运行时长（秒）
             uptime = time.time() - proc.info['create_time']
-            # 将运行时长格式化为小时、分钟、秒
-            uptime_formatted = time.strftime('%H:%M:%S', time.gmtime(uptime))
+            
+            # 格式化运行时长为天、小时、分钟、秒
+            days = int(uptime // (3600 * 24))
+            hours = int((uptime % (3600 * 24)) // 3600)
+            minutes = int((uptime % 3600) // 60)
+            seconds = int(uptime % 60)
+
+            if days > 0:
+                uptime_formatted = f"{days}天{hours:02d}小时"
+            else:
+                uptime_formatted = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
             
             # 获取命令行参数
             cmdline = proc.info['cmdline']
@@ -956,11 +965,13 @@ GROUP_MAPPING = {
     },
     "下载器管理": {
         "download_mgmt": {"type": "switch", "label": "下载器管理"},
-        "download_type": {"type": "downloader", "label": "下载器", "options": ["transmission", "qbittorrent"]},
+        "download_type": {"type": "downloader", "label": "下载器", "options": ["transmission", "qbittorrent", "xunlei"]},
         "download_username": {"type": "text", "label": "下载器用户名"},
         "download_password": {"type": "password", "label": "下载器密码"},
         "download_host": {"type": "text", "label": "下载器地址"},
-        "download_port": {"type": "text", "label": "下载器端口"}
+        "download_port": {"type": "text", "label": "下载器端口"},
+        "xunlei_device_name": {"type": "text", "label": "迅雷设备名称"},
+        "xunlei_dir": {"type": "text", "label": "迅雷下载目录"}
     },
     "私有资源站点设置": {
         "bt_login_username": {"type": "text", "label": "站点登录用户名"},
@@ -1040,6 +1051,7 @@ def save_settings():
 @login_required
 def download_mgmt_page():
     db = get_db()
+    
     # 从数据库中读取 download_mgmt 的配置
     download_mgmt_config = db.execute('SELECT VALUE FROM CONFIG WHERE OPTION = ?', ('download_mgmt',)).fetchone()
     
@@ -1048,12 +1060,22 @@ def download_mgmt_page():
         flash('下载管理功能未启用，请在系统设置中开启下载管理功能。', 'error')
         return redirect(url_for('settings_page'))
     
+    # 获取 download_type 配置
+    download_type_config = db.execute('SELECT VALUE FROM CONFIG WHERE OPTION = ?', ('download_type',)).fetchone()
+    download_type = download_type_config['VALUE'] if download_type_config else None
+
     # 从会话中获取用户昵称和头像
     nickname = session.get('nickname')
     avatar_url = session.get('avatar_url')
-    
+
+    # 根据 download_type 使用不同模板
+    if download_type == 'xunlei':
+        template_name = 'xunlei.html'
+    else:
+        template_name = 'download_mgmt.html'
+
     # 将信息传递给模板
-    return render_template('download_mgmt.html', nickname=nickname, avatar_url=avatar_url, download_mgmt=download_mgmt_config, version=APP_VERSION)
+    return render_template(template_name, nickname=nickname, avatar_url=avatar_url, download_mgmt=download_mgmt_config, version=APP_VERSION)
 
 
 # 获取下载器客户端
@@ -1372,7 +1394,7 @@ def perform_update():
         # 步骤3: 安装依赖（如果有新的依赖）
         logger.info("正在安装新依赖...")
         install_result = subprocess.run(
-            ['pip', 'install', '-r', 'requirements.txt'],
+            ['pip', 'install', '-r', 'requirements.txt', '--index-url', 'https://mirrors.aliyun.com/pypi/simple/'],
             capture_output=True,
             text=True,
             cwd='/app'

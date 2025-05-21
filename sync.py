@@ -125,9 +125,25 @@ def extract_info(filename, folder_name=None):
         year = re.search(year_pattern, filename)
         year = year.group() if year else None
 
-        # 提取视频质量
+        # 提取视频质量并统一格式
         quality = re.search(quality_pattern, filename)
-        quality = quality.group().upper() if quality else None
+        if quality:
+            raw_quality = quality.group()
+            # 转换为小写
+            raw_quality = raw_quality.lower()
+            # 替换 K 为对应的 p 值
+            if 'k' in raw_quality:
+                resolution_map = {
+                    '2k': '1440p',
+                    '4k': '2160p',
+                    '8k': '4320p'
+                }
+                # 提取数字部分并查找对应的分辨率
+                k_value = ''.join(filter(str.isdigit, raw_quality)) + 'k'
+                raw_quality = resolution_map.get(k_value, raw_quality)  # 默认保持原样
+            quality = raw_quality
+        else:
+            quality = None
 
         # 提取文件后缀名
         suffix = re.search(suffix_pattern, filename)
@@ -194,9 +210,25 @@ def extract_info(filename, folder_name=None):
         year = re.search(year_pattern, filename)
         year = year.group() if year else None
 
-        # 提取视频质量
+        # 提取视频质量并统一格式
         quality = re.search(quality_pattern, filename)
-        quality = quality.group().lower() if quality else None  # 将提取到的视频质量转换为小写
+        if quality:
+            raw_quality = quality.group()
+            # 转换为小写
+            raw_quality = raw_quality.lower()
+            # 替换 K 为对应的 p 值
+            if 'k' in raw_quality:
+                resolution_map = {
+                    '2k': '1440p',
+                    '4k': '2160p',
+                    '8k': '4320p'
+                }
+                # 提取数字部分并查找对应的分辨率
+                k_value = ''.join(filter(str.isdigit, raw_quality)) + 'k'
+                raw_quality = resolution_map.get(k_value, raw_quality)  # 默认保持原样
+            quality = raw_quality
+        else:
+            quality = None
 
         # 提取文件后缀名
         suffix = re.search(suffix_pattern, filename)

@@ -2,6 +2,16 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.3.0] - 2025-05-21
+
+### 新增
+- 新增下载器：“迅雷”，支持调用迅雷-远程设备进行下载。（可通过菜单栏点击“版本号”，在窗口中点击“使用帮助”链接访问配置文档）
+- 增加使用帮助和问题反馈渠道。可通过点击左下角“版本号”弹出程序信息，点击“使用帮助”链接访问配置文档，在配置文档页面中通过问题反馈渠道进行反馈。
+
+### 优化
+- 优化系统仪表中“系统进程”模块运行时长的计算逻辑，超过24小时，将显示为“天”+“小时”。
+- 优化目录监控服务中下载文件转移时提取视频质量的处理逻辑，统一视频质量后缀为p（逐行扫描）例如：1080p、2160p。
+
 ## [2.2.4] - 2025-05-19
 
 ### 修复
@@ -153,3 +163,4 @@
 [2.2.2]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.2.2
 [2.2.3]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.2.3
 [2.2.4]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.2.4
+[2.3.0]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.0

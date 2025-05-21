@@ -166,6 +166,12 @@ def main():
         logging.info("-" * 80)
         time.sleep(10)
 
+        run_script('xunlei.py')
+        logging.info("-" * 80)
+        logging.info("添加迅雷下载任务，已执行完毕，等待10秒...")
+        logging.info("-" * 80)
+        time.sleep(10)
+
         run_script('scan_media.py')
         logging.info("-" * 80)
         logging.info("扫描媒体库，已执行完毕，等待10秒...")

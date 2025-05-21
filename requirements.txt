@@ -8,3 +8,4 @@ watchdog
 bcrypt
 transmission-rpc
 qbittorrent-api
+bencodepy

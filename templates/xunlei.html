@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}下载管理{% endblock %}
+{% block content %}
+<main class="container mt-1">
+    <div class="row fade-in">
+        <div class="card mb-4">
+            <div class="card-header">迅雷-远程设备管理</div>
+            <div class="card-body">
+                {% if download_mgmt %}
+                    <iframe src="https://pan.xunlei.com/yc" width="100%" height="780px" frameborder="0"></iframe>
+			</div>
+		</div>
+	</div>
+</main>	
+{% else %}
+<p>下载管理功能未启用，请在系统设置中启用下载管理并配置下载器相关参数</p>
+{% endif %}
+{% endblock %}
