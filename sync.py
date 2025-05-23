@@ -309,6 +309,13 @@ def is_unfinished_download_file(filename):
     extension = os.path.splitext(filename)[1].lower()
     return extension in unfinished_extensions
 
+def is_small_file(file_path, min_size_mb=5):
+    """检查文件是否小于指定大小（默认5MB）"""
+    try:
+        return os.path.getsize(file_path) < min_size_mb * 1024 * 1024
+    except FileNotFoundError:
+        return False
+
 def load_processed_files():
     processed_filenames = set()
     if os.path.exists(FILES_RECORD_PATH):
@@ -451,9 +458,27 @@ class CustomFileHandler(FileSystemEventHandler):
 
     def on_created(self, event):
         if event.is_directory:
+            dir_name = os.path.basename(event.src_path)
+            # 忽略特定目录：云盘缓存文件
+            if "云盘缓存文件" in dir_name:
+                logging.debug(f"忽略目录: {event.src_path}")
+                return
             return
+
         file_path = event.src_path
         filename = os.path.basename(file_path)
+
+        # 忽略隐藏文件
+        if filename.startswith('.'):
+            logging.debug(f"忽略隐藏文件: {file_path}")
+            return
+
+        # 忽略小于5MB的文件
+        if is_small_file(file_path):
+            logging.debug(f"忽略小于5MB的文件: {file_path}")
+            return
+
+        # 其他下载未完成文件监控逻辑
         if is_unfinished_download_file(filename):
             self.unfinished_files.add(file_path)
             logging.debug(f"发现下载未完成文件: {file_path}，开始监控")
@@ -464,8 +489,21 @@ class CustomFileHandler(FileSystemEventHandler):
     def on_modified(self, event):
         if event.is_directory:
             return
+
         file_path = event.src_path
         filename = os.path.basename(file_path)
+
+        # 忽略隐藏文件
+        if filename.startswith('.'):
+            logging.debug(f"忽略隐藏文件: {file_path}")
+            return
+
+        # 忽略小于5MB的文件
+        if is_small_file(file_path):
+            logging.debug(f"忽略小于5MB的文件: {file_path}")
+            return
+
+        # 原始文件处理逻辑保持不变
         if file_path in self.unfinished_files:
             if not is_unfinished_download_file(filename):
                 self.unfinished_files.remove(file_path)
@@ -498,10 +536,18 @@ def start_monitoring(directory):
     try:
         # 处理已存在的文件
         for root, dirs, files in os.walk(directory):
+            # 排除特定目录
+            dirs[:] = [d for d in dirs if "云盘缓存文件" not in d and not d.startswith('.')]
+
             for file in files:
                 file_path = os.path.join(root, file)
-                if is_common_video_file(file_path) or is_unfinished_download_file(file_path):
-                    filename = os.path.basename(file_path)
+                filename = os.path.basename(file_path)
+
+                # 忽略隐藏文件和小于5MB的文件
+                if filename.startswith('.') or is_small_file(file_path):
+                    continue
+
+                if is_common_video_file(filename) or is_unfinished_download_file(filename):
                     if filename not in event_handler.processed_files:
                         process_file(file_path, event_handler.processed_files)
         while True:
