@@ -145,6 +145,11 @@ def check_and_delete_torrent_files():
 # 主流程
 if download_mgmt:
     logging.info("下载管理功能已启用，开始执行主流程")
+    
+    if download_type == 'xunlei':
+        logging.info("当前下载器为：迅雷。无需执行自动删除已完成任务，程序退出。")
+        exit(0)
+
     manager = DownloadManager()
     torrents = manager.get_torrents()
     if torrents:

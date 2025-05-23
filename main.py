@@ -71,6 +71,15 @@ def start_sync():
         logging.error(f"无法启动目录监控服务: {e}")
         sys.exit(0)
 
+def start_xunlei_torrent():
+    try:
+        process = subprocess.Popen(['python', 'xunlei_torrent.py'])
+        logging.info("迅雷-种子监听服务已启动。")
+        return process.pid
+    except Exception as e:
+        logging.error(f"无法启动迅雷-种子监听服务: {e}")
+        sys.exit(0)
+
 def start_check_db_dir():
     try:
         process = subprocess.Popen(['python', 'check_db_dir.py'])
@@ -93,6 +102,7 @@ def report_versions():
 running = True
 app_pid = None
 sync_pid = None
+xunlei_started = False  # 新增标志位，记录 xunlei_torrent 是否已启动
 
 # 定义信号处理器函数
 def shutdown_handler(signum, frame):
@@ -128,7 +138,7 @@ signal.signal(signal.SIGTERM, shutdown_handler)
 signal.signal(signal.SIGINT, shutdown_handler)
 
 def main():
-    global app_pid, sync_pid, running
+    global app_pid, sync_pid, running, xunlei_started  # 引入新增的全局变量
 
     # 从数据库读取运行间隔时间
     run_interval_hours = get_run_interval_from_db()
@@ -144,66 +154,68 @@ def main():
         # 执行所有任务脚本
         run_script('subscr.py')
         logging.info("-" * 80)
-        logging.info("获取最新豆瓣订阅，已执行完毕，等待10秒...")
+        logging.info("获取最新豆瓣订阅：已执行完毕，等待5秒...")
         logging.info("-" * 80)
-        time.sleep(10)
+        time.sleep(5)
 
         run_script('check_subscr.py')
         logging.info("-" * 80)
-        logging.info("检查是否有新增订阅，已执行完毕，等待10秒...")
+        logging.info("检查是否有新增订阅：已执行完毕，等待5秒...")
         logging.info("-" * 80)
-        time.sleep(10)
+        time.sleep(5)
 
         run_script('indexer.py')
         logging.info("-" * 80)
-        logging.info("建立订阅资源索引，已执行完毕，等待10秒...")
+        logging.info("建立订阅资源索引：已执行完毕，等待5秒...")
         logging.info("-" * 80)
-        time.sleep(10)
+        time.sleep(5)
 
         run_script('downloader.py')
         logging.info("-" * 80)
-        logging.info("下载订阅媒体资源，已执行完毕，等待10秒...")
+        logging.info("下载订阅媒体资源：已执行完毕，等待5秒...")
         logging.info("-" * 80)
-        time.sleep(10)
+        time.sleep(5)
 
-        run_script('xunlei.py')
-        logging.info("-" * 80)
-        logging.info("添加迅雷下载任务，已执行完毕，等待10秒...")
-        logging.info("-" * 80)
-        time.sleep(10)
+        # downloader.py 执行完成之后，判断是否首次启动 xunlei_torrent.py
+        if not xunlei_started:
+            start_xunlei_torrent()
+            xunlei_started = True  # 标记为已启动
 
         run_script('scan_media.py')
         logging.info("-" * 80)
-        logging.info("扫描媒体库，已执行完毕，等待10秒...")
+        logging.info("扫描媒体库：已执行完毕，等待5秒...")
         logging.info("-" * 80)
-        time.sleep(10)
+        time.sleep(5)
 
         run_script('tmdb_id.py')
         logging.info("-" * 80)
-        logging.info("更新数据库TMDB_ID，已执行完毕，等待10秒...")
+        logging.info("更新数据库TMDB_ID：已执行完毕，等待5秒...")
         logging.info("-" * 80)
-        time.sleep(10)
+        time.sleep(5)
 
         run_script('dateadded.py')
         logging.info("-" * 80)
-        logging.info("更新媒体NFO文件添加日期，已执行完毕，等待10秒...")
+        logging.info("更新媒体NFO文件添加日期：已执行完毕，等待5秒...")
         logging.info("-" * 80)
-        time.sleep(10)
+        time.sleep(5)
 
         run_script('actor_nfo.py')
         logging.info("-" * 80)
-        logging.info("更新演职人员中文信息，已执行完毕。")
+        logging.info("更新演职人员中文信息：已执行完毕，等待5秒...")
         logging.info("-" * 80)
+        time.sleep(5)
 
         run_script('episodes_nfo.py')
         logging.info("-" * 80)
-        logging.info("更新集演职人员中文信息，已执行完毕。")
+        logging.info("更新集演职人员中文信息：已执行完毕，等待5秒...")
         logging.info("-" * 80)
+        time.sleep(5)
 
         run_script('auto_delete_tasks.py')
         logging.info("-" * 80)
-        logging.info("自动删除已完成做种任务已执行完毕。")
+        logging.info("自动删除已完成做种任务：已执行完毕，等待5秒...")
         logging.info("-" * 80)
+        time.sleep(5)
 
         logging.info(f"所有任务已完成，等待 {run_interval_hours} 小时后再次运行...")
         time.sleep(run_interval_seconds)
@@ -212,5 +224,5 @@ if __name__ == "__main__":
     start_check_db_dir()
     report_versions()
     logging.info("等待初始化检查...")
-    time.sleep(5)
+    time.sleep(8)
     main()

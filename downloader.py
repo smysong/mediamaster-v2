@@ -729,7 +729,7 @@ class MediaDownloader:
                             continue
                         episode_range = set(range(int(item["start_episode"]), int(item["end_episode"]) + 1))
                         logging.debug(f"尝试匹配全集 ({resolution_priority}): {item['title']} 集数范围: {sorted(episode_range)}")
-                        if episode_range.issubset(missing_episodes):
+                        if episode_range.intersection(missing_episodes):
                             download_results.append((item, source))
                             missing_episodes = [ep for ep in missing_episodes if ep not in episode_range]
     
