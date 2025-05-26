@@ -67,7 +67,9 @@ class DoubanAPI:
         return re.sub(r'\s*第\d+季', '', title).strip()
 
     def get_douban_id(self, title: str, year: str = None, media_type: str = 'tv') -> list:
-        url = f"https://movie.douban.com/j/subject_suggest?q={title}"
+        # 去除常见标点符号和空白符
+        cleaned_title = re.sub(r'[：:.，,！!？?“”‘’"\'（）()【】\[\]「」{}《》<>\u00B7\u2027]', '', title)
+        url = f"https://movie.douban.com/j/subject_suggest?q={cleaned_title}"
         try:
             response = requests.get(url, headers=self.pcheaders)
             response.raise_for_status()  # 检查请求是否成功

@@ -122,7 +122,10 @@ class DouBanRSSParser:
         return existing_movie_ids.union(existing_tv_ids)
 
     def fetch_movie_details(self, title, douban_id):
-        api_url = f'https://movie.douban.com/j/subject_suggest?q={title}'
+        # 去除常见标点符号和空白符
+        cleaned_title = re.sub(r'[：:.，,！!？?“”‘’"\'（）()【】\[\]「」{}《》<>\u00B7\u2027]', '', title)
+        logging.info(f"正在获取标题为 {cleaned_title} 的详细信息，豆瓣ID: {douban_id}")
+        api_url = f'https://movie.douban.com/j/subject_suggest?q={cleaned_title}'
         try:
             response = requests.get(api_url, headers=self.pcheaders, timeout=10)
             if response.status_code == 200:
