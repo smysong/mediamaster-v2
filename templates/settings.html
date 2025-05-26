@@ -47,6 +47,8 @@
                             <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">豆瓣密钥用于获取媒体详细信息、演职人员中文汉化等，保持系统默认即可。</small>
                             {% elif key == 'douban_cookie' %}
                             <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">豆瓣cookie非必要选项，保持系统默认即可。</small>
+                            {% elif key == 'douban_rss_url' %}
+                            <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px); color: #ff0000 !important;">必填项：豆瓣想看地址，将your_douban_id替换为自己的ID。（获取数据后程序才能通过订阅去搜索和下载资源）</small>
                             {% elif key == 'bt_login_username' %}
                             <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">如不使用私有站点，则保持系统默认即可。</small>
                             {% elif key == 'gy_login_username' %}

@@ -2,6 +2,11 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.3.1] - 2025-05-26
+
+### 修复
+- 修复全新部署时，下载管理默认端口为“port”参数，导致程序异常退出的问题。
+
 ## [2.3.0] - 2025-05-23
 
 ### 说明
@@ -168,3 +173,4 @@
 [2.2.3]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.2.3
 [2.2.4]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.2.4
 [2.3.0]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.0
+[2.3.1]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.1
