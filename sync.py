@@ -355,6 +355,11 @@ def process_file(file_path, processed_filenames):
         if filename in excluded_filenames:
             logging.debug(f"跳过文件（文件名在排除列表中）: {file_path}")
             return
+        # 新增：排除特定后缀文件
+        excluded_extensions = ['.cfg', '.txt', '.pdf','.doc','.docx', '.html']
+        if extension in excluded_extensions:
+            logging.debug(f"跳过文件（后缀在排除列表中）: {file_path}")
+            return
         if '【更多' in filename:
             logging.debug(f"跳过文件（包含特定字符）: {file_path}")
             return

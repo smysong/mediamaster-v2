@@ -2,6 +2,11 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.3.2] - 2025-05-29
+
+### 优化
+- 优化下载目录监控服务：处理文件时忽略特定后缀文件（'.cfg', '.txt', '.pdf','.doc','.docx', '.html'）。
+
 ## [2.3.1] - 2025-05-26
 
 ### 修复
@@ -177,3 +182,4 @@
 [2.2.4]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.2.4
 [2.3.0]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.0
 [2.3.1]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.1
+[2.3.2]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.2

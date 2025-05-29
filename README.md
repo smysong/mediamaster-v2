@@ -29,6 +29,10 @@
 
 本项目Docker仓库： https://hub.docker.com/r/smysong/mediamaster-v2
 
+## 配置文档
+
+使用帮助文档： https://www.songmy.top/blog/8
+
 ## 快速开始
 
 ### 使用Docker Compose部署：
