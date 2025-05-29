@@ -15,7 +15,7 @@ logging.basicConfig(
 
 def update_dateadded(directory):
     # 遍历指定目录及其子目录中的所有文件
-    logging.info(f"开始遍历目录及其子目录: {directory}")
+    logging.debug(f"开始遍历目录及其子目录: {directory}")
     for root, dirs, files in os.walk(directory):
         # 排除 music 目录（不区分大小写）
         dirs[:] = [d for d in dirs if d.lower() != 'music']
@@ -24,7 +24,7 @@ def update_dateadded(directory):
             # 排除 artist.nfo 文件（不区分大小写）
             if filename.lower().endswith('.nfo') and not filename.lower() == 'artist.nfo':
                 file_path = os.path.join(root, filename)
-                logging.info(f"处理文件: {file_path}")
+                logging.debug(f"处理文件: {file_path}")
                 with open(file_path, 'r', encoding='utf-8') as file:
                     content = file.read()
 
@@ -35,24 +35,24 @@ def update_dateadded(directory):
 
                 if dateadded_match:
                     dateadded_content = dateadded_match.group(1)
-                    logging.info(f"添加日期: {dateadded_content}")
+                    logging.debug(f"添加日期: {dateadded_content}")
 
                     # 提取 dateadded 的年月日部分
                     dateadded_date = dateadded_content.split()[0]
 
                     if releasedate_match:
                         replacement_content = releasedate_match.group(1)
-                        logging.info(f"发行日期: {replacement_content}")
+                        logging.debug(f"发行日期: {replacement_content}")
                     elif aired_match:
                         replacement_content = aired_match.group(1)
-                        logging.info(f"播出日期: {replacement_content}")
+                        logging.debug(f"播出日期: {replacement_content}")
                     else:
                         logging.warning(f"未找到 [发行日期] 或 [播出日期] 标签在文件: {file_path}")
                         continue
 
                     # 比较 dateadded 的年月日部分与 replacement_content 是否相同
                     if dateadded_date == replacement_content:
-                        logging.info(f"[添加日期] 与 [发行日期] 或 [播出日期] 相同，跳过处理: {file_path}")
+                        logging.debug(f"[添加日期] 与 [发行日期] 或 [播出日期] 相同，跳过处理: {file_path}")
                         continue
 
                     # 替换<dateadded>标签中的内容
