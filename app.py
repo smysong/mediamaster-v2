@@ -1327,10 +1327,10 @@ def get_fastest_proxy(original_url):
     测试所有代理站点的响应时间，返回最快的代理地址
     """
     proxy_sites = [
-        "https://jiashu.1win.eu.org/",
+        "https://gh-proxy.net/",
         "https://github.moeyy.xyz/",
         "https://github-proxy.lixxing.top/",
-        "https://gh.llkk.cc/"
+        "https://github.acmsz.top/"
     ]
     response_times = {}
 
