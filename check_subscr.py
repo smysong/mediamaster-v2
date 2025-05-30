@@ -57,6 +57,11 @@ def subscribe_tvs(cursor):
         if total_episodes is None:
             logging.warning(f"电视剧：{title} 第{season}季 缺少总集数信息，跳过处理！")
             continue
+        try:
+            total_episodes = int(total_episodes)
+        except (ValueError, TypeError):
+            logging.warning(f"电视剧：{title} 第{season}季 总集数无效（{total_episodes}），跳过处理！")
+            continue
 
         total_episodes = int(total_episodes)
         if not cursor.execute('SELECT 1 FROM LIB_TVS WHERE title = ? AND year = ?', (title, year)).fetchone():

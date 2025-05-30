@@ -4,7 +4,7 @@ FROM ubuntu:24.04
 # 设置工作目录
 WORKDIR /app
 
-# 合并所有 apt-get 操作，减少镜像层数和重复请求
+# 合并所有 apt-get 操作，减少镜像层数和重复请求，提高构建效率
 RUN apt-get update && \
     apt-get install -y \
         curl unzip python3-pip python3-venv cron wget fonts-liberation \

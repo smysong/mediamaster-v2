@@ -2,6 +2,15 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.3.3] - 2025-05-30
+
+### 修复
+- 修复检查正在订阅时，遇到电视剧总集数为“unknow”等非法值导致程序崩溃的问题，现遇到无效集数会自动跳过该条目。
+- 修复获取豆瓣订阅时，遇到集数为空或“unknow”等无效数据时自动跳过该项目，避免后续处理异常。
+
+### 优化
+- 优化 Dockerfile，合并所有 apt-get 操作，减少镜像层数和重复请求，提高构建效率。
+
 ## [2.3.2] - 2025-05-29
 
 ### 优化
@@ -184,3 +193,4 @@
 [2.3.0]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.0
 [2.3.1]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.1
 [2.3.2]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.2
+[2.3.3]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.3
