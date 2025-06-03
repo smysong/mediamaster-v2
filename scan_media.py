@@ -123,8 +123,23 @@ def scan_episodes(path):
                                 if year_element is not None and year_element.text is not None:
                                     year = int(year_element.text.strip())
                                 else:
+                                    # 如果<year>标签无效，则通过<releasedate>标签提取年份
+                                    releasedate_element = season_root.find('releasedate')
                                     year = None
-                                    logging.warning(f"season.nfo 文件中未找到年份元素或年份为空: {season_nfo_path}")
+                                    date_text = None
+                                    if releasedate_element is not None and releasedate_element.text:
+                                        date_text = releasedate_element.text.strip()
+                                    if date_text:
+                                        match = re.match(r'(\d{4})', date_text)
+                                        if match:
+                                            year_str = match.group(1)
+                                            # 判断年份是否以000开头
+                                            if year_str.startswith('000'):
+                                                year = None
+                                            else:
+                                                year = int(year_str)
+                                    if year is None:
+                                        logging.warning(f"season.nfo 文件中未找到年份元素或年份为空: {season_nfo_path}")
 
                                 # 初始化季信息
                                 if season_number not in episodes[show_name]['seasons']:
@@ -230,6 +245,13 @@ def insert_or_update_episodes(db_path, episodes):
                 else:
                     existing_episodes = set()
                     logging.debug(f"现有集数为空，初始化为空集。")
+
+                # 检查数据库中季年份是否为空，如果为空且本次扫描到季年份，则更新
+                cursor.execute('SELECT year FROM LIB_TV_SEASONS WHERE id = ?', (existing_season[0],))
+                db_year = cursor.fetchone()[0]
+                if (db_year is None or db_year == 0 or db_year == '') and year:
+                    cursor.execute('UPDATE LIB_TV_SEASONS SET year = ? WHERE id = ?', (year, existing_season[0]))
+                    logging.info(f"已更新电视剧 '{show_name}' 第 {season} 季的年份：{year}")
 
                 # 只更新新增的集数
                 new_episodes = current_episodes - existing_episodes

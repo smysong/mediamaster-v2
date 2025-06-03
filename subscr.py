@@ -136,7 +136,7 @@ class DouBanRSSParser:
                         if movie_info.get('id') == str(douban_id):  # 将豆瓣ID转换为字符串进行匹配
                             episode = movie_info.get('episode', '')
                             # 新增：跳过无效集数
-                            if episode is None or episode == '' or str(episode).lower() == 'unknow' or not str(episode).isdigit():
+                            if str(episode).lower() == 'unknow':
                                 logging.warning(f"跳过集数无效的项目: {title} (获取到集数为：{episode})")
                                 return None
                             year = movie_info.get('year', '')
