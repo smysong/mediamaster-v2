@@ -1293,9 +1293,19 @@ def check_update():
         # 当前版本号
         current_version = APP_VERSION
 
-        # 获取 GitHub 仓库的最新版本信息
+        # GitHub API 地址和代理地址
         repo_url = "https://api.github.com/repos/smysong/mediamaster-v2/releases/latest"
-        response = requests.get(repo_url)
+        proxy_url = "https://gh.llkk.cc/https://api.github.com/repos/smysong/mediamaster-v2/releases/latest"
+
+        # 优先尝试直连
+        try:
+            response = requests.get(repo_url, timeout=5)
+            if response.status_code != 200:
+                raise Exception(f"主地址返回异常: {response.text}")
+        except Exception as e:
+            logger.warning(f"主地址连接失败，尝试代理: {e}")
+            response = requests.get(proxy_url, timeout=8)
+
         if response.status_code != 200:
             logger.error(f"无法获取 GitHub 版本信息: {response.text}")
             return jsonify({"error": "无法连接到 GitHub，请稍后再试。"}), 500
@@ -1329,7 +1339,7 @@ def get_fastest_proxy(original_url):
     """
     proxy_sites = [
         "https://gh-proxy.net/",
-        "https://github.moeyy.xyz/",
+        "https://gitproxy.click/",
         "https://github-proxy.lixxing.top/",
         "https://github.acmsz.top/"
     ]

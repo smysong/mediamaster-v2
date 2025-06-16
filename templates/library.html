@@ -72,41 +72,81 @@
     const defaultImageUrl = '/static/img/no-image.png';
     const mediaType = "{{ media_type }}"; // 将 media_type 传递给 JavaScript
 
+    // 加载电影海报，优先显示默认图片，成功加载TMDB图片后再替换，失败或超时保持默认图
     function fetchMoviePoster(imgElement) {
         const tmdbId = imgElement.dataset.tmdbId;
         const url = `https://api.tmdb.org/3/movie/${tmdbId}?api_key=${apiKey}&language=zh-CN`;
 
+        // 先显示默认图片
+        imgElement.src = defaultImageUrl;
+
         $.getJSON(url, function(data) {
             if (data.poster_path) {
-                imgElement.src = `${baseUrl}${data.poster_path}`;
+                const tmdbPosterUrl = `${baseUrl}${data.poster_path}`;
+                // 用 Image 对象尝试加载 TMDB 图片
+                const loader = new window.Image();
+                let loaded = false;
+                loader.onload = function() {
+                    loaded = true;
+                    imgElement.src = tmdbPosterUrl;
+                };
+                loader.onerror = function() {
+                    // 保持默认图片
+                };
+                loader.src = tmdbPosterUrl;
+                // 超时处理（如3秒）
+                setTimeout(function() {
+                    if (!loaded) loader.onerror();
+                }, 3000);
             }
             if (data.vote_average) { // 获取评分并显示
                 const formattedRating = data.vote_average.toFixed(1);
                 $(imgElement).siblings('.rating').text(`评分: ${formattedRating}`);
             }
         }).fail(function() {
+            // 保持默认图片
             console.log('获取电影数据时发生错误。');
         });
     }
 
+    // 加载电视剧海报，优先显示默认图片，成功加载TMDB图片后再替换，失败或超时保持默认图
     function fetchTvPoster(imgElement) {
         const tmdbId = imgElement.dataset.tmdbId;
         const url = `https://api.tmdb.org/3/tv/${tmdbId}?api_key=${apiKey}&language=zh-CN`;
 
+        // 先显示默认图片
+        imgElement.src = defaultImageUrl;
+
         $.getJSON(url, function(data) {
             if (data.poster_path) {
-                imgElement.src = `${baseUrl}${data.poster_path}`;
+                const tmdbPosterUrl = `${baseUrl}${data.poster_path}`;
+                // 用 Image 对象尝试加载 TMDB 图片
+                const loader = new window.Image();
+                let loaded = false;
+                loader.onload = function() {
+                    loaded = true;
+                    imgElement.src = tmdbPosterUrl;
+                };
+                loader.onerror = function() {
+                    // 保持默认图片
+                };
+                loader.src = tmdbPosterUrl;
+                // 超时处理（如3秒）
+                setTimeout(function() {
+                    if (!loaded) loader.onerror();
+                }, 3000);
             }
             if (data.vote_average) { // 获取评分并显示
                 const formattedRating = data.vote_average.toFixed(1);
                 $(imgElement).siblings('.rating').text(`评分: ${formattedRating}`);
             }
         }).fail(function() {
+            // 保持默认图片
             console.log('获取电视剧数据时发生错误。');
         });
     }
 
-    // 初始化加载电影海报及评分
+    // 初始化加载电影/电视剧海报及评分
     $(document).ready(function() {
         $('.movie-poster').each(function() {
             fetchMoviePoster(this);
@@ -139,6 +179,7 @@
         }
     });
 
+    // 自适应调整海报墙布局
     function adjustPosterWallLayout() {
         const posterWall = document.querySelector('.poster-wall');
         const items = posterWall.querySelectorAll('.poster-item');
@@ -157,6 +198,7 @@
         posterWall.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
     }
 
+    // 显示媒体详情模态框，海报同样优先显示默认图片，成功加载TMDB图片后再替换
     function showMediaDetails(element) {
         const tmdbId = element.querySelector('.movie-poster, .tv-poster').dataset.tmdbId;
         const mediaType = element.querySelector('.movie-poster') ? 'movie' : 'tv';
@@ -166,7 +208,27 @@
         const year = element.getAttribute('data-year');
 
         $.getJSON(url, function(data) {
-            document.getElementById('modalPoster').src = data.poster_path ? `${baseUrl}${data.poster_path}` : defaultImageUrl;
+            const modalPoster = document.getElementById('modalPoster');
+            // 先显示默认图片
+            modalPoster.src = defaultImageUrl;
+            if (data.poster_path) {
+                const tmdbPosterUrl = `${baseUrl}${data.poster_path}`;
+                // 用 Image 对象尝试加载 TMDB 图片
+                const loader = new window.Image();
+                let loaded = false;
+                loader.onload = function() {
+                    loaded = true;
+                    modalPoster.src = tmdbPosterUrl;
+                };
+                loader.onerror = function() {
+                    // 保持默认图片
+                };
+                loader.src = tmdbPosterUrl;
+                // 超时处理（如3秒）
+                setTimeout(function() {
+                    if (!loaded) loader.onerror();
+                }, 3000);
+            }
             document.getElementById('modalTitle').innerText = title;
             document.getElementById('modalYear').innerText = `发行年份: ${year}`;
             document.getElementById('modalOverview').innerText = `简介: ${data.overview}`;
@@ -178,6 +240,7 @@
             }
             $('#mediaDetailsModal').modal('show');
         }).fail(function() {
+            // 保持默认图片
             console.log('获取媒体数据时发生错误。');
         });
     }
