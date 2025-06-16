@@ -120,14 +120,25 @@
         }
         /* 闪烁动画 */
         @keyframes blink {
-            0%, 50% { opacity: 1; }
-            50.01%, 100% { opacity: 0; }
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; } /* 半透明而不是完全消失 */
+        }
+        .blinking {
+            animation: blink 1.5s infinite;
+            color: #ff7800;
+            transition: opacity 0.3s;
         }
 
-        .blinking {
-            animation: blink 1s infinite;
-            color: #ff7800;
+        .new-version {
+            /* 设置图片上下居中 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 46px; /* 设置元素宽度 */
+            height: 100%; /* 设置元素高度 */
+            border: none;
         }
+
         #version-info p {
             margin: 10px 0;
         }
@@ -142,6 +153,7 @@
             font-size: clamp(10px, 1.2vw, 16px);
             line-height: 1.6;
             color: #333;
+            text-align: left;
         }
         #release-notes ul,
         #release-notes ol {
@@ -474,6 +486,7 @@
         /* 可选：添加一些间距和样式 */
         .InfoCard-title {
             margin: 0;
+            font-size: clamp(14px, 1.2vw, 18px);
         }
 
         .btn-close {
@@ -499,7 +512,7 @@
 
         .modal-details h3 {
             margin: 0;
-            font-size: 1.5em;
+            font-size: 1.1em;
             text-align: center;
         }
 
@@ -779,7 +792,7 @@
                     <div class="version">
                         <p>
                             <a href="#" id="open-version-modal">Version：{{ version }}
-                            <span id="new-version-indicator" style="display: none;">New</span></a>
+                            <img class="new-version" id="new-version-indicator" style="display: none;" src="/static/img/new.png" alt="发现新版本"></a>
                         </p>
                     </div>
                 </div>
@@ -827,7 +840,7 @@
                 </div>
                 <div class="modal-body">
                     <div id="version-info">
-                        <p>使用帮助：<a href="https://www.songmy.top/blog/8" target="_blank" rel="noopener noreferrer" style="color: #007bff; text-decoration: none;">配置文档及问题反馈</a></p>
+                        <p>使用帮助：<a href="http://wiki.songmy.top:8080/" target="_blank" rel="noopener noreferrer" style="color: #007bff; text-decoration: none;">配置文档及问题反馈</a></p>
                         <p>当前版本：<span id="current-version">{{ version }}</span></p>
                         <p>最新版本：<span id="latest-version">检查中...</span></p>
                         <p id="update-notes" style="display: none;">更新说明：<br><div id="release-notes"></div></p>

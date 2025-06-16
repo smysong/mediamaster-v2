@@ -208,6 +208,118 @@
             background-color: unset;
         }
 
+        .search {
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto 0 auto;
+            display: flex;
+            justify-content: center;
+        }
+        .search form {
+            width: 100%;
+            display: flex;
+            gap: 10px;
+        }
+        .inner_search_wrapper {
+            flex: 1;
+        }
+        .k-input-inner {
+            width: 100%;
+            padding: 8px 12px;
+            border-radius: 30px;
+            border: 1px solid transparent;
+            font-size: 16px;
+            background-origin: border-box;
+            background-clip: padding-box, border-box;
+            background-image: linear-gradient(#fff, #fff), linear-gradient(to right,rgba(30,213,169,1) 0%,rgba(1,180,228,1) 100%);
+            /* 第一层白色，第二层为渐变边框 */
+        }
+        /* 保持输入时边框颜色不变 */
+        .k-input-inner:focus {
+            border-color: rgba(1,180,228,1);
+            outline: none;
+        }
+        .k-button {
+            padding: 8px 20px;
+            border-radius: 30px;
+            background: linear-gradient(to right,rgba(30,213,169,1) 0%,rgba(1,180,228,1) 100%);
+            color: #fff;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        .k-button:hover {
+            color: rgba(3,37,65);
+        }
+        .search-results-section {
+            margin-top: 30px;
+        }
+        .search-list {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 20px 20px;
+            padding: 8px;
+            overflow-x: auto;
+            overflow-y: visible;
+            scroll-behavior: smooth;
+        }
+        .search-list::-webkit-scrollbar {
+            display: none;
+        }
+        .search-item {
+            display: inline-block;
+            position: relative;
+            width: 150px;
+            height: 225px;
+            margin-right: 20px;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #f0f0f0;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.3s, box-shadow 0.3s;
+            vertical-align: top;
+        }
+        .search-item:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 10px rgba(0,0,0,0.2);
+        }
+        .search-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .search-item .rating {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            background: rgba(0,0,0,0.7);
+            color: #fff;
+            font-size: 14px;
+            border-radius: 5px;
+            display: block;
+            padding: 2px 6px;
+        }
+        .search-item .title {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            background: rgba(0,0,0,0.7);
+            color: #fff;
+            font-size: 14px;
+            text-align: center;
+            padding: 5px 0;
+            box-sizing: border-box;
+        }
+        @media (max-width: 1200px) {
+            .search-list {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+        @media (max-width: 768px) {
+            .search-list {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
         /* 响应式设计 */
         @media (max-width: 768px) {
             .movie-item, .tv-item {
@@ -268,6 +380,26 @@
                 <!-- 随机推荐内容将在这里填充 -->
             </div>
         </div>
+
+        <!-- 搜索框 -->
+        <div class="search">
+            <form id="inner_search_form" action="javascript:void(0);" method="get" accept-charset="utf-8">
+                <label class="inner_search_wrapper">
+                    <span class="k-input k-textbox k-input-solid k-input-md k-rounded-md">
+                        <input dir="auto" id="inner_search_v4" name="query" type="text" autocorrect="off" autofill="off" autocomplete="off" spellcheck="false" placeholder="搜索电影、电视节目" value="" data-role="textbox" aria-disabled="false" class="k-input-inner" inputmode="text">
+                    </span>
+                </label>
+                <input type="submit" value="搜索" data-role="button" class="k-button k-button-md k-rounded-md k-button-solid k-button-solid-base" role="button" aria-disabled="false" tabindex="0">
+            </form>
+        </div>
+
+        <!-- 搜索结果区域 -->
+        <section id="search-results-section" class="search-results-section" style="display:none;">
+            <h2>搜索结果</h2>
+            <div class="search-results-carousel-container">
+                <div class="search-list" id="search-results-list"></div>
+            </div>
+        </section>
 
         <section id="now-playing">
             <h2>影院热映</h2>
@@ -336,6 +468,97 @@
         loadingElement.style.display = 'none';
     }
 
+    // 搜索功能
+    document.getElementById('inner_search_form').addEventListener('submit', function (e) {
+        e.preventDefault();
+        const query = document.getElementById('inner_search_v4').value.trim();
+        if (!query) return;
+        // 隐藏推荐区
+        document.getElementById('now-playing').style.display = 'none';
+        document.getElementById('today-movies').style.display = 'none';
+        document.getElementById('today-tv-shows').style.display = 'none';
+        // 显示搜索结果区
+        document.getElementById('search-results-section').style.display = '';
+        // 显示加载动画
+        loadingElement.style.display = '';
+        // 搜索 TMDB
+        fetch(`https://api.tmdb.org/3/search/multi?api_key=${tmdbApiKey}&language=zh-CN&query=${encodeURIComponent(query)}`)
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                displaySearchResults(data.results || []);
+            })
+            .catch(error => {
+                hideLoading();
+                displaySearchResults([]);
+                showToast('搜索失败，请稍后重试。', false);
+            });
+    });
+
+    // 搜索结果展示
+    function displaySearchResults(results) {
+        const listElement = document.getElementById('search-results-list');
+        listElement.innerHTML = '';
+        if (!results.length) {
+            listElement.innerHTML = '<div style="color:#888;padding:20px;">未找到相关内容</div>';
+            return;
+        }
+        results.forEach(item => {
+            // 只展示电影和电视剧
+            if (item.media_type !== 'movie' && item.media_type !== 'tv') return;
+            const listItem = document.createElement('div');
+            listItem.className = 'search-item';
+            // 海报
+            const posterElement = document.createElement('img');
+            posterElement.src = '/static/img/no-image.png'; // 优先显示默认图片
+
+            // 优先显示默认图片，加载成功后再显示 TMDB 图片
+            if (item.poster_path) {
+                const tmdbPosterUrl = `https://image.tmdb.org/t/p/w500${item.poster_path}`;
+                const imgLoader = new Image();
+                imgLoader.onload = function() {
+                    posterElement.src = tmdbPosterUrl;
+                };
+                imgLoader.onerror = function() {
+                    posterElement.src = '/static/img/no-image.png';
+                };
+                imgLoader.src = tmdbPosterUrl;
+            }
+            posterElement.alt = item.title || item.name || '无标题';
+            // 评分
+            const ratingElement = document.createElement('div');
+            ratingElement.className = 'rating';
+            ratingElement.textContent = item.vote_average ? item.vote_average.toFixed(1) : 'N/A';
+            // 标题
+            const titleElement = document.createElement('div');
+            titleElement.className = 'title';
+            titleElement.textContent = item.title || item.name || '无标题';
+            // 点击弹出模态框
+            listItem.addEventListener('click', () => {
+                showMovieDetails(item.id, item.media_type);
+            });
+            listItem.appendChild(posterElement);
+            listItem.appendChild(ratingElement);
+            listItem.appendChild(titleElement);
+            listElement.appendChild(listItem);
+        });
+    }
+
+    // 恢复推荐区显示
+    function showRecommendations() {
+        document.getElementById('now-playing').style.display = '';
+        document.getElementById('today-movies').style.display = '';
+        document.getElementById('today-tv-shows').style.display = '';
+        document.getElementById('search-results-section').style.display = 'none';
+    }
+
+    // 监听搜索框清空时恢复推荐区
+    document.getElementById('inner_search_v4').addEventListener('input', function () {
+        if (!this.value.trim()) {
+            showRecommendations();
+        }
+    });
+
     // 使用API Key获取电影热门推荐
     function fetchTrendingMovies(apiKey) {
         const url = `https://api.tmdb.org/3/trending/movie/day?api_key=${apiKey}&language=zh-CN`;
@@ -391,34 +614,43 @@
     function displayRecommendations(recommendations, listId) {
         const listElement = document.getElementById(listId);
         listElement.innerHTML = ''; // 清空原有内容
-    
+
         recommendations.forEach(item => {
             if (item) {
                 const listItem = document.createElement('div');
                 listItem.className = listId.includes('tv') ? 'tv-item' : 'movie-item';
-    
-                // 海报图片
+
+                // 海报图片，优先显示默认图片，加载成功后再显示 TMDB 图片
                 const posterElement = document.createElement('img');
-                posterElement.src = item.poster_path 
-                    ? `https://static-mdb.v.geilijiasu.com/t/p/w500${item.poster_path}` 
-                    : '/static/img/no-image.png';
+                posterElement.src = '/static/img/no-image.png';
+                if (item.poster_path) {
+                    const tmdbPosterUrl = `https://image.tmdb.org/t/p/w500${item.poster_path}`;
+                    const imgLoader = new Image();
+                    imgLoader.onload = function() {
+                        posterElement.src = tmdbPosterUrl;
+                    };
+                    imgLoader.onerror = function() {
+                        posterElement.src = '/static/img/no-image.png';
+                    };
+                    imgLoader.src = tmdbPosterUrl;
+                }
                 posterElement.alt = item.title || item.name || '无标题';
-    
+
                 // 添加点击事件，显示模态框
                 posterElement.addEventListener('click', () => {
                     showMovieDetails(item.id, item.media_type || (listId.includes('tv') ? 'tv' : 'movie'));
                 });
-    
+
                 // 评分
                 const ratingElement = document.createElement('div');
                 ratingElement.className = 'rating';
                 ratingElement.textContent = item.vote_average ? item.vote_average.toFixed(1) : 'N/A';
-    
+
                 // 标题
                 const titleElement = document.createElement('div');
                 titleElement.className = 'title';
                 titleElement.textContent = item.title || item.name || '无标题';
-    
+
                 // 组装元素
                 listItem.appendChild(posterElement);
                 listItem.appendChild(ratingElement);
@@ -426,7 +658,7 @@
                 listElement.appendChild(listItem);
             }
         });
-    
+
         // 添加占位内容以确保滚动
         if (recommendations.length < 10) {
             for (let i = 0; i < 10 - recommendations.length; i++) {
@@ -442,7 +674,7 @@
     function fetchMovieDetails(tmdbId, mediaType, apiKey) {
         // 根据 mediaType 动态选择请求路径
         const url = `https://api.tmdb.org/3/${mediaType}/${tmdbId}?api_key=${apiKey}&language=zh-CN`;
-    
+
         return fetch(url)
             .then(response => response.json())
             .then(data => {
@@ -455,31 +687,32 @@
             });
     }
 
+    // Banner推荐区，优先显示默认banner，加载成功后再显示TMDB图片
     function populateBanner(trendingMovies, nowPlayingMovies, trendingTVShows) {
         const bannerListElement = document.querySelector('.banner-list');
         const bannerElement = document.getElementById('banner');
         bannerListElement.innerHTML = ''; // 清空原有内容
-    
+
         // 从每个分类中选择两个 popularity 指数最高的推荐项
         const selectedMovies = trendingMovies
             .sort((a, b) => b.popularity - a.popularity)
             .slice(0, 2);
-    
+
         const selectedNowPlaying = nowPlayingMovies
             .sort((a, b) => b.popularity - a.popularity)
             .slice(0, 2);
-    
+
         const selectedTVShows = trendingTVShows
             .sort((a, b) => b.popularity - a.popularity)
             .slice(0, 2);
-    
+
         // 合并所有推荐项
         const allRecommendations = [...selectedMovies, ...selectedNowPlaying, ...selectedTVShows];
-    
+
         // 去重逻辑：使用 tmdbId 或 title 作为唯一标识
         const uniqueRecommendations = [];
         const seenIds = new Set();
-    
+
         allRecommendations.forEach(item => {
             const uniqueKey = item.id || item.title; // 使用 tmdbId 或 title 作为唯一标识
             if (!seenIds.has(uniqueKey)) {
@@ -487,14 +720,14 @@
                 uniqueRecommendations.push(item);
             }
         });
-    
+
         // 确保最终只有 6 个推荐项
         const selectedRecommendations = uniqueRecommendations.slice(0, 6);
         console.log('选择的推荐项:', selectedRecommendations);
-    
+
         let currentIndex = 0;
         const intervalTime = 30000; // 每30秒切换一次
-    
+
         // 动态创建进度条容器和进度条
         let progressBarContainer = bannerElement.querySelector('.progress-bar-container');
         if (!progressBarContainer) {
@@ -506,7 +739,7 @@
             bannerElement.appendChild(progressBarContainer); // 插入到 banner 容器内的最下方
         }
         const progressBar = progressBarContainer.querySelector('.progress-bar');
-    
+
         function showNextBannerItem() {
             const item = selectedRecommendations[currentIndex];
             if (item) {
@@ -515,52 +748,59 @@
                     if (movieDetails) {
                         const bannerItem = document.createElement('div');
                         bannerItem.className = 'banner-item';
-    
-                        // 设置背景图片
+
+                        // 优先显示默认banner，加载成功后再显示TMDB图片
+                        bannerItem.style.backgroundImage = `url(https://dailybing.com/api/v1)`;
                         if (movieDetails.backdrop_path) {
-                            bannerItem.style.backgroundImage = `url(https://static-mdb.v.geilijiasu.com/t/p/original${movieDetails.backdrop_path})`;
-                        } else {
-                            bannerItem.style.backgroundImage = `url(https://dailybing.com/api/v1)`;
+                            const tmdbBackdropUrl = `https://image.tmdb.org/t/p/original${movieDetails.backdrop_path}`;
+                            const imgLoader = new Image();
+                            imgLoader.onload = function() {
+                                bannerItem.style.backgroundImage = `url(${tmdbBackdropUrl})`;
+                            };
+                            imgLoader.onerror = function() {
+                                bannerItem.style.backgroundImage = `url(https://dailybing.com/api/v1)`;
+                            };
+                            imgLoader.src = tmdbBackdropUrl;
                         }
-    
+
                         // 创建评分元素
                         const ratingElement = document.createElement('div');
                         ratingElement.className = 'rating';
                         ratingElement.textContent = movieDetails.vote_average 
                             ? movieDetails.vote_average.toFixed(1) 
                             : 'N/A';
-    
+
                         // 创建内容容器
                         const contentContainer = document.createElement('div');
                         contentContainer.className = 'textcontent';
-    
+
                         // 创建标题
                         const titleElement = document.createElement('p');
                         titleElement.className = 'title'; // 添加类名
                         titleElement.textContent = movieDetails.title || movieDetails.name || '无标题';
-    
+
                         // 创建剧情简介
                         const overviewElement = document.createElement('p');
                         overviewElement.className = 'overview'; // 添加类名
                         overviewElement.textContent = movieDetails.overview || '无简介';
-    
+
                         // 将评分、标题和简介添加到内容容器
                         bannerItem.appendChild(ratingElement); // 添加评分到右上角
                         contentContainer.appendChild(titleElement);
                         contentContainer.appendChild(overviewElement);
-    
+
                         // 将内容容器添加到banner项
                         bannerItem.appendChild(contentContainer);
-    
+
                         // 添加点击事件，显示模态框
                         bannerItem.addEventListener('click', () => {
                             showMovieDetails(item.id, mediaType);
                         });
-    
+
                         // 将banner项添加到banner区域
                         bannerListElement.innerHTML = ''; // 清空原有内容
                         bannerListElement.appendChild(bannerItem);
-    
+
                         // 添加动画效果
                         setTimeout(() => {
                             bannerItem.classList.add('active');
@@ -568,7 +808,7 @@
                     }
                 });
             }
-    
+
             // 更新进度条
             progressBar.style.transition = 'none'; // 禁用过渡效果以重置宽度
             progressBar.style.width = '0%';
@@ -576,14 +816,14 @@
                 progressBar.style.transition = `width ${intervalTime}ms linear`; // 设置过渡效果
                 progressBar.style.width = '100%';
             }, 50);
-    
+
             // 更新当前索引
             currentIndex = (currentIndex + 1) % selectedRecommendations.length;
         }
-    
+
         // 初始显示
         showNextBannerItem();
-    
+
         // 每隔30秒切换下一个推荐项
         setInterval(showNextBannerItem, intervalTime);
     }
@@ -615,12 +855,12 @@
             console.error(`未找到列表元素: ${listId}`);
             return;
         }
-    
+
         const itemWidth = listElement.firstElementChild 
             ? listElement.firstElementChild.offsetWidth + 20 
             : 0; // 20 是项目之间的间距
         const scrollAmount = itemWidth * 3; // 每次滚动 3 个项目
-    
+
         console.log(`滚动列表: ${listId}, 方向: ${direction}, 滚动距离: ${scrollAmount}`);
         listElement.scrollLeft += direction * scrollAmount;
     }
@@ -629,12 +869,12 @@
     document.querySelectorAll('.movie-list, .tv-list').forEach(list => {
         let startX = 0;
         let scrollLeft = 0;
-    
+
         list.addEventListener('touchstart', (e) => {
             startX = e.touches[0].pageX; // 记录触摸起点
             scrollLeft = list.scrollLeft; // 记录当前滚动位置
         });
-    
+
         list.addEventListener('touchmove', (e) => {
             const deltaX = e.touches[0].pageX - startX; // 计算滑动距离
             list.scrollLeft = scrollLeft - deltaX; // 更新滚动位置
@@ -657,20 +897,31 @@
         }, 2000);
     }
 
+    // 详情模态框，优先显示默认图片，加载成功后再显示 TMDB 图片
     function showMovieDetails(tmdbId, mediaType) {
         fetchMovieDetails(tmdbId, mediaType, tmdbApiKey).then(movieDetails => {
             if (movieDetails) {
                 // 填充模态框内容
-                document.getElementById('modalPoster').src = movieDetails.poster_path 
-                    ? `https://static-mdb.v.geilijiasu.com/t/p/w500${movieDetails.poster_path}` 
-                    : '/static/img/no-image.png';
+                const modalPoster = document.getElementById('modalPoster');
+                modalPoster.src = '/static/img/no-image.png';
+                if (movieDetails.poster_path) {
+                    const tmdbPosterUrl = `https://image.tmdb.org/t/p/w500${movieDetails.poster_path}`;
+                    const imgLoader = new Image();
+                    imgLoader.onload = function() {
+                        modalPoster.src = tmdbPosterUrl;
+                    };
+                    imgLoader.onerror = function() {
+                        modalPoster.src = '/static/img/no-image.png';
+                    };
+                    imgLoader.src = tmdbPosterUrl;
+                }
                 document.getElementById('modalTitle').textContent = movieDetails.title || movieDetails.name || '无标题';
-    
+
                 // 填充评分数据，保留小数点后一位
                 document.getElementById('modalRating').textContent = movieDetails.vote_average 
                     ? `评分: ${movieDetails.vote_average.toFixed(1)}` 
                     : '评分: 暂无';
-    
+
                 // 根据 mediaType 动态显示内容
                 if (mediaType === 'movie') {
                     document.getElementById('modalSeasons').style.display = 'none'; // 隐藏季数信息
@@ -687,19 +938,19 @@
                     document.getElementById('modalEpisodeCount').textContent = movieDetails.number_of_episodes 
                         ? `共 ${movieDetails.number_of_episodes} 集` 
                         : '集数: 未知';
-    
+
                     const lastSeason = movieDetails.seasons && movieDetails.seasons[movieDetails.seasons.length - 1];
                     const airDate = lastSeason && lastSeason.air_date;
                     document.getElementById('modalYear').textContent = airDate 
                         ? `年份: ${new Date(airDate).getFullYear()}` 
                         : '年份: 未知';
                 }
-    
+
                 document.getElementById('modalOverview').textContent = movieDetails.overview || '暂无简介';
-    
+
                 // 设置订阅按钮的点击事件
                 const subscribeButton = document.getElementById('subscribeButton');
-    
+
                 // 检查订阅状态
                 const subscriptionData = {
                     title: movieDetails.title || movieDetails.name || '无标题',
@@ -771,7 +1022,7 @@
                 .catch(error => {
                     console.error('检查订阅状态时出错:', error);
                 });
-    
+
                 // 显示模态框
                 const modal = new bootstrap.Modal(document.getElementById('mediaDetailsModal'));
                 modal.show();

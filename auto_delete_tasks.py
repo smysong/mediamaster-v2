@@ -7,7 +7,7 @@ from qbittorrentapi import Client as QBittorrentClient, LoginFailed
 
 # 配置日志
 logging.basicConfig(
-    level=logging.INFO,  # 修改为 DEBUG 级别
+    level=logging.INFO,  # 修改为 INFO 级别
     format="%(levelname)s - %(message)s",
     handlers=[
         logging.FileHandler("/tmp/log/auto_delete_tasks.log", mode='w'),
@@ -46,20 +46,24 @@ TORRENT_DIR = '/Torrent'
 
 class DownloadManager:
     def __init__(self):
+        """
+        初始化下载器客户端，增加连接失败的异常处理，避免程序崩溃。
+        """
+        self.client = None
         if not download_mgmt:
             logging.info("下载管理功能未启用")
             return
         
-        if download_type == 'transmission':
-            self.client = TransmissionClient(
-                host=download_host,
-                port=download_port,
-                username=download_username,
-                password=download_password
-            )
-            logging.info("已连接到 Transmission")
-        elif download_type == 'qbittorrent':
-            try:
+        try:
+            if download_type == 'transmission':
+                self.client = TransmissionClient(
+                    host=download_host,
+                    port=download_port,
+                    username=download_username,
+                    password=download_password
+                )
+                logging.info("已连接到 Transmission")
+            elif download_type == 'qbittorrent':
                 self.client = QBittorrentClient(
                     host=f"http://{download_host}:{download_port}",
                     username=download_username,
@@ -67,17 +71,17 @@ class DownloadManager:
                 )
                 self.client.auth_log_in()
                 logging.info("已连接到 qBittorrent")
-            except LoginFailed as e:
-                logging.error(f"qBittorrent 登录失败: {e}")
-                exit(0)
-        else:
-            logging.error("未知的下载管理类型")
-            exit(0)
+            else:
+                logging.error("未知的下载管理类型")
+                self.client = None
+        except Exception as e:
+            logging.error(f"连接下载器失败: {e}")
+            self.client = None
 
     def get_torrents(self):
-        """获取所有任务"""
-        if not download_mgmt:
-            logging.info("下载管理功能未启用，跳过获取任务")
+        """获取所有任务，连接失败时直接返回空列表"""
+        if not download_mgmt or not self.client:
+            logging.info("下载管理功能未启用或下载器未连接，跳过获取任务")
             return []
         
         try:
@@ -98,28 +102,56 @@ class DownloadManager:
             return []
 
     def delete_stopped_torrents(self, torrents):
-        """删除停止状态的种子任务"""
-        if not download_mgmt:
-            logging.info("下载管理功能未启用，跳过删除停止状态的任务")
+        """
+        删除下载进度为100%并且是停止状态的种子任务，
+        同时删除任务下载的文件和所有未使用的标签（qBittorrent支持标签直接删除）。
+        增加连接失败的保护。
+        """
+        if not download_mgmt or not self.client:
+            logging.info("下载管理功能未启用或下载器未连接，跳过删除停止状态的任务")
             return
-        
+    
         if not torrents:
             logging.info("没有需要删除的停止状态任务")
-            return
-        
-        for torrent in torrents:
-            if torrent['status'] in ['stopped', 'error', 'stopped_download', 'stoppedDL']:  # 增加 'stoppedDL' 状态
-                try:
-                    if download_type == 'transmission':
-                        self.client.remove_torrent(torrent['id'], delete_data=True)
-                        logging.info(f"任务 {torrent['name']} 已删除")
-                    elif download_type == 'qbittorrent':
-                        self.client.torrents_delete(delete_files=True, torrent_hashes=torrent['id'])
-                        logging.info(f"任务 {torrent['name']} 已删除")
-                except Exception as e:
-                    logging.error(f"删除任务失败: {e}")
-            else:
-                logging.debug(f"任务 {torrent['name']} 状态为 {torrent['status']}，不满足删除条件")
+        else:
+            for torrent in torrents:
+                # 判断进度为100%且状态为停止
+                is_stopped = torrent['status'] in ['stopped', 'error', 'stopped_download', 'stoppedDL', 'stoppedUP']
+                is_finished = torrent['percent_done'] >= 0.9999 or torrent['percent_done'] == 1.0
+                if is_stopped and is_finished:
+                    try:
+                        if download_type == 'transmission':
+                            self.client.remove_torrent(torrent['id'], delete_data=True)
+                            logging.info(f"任务 {torrent['name']} 已删除（含数据）")
+                            # Transmission标签随任务删除自动消失
+                        elif download_type == 'qbittorrent':
+                            # 删除任务及数据
+                            self.client.torrents_delete(delete_files=True, torrent_hashes=torrent['id'])
+                            logging.info(f"任务 {torrent['name']} 已删除（含数据）")
+                    except Exception as e:
+                        logging.error(f"删除任务失败: {e}")
+                else:
+                    logging.debug(f"任务 {torrent['name']} 状态为 {torrent['status']}，进度为 {torrent['percent_done']:.2%}，不满足删除条件")
+    
+        # 无论是否有任务，都检查并删除未使用的标签（仅 qBittorrent 支持）
+        if download_type == 'qbittorrent':
+            try:
+                all_tags = self.client.torrents_tags()
+                if isinstance(all_tags, str):
+                    all_tags = [t.strip() for t in all_tags.split(',') if t.strip()]
+                logging.info(f"当前所有标签: {all_tags}")
+                for tag in all_tags:
+                    if not tag:
+                        continue  # 跳过空标签
+                    torrents_with_tag = self.client.torrents_info(tag=tag)
+                    logging.info(f"标签 {tag} 关联任务数: {len(torrents_with_tag)}")
+                    logging.debug(f"标签 {tag} 关联任务详细: {torrents_with_tag}")
+                    if not torrents_with_tag:
+                        # 直接删除未使用标签
+                        self.client.torrent_tags.delete_tags(tags=tag)
+                        logging.info(f"未使用的标签 {tag} 已删除")
+            except Exception as e:
+                logging.warning(f"删除未使用标签失败: {e}")
 
 def check_and_delete_torrent_files():
     """检查并删除 Torrent 目录中的文件"""
@@ -151,11 +183,12 @@ if download_mgmt:
         exit(0)
 
     manager = DownloadManager()
-    torrents = manager.get_torrents()
-    if torrents:
+    if manager.client:
+        torrents = manager.get_torrents()
         manager.delete_stopped_torrents(torrents)
     else:
-        logging.info("任务列表为空，跳过删除下载任务")
-        check_and_delete_torrent_files()
+        logging.error("未能连接到下载器，跳过后续操作")
+    # 可选：如需清理Torrent目录
+    check_and_delete_torrent_files()
 else:
     logging.info("下载管理功能未启用，程序退出")

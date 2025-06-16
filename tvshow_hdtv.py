@@ -42,6 +42,10 @@ class TvshowIndexer:
         options.add_argument('--lang=zh-CN')  # 设置浏览器语言为简体中文
         options.add_argument('--disable-gpu')  # 禁用GPU加速
         options.add_argument('--disable-extensions')  # 禁用扩展插件
+        # 忽略SSL证书错误
+        options.add_argument('--ignore-certificate-errors')
+        options.add_argument('--allow-insecure-localhost')
+        options.add_argument('--ignore-ssl-errors')
         # 设置用户配置文件缓存目录
         user_data_dir = '/app/ChromeCache/user-data-dir'
         options.add_argument(f'--user-data-dir={user_data_dir}')

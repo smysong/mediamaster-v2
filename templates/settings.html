@@ -3,13 +3,17 @@
 {% block content %}
 <main class="container mt-1">
     <div class="row fade-in">
-        <form method="post" action="/save_set">
+        <form method="post" action="/save_set" id="settingsForm">
             {% for group, options in config.items() %}
             <div class="card mb-4">
                 <div class="card-header">{{ group }}</div>
                 <div class="card-body">
                     {% for key, field in options.items() %}
-                    <div class="form-group row">
+                    {# 默认隐藏指定key的配置项 #}
+                    {% set hide_keys = ['douban_api_key', 'douban_cookie', 'bt0_login_username', 'bt0_login_password'] %}
+                    <div class="form-group row"
+                         id="form-group-{{ key }}"
+                         {% if key in hide_keys %}style="display:none;"{% endif %}>
                         <label for="{{ key }}" class="col-sm-3 col-form-label" style="font-size: clamp(12px, 1.2vw, 16px); align-content:center;">{{ field.label }}</label>
                         <div class="col-sm-9" style="font-size: clamp(12px, 1.2vw, 16px);">
                             <!-- 隐藏字段存储 ID -->
@@ -43,8 +47,14 @@
                             <!-- 添加提示信息 -->
                             {% if key == 'tmdb_api_key' %}
                             <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">TMDB密钥用于获取媒体详细信息、文件转移、热门推荐，请自行登录TMDB官网申请。</small>
+                            {% elif key == 'preferred_resolution' %}
+                            <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">首选、备选分辨率支持：720p、1080p、2160p等。以"p"（逐行扫描）为单位。</small>
                             {% elif key == 'douban_api_key' %}
                             <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">豆瓣密钥用于获取媒体详细信息、演职人员中文汉化等，保持系统默认即可。</small>
+                            {% elif key == 'run_interval_hours' %}
+                            <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">运行间隔时间（小时），建议设置为4小时以上，以减少频繁请求。</small>
+                            {% elif key == 'dateadded' %}
+                            <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">修改NFO文件中的添加日期为影片发行日期，Emby、Jellyfin等媒体服务器会读取此信息，在最新媒体中按发行日期排序，否则默认按添加日期排序。</small>
                             {% elif key == 'douban_cookie' %}
                             <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">豆瓣cookie非必要选项，保持系统默认即可。</small>
                             {% elif key == 'douban_rss_url' %}
@@ -75,6 +85,64 @@
 <!-- 初始化 Toast 消息 -->
 <script>
     $(document).ready(function () {
+        // 动态显示/隐藏下载器相关配置项
+        function toggleDownloaderFields() {
+
+            // 新增：根据 notification 开关显示/隐藏 notification_api_key
+            var notification = $('#notification').val() || $('#notification').find("option:selected").val();
+            if (notification === 'True') {
+                $('#form-group-notification_api_key').show();
+            } else {
+                $('#form-group-notification_api_key').hide();
+            }
+
+            // 获取下载器类型和下载管理开关
+            var downloader = $('#download_type').val() || $('#download_type').find("option:selected").val();
+            var mgmt = $('#download_mgmt').val() || $('#download_mgmt').find("option:selected").val();
+
+            // 先处理下载管理总开关
+            var downloadFields = [
+                'download_type', 'download_username', 'download_password',
+                'download_host', 'download_port', 'xunlei_device_name', 'xunlei_dir'
+            ];
+            if (mgmt === 'False') {
+                downloadFields.forEach(function(key) {
+                    $('#form-group-' + key).hide();
+                });
+                return;
+            } else {
+                downloadFields.forEach(function(key) {
+                    $('#form-group-' + key).show();
+                });
+            }
+
+            // 只在选择迅雷时显示xunlei_device_name、xunlei_dir，隐藏download_host、download_port
+            if (downloader === 'xunlei') {
+                $('#form-group-xunlei_device_name').show();
+                $('#form-group-xunlei_dir').show();
+                $('#form-group-download_host').hide();
+                $('#form-group-download_port').hide();
+            } else if (downloader === 'transmission' || downloader === 'qbittorrent') {
+                $('#form-group-xunlei_device_name').hide();
+                $('#form-group-xunlei_dir').hide();
+                $('#form-group-download_host').show();
+                $('#form-group-download_port').show();
+            } else {
+                // 默认全部显示
+                $('#form-group-xunlei_device_name').hide();
+                $('#form-group-xunlei_dir').hide();
+                $('#form-group-download_host').show();
+                $('#form-group-download_port').show();
+            }
+        }
+
+        // 绑定下拉框事件
+        $('#download_type').on('change', toggleDownloaderFields);
+        $('#download_mgmt').on('change', toggleDownloaderFields);
+        $('#notification').on('change', toggleDownloaderFields);
+        // 页面加载时初始化
+        toggleDownloaderFields();
+
         // 获取 Flask 传递的闪现消息
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}

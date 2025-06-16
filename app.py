@@ -322,8 +322,8 @@ def system_resources():
         "disk_total_gb": round(disk_total_gb, 2),         # 存储空间总量（GB）
         "disk_used_gb": round(disk_used_gb, 2),           # 存储空间已用容量（GB）
         "disk_usage_percent": disk_usage_percent,         # 存储空间使用百分比
-        "net_io_sent": round(net_io_sent_per_sec, 2),   # 网络上传速率（KB/s）
-        "net_io_recv": round(net_io_recv_per_sec, 2),   # 网络下载速率（KB/s）
+        "net_io_sent": round(net_io_sent_per_sec, 2),     # 网络上传速率（KB/s）
+        "net_io_recv": round(net_io_recv_per_sec, 2),     # 网络下载速率（KB/s）
         "cpu_usage_percent": cpu_usage_percent,           # CPU 利用率
         "cpu_count_logical": cpu_count_logical,           # 逻辑 CPU 数量
         "cpu_count_physical": cpu_count_physical,         # 物理 CPU 核心数
@@ -944,7 +944,8 @@ GROUP_MAPPING = {
     "媒体库目录": {
         "media_dir": {"type": "text", "label": "主目录"},
         "movies_path": {"type": "text", "label": "电影目录"},
-        "episodes_path": {"type": "text", "label": "电视剧目录"}
+        "episodes_path": {"type": "text", "label": "电视剧目录"},
+        "unknown_path": {"type": "text", "label": "未识别目录"}
     },
     "资源下载设置": {
         "download_dir": {"type": "text", "label": "下载目录"},

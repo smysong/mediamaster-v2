@@ -42,6 +42,10 @@ class MediaIndexer:
         options.add_argument('--window-size=1920x1080')  # 设置窗口大小
         options.add_argument('--disable-gpu')  # 禁用GPU加速
         options.add_argument('--disable-extensions')  # 禁用扩展插件
+        # 忽略SSL证书错误
+        options.add_argument('--ignore-certificate-errors')
+        options.add_argument('--allow-insecure-localhost')
+        options.add_argument('--ignore-ssl-errors')
         # 设置用户配置文件缓存目录
         user_data_dir = '/app/ChromeCache/user-data-dir'
         options.add_argument(f'--user-data-dir={user_data_dir}')
@@ -224,7 +228,7 @@ class MediaIndexer:
                             logging.info("成功点击匹配的电影卡片")
     
                             # 切换到新标签页
-                            WebDriverWait(self.driver, 10).until(
+                            WebDriverWait(self.driver, 15).until(
                                 lambda d: len(d.window_handles) > 1
                             )
                             self.driver.switch_to.window(self.driver.window_handles[-1])
@@ -232,8 +236,8 @@ class MediaIndexer:
     
                             # 等待影片详细信息页面加载完成
                             try:
-                                WebDriverWait(self.driver, 10).until(
-                                    EC.presence_of_element_located((By.CLASS_NAME, "media-details-area"))
+                                WebDriverWait(self.driver, 15).until(
+                                    EC.presence_of_element_located((By.CLASS_NAME, "resource-item-title"))
                                 )
                                 logging.info("成功进入影片详细信息页面")
                             except TimeoutException:
@@ -378,7 +382,7 @@ class MediaIndexer:
                             logging.info("成功点击匹配的电视节目卡片")
     
                             # 切换到新标签页
-                            WebDriverWait(self.driver, 10).until(
+                            WebDriverWait(self.driver, 15).until(
                                 lambda d: len(d.window_handles) > 1
                             )
                             self.driver.switch_to.window(self.driver.window_handles[-1])
@@ -386,8 +390,8 @@ class MediaIndexer:
     
                             # 等待节目详细信息页面加载完成
                             try:
-                                WebDriverWait(self.driver, 10).until(
-                                    EC.presence_of_element_located((By.CLASS_NAME, "media-details-area"))
+                                WebDriverWait(self.driver, 15).until(
+                                    EC.presence_of_element_located((By.CLASS_NAME, "resource-item-title"))
                                 )
                                 logging.info("成功进入节目详细信息页面")
                             except TimeoutException:
