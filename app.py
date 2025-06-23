@@ -931,7 +931,7 @@ GROUP_MAPPING = {
     },
     "消息通知": {
         "notification": {"type": "switch", "label": "消息通知"},
-        "notification_api_key": {"type": "password", "label": "Bark设备Token"}
+        "notification_api_key": {"type": "password", "label": "Bark API密钥"},
     },
     "媒体添加时间": {
         "dateadded": {"type": "switch", "label": "使用影片发行日期"}

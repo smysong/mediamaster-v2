@@ -107,6 +107,12 @@
         const list = document.getElementById('taskList');
         list.innerHTML = ''; // 清空现有内容
 
+        if (torrents.length === 0) {
+            // 任务列表为空时显示提示
+            list.innerHTML = `<div class="text-center text-muted py-4">当前暂无下载任务</div>`;
+            return;
+        }
+
         torrents.forEach(torrent => {
             const isSelected = localStorage.getItem(`selectedTorrent_${torrent.id}`) === 'true';
             const taskItem = document.createElement('div');

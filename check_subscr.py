@@ -77,13 +77,13 @@ def subscribe_tvs(cursor):
             else:
                 logging.warning(f"电视剧：{title} 第{season}季 已存在于订阅列表中，跳过插入。")
         else:
+            # 已入库部分集数，需补全缺失集
             existing_episodes_str = cursor.execute(
                 '''SELECT episodes FROM LIB_TV_SEASONS WHERE tv_id = (SELECT id FROM LIB_TVS WHERE title = ? AND year = ?) AND season = ?''',
                 (title, year, season)
             ).fetchone()
 
             if existing_episodes_str:
-                # 兼容 episodes 字段为 int 或 str
                 val = existing_episodes_str[0]
                 if isinstance(val, int):
                     existing_episodes = set([val])
@@ -92,12 +92,48 @@ def subscribe_tvs(cursor):
                 else:
                     existing_episodes = set()
                 total_episodes_set = set(range(1, total_episodes + 1))
-                missing_episodes = total_episodes_set - existing_episodes
+                missing_episodes_set = total_episodes_set - existing_episodes
 
-                if missing_episodes:
-                    pass
-                else:
+            # 查询当前订阅表中已记录的缺失集
+            miss_row = cursor.execute(
+                'SELECT missing_episodes FROM MISS_TVS WHERE title = ? AND year = ? AND season = ?',
+                (title, year, season)
+            ).fetchone()
+            if miss_row and miss_row[0]:
+                subscribed_missing = set(int(ep) for ep in miss_row[0].split(',') if ep.strip().isdigit())
+            else:
+                subscribed_missing = set()
+
+            # 需要补充的缺失集
+            need_add_missing = missing_episodes_set - subscribed_missing
+            if miss_row:
+                if need_add_missing:
+                    # 合并后写回
+                    new_missing_episodes = sorted(subscribed_missing | need_add_missing)
+                    new_missing_episodes_str = ','.join(map(str, new_missing_episodes))
+                    cursor.execute(
+                        'UPDATE MISS_TVS SET missing_episodes = ? WHERE title = ? AND year = ? AND season = ?',
+                        (new_missing_episodes_str, title, year, season)
+                    )
+                    logging.info(f"电视剧：{title} 第{season}季 缺失 {new_missing_episodes_str} 集，已更新订阅！")
+                elif not missing_episodes_set:
+                    # 没有缺失集，删除订阅
+                    cursor.execute(
+                        'DELETE FROM MISS_TVS WHERE title = ? AND year = ? AND season = ?',
+                        (title, year, season)
+                    )
                     logging.info(f"电视剧：{title} 第{season}季 已入库，无需下载订阅！")
+                else:
+                    logging.info(f"电视剧：{title} 第{season}季 订阅未发生变化！")
+            else:
+                # 如果订阅表中没有记录且有缺失集，则插入
+                if missing_episodes_set:
+                    new_missing_episodes_str = ','.join(map(str, sorted(missing_episodes_set)))
+                    cursor.execute(
+                        'INSERT INTO MISS_TVS (title, year, season, missing_episodes, douban_id) VALUES (?, ?, ?, ?, ?)',
+                        (title, year, season, new_missing_episodes_str, douban_id)
+                    )
+                    logging.info(f"电视剧：{title} 第{season}季 缺失 {new_missing_episodes_str} 集，已补充订阅！")
 
 def update_subscriptions(cursor):
     """检查并更新当前订阅"""
@@ -140,14 +176,15 @@ def update_subscriptions(cursor):
             else:
                 missing_episodes_set = set()
 
-            total_episodes_set = existing_episodes | missing_episodes_set
+            # 只保留还未入库的缺失集数
+            new_missing_episodes_set = missing_episodes_set - existing_episodes
 
-            if len(total_episodes_set) == len(existing_episodes):
+            if not new_missing_episodes_set:
                 cursor.execute('DELETE FROM MISS_TVS WHERE title = ? AND year = ? AND season = ?', (title, year, season))
                 logging.info(f"电视剧：{title} 第{season}季 已完成订阅！")
                 send_notification(f"电视剧：{title} 第{season}季 已完成订阅！")
             else:
-                new_missing_episodes_str = ','.join(map(str, sorted(total_episodes_set - existing_episodes)))
+                new_missing_episodes_str = ','.join(map(str, sorted(new_missing_episodes_set)))
                 if new_missing_episodes_str != missing_episodes:  # 检查是否发生变化
                     cursor.execute('UPDATE MISS_TVS SET missing_episodes = ? WHERE title = ? AND year = ? AND season = ?', (new_missing_episodes_str, title, year, season))
                     logging.info(f"电视剧：{title} 第{season}季 缺失 {new_missing_episodes_str} 集，已更新订阅！")

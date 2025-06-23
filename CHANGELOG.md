@@ -2,6 +2,21 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.3.6] - 2025-06-23
+
+### 说明
+- 本次更新主要修复 [2.3.5](https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.5) 版本中存在的问题。
+
+### 引用变更
+- 参考 [2.3.5 更新日志](https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.5) 中提到的功能改进和错误修复。
+
+### 优化
+- 优化下载管理页面当任务列表为空时显示“当前暂无下载任务”提示。
+- 优化“下载目录监控服务”对于电视节目重命名时季编号自动补零。（例如S1补零S01）
+- 优化“下载目录监控服务”通过标题查询TMDB API获取年份信息。
+- 优化“下载目录监控服务”对于年份信息提取不准确的问题。（例如文件名没有年份信息，错误的将1080p中的1080当作年份）
+- 优化正在订阅列表对于已入库电视节目缺失集数的检查逻辑。
+
 ##  [2.3.5] - 2025-06-16
 
 ### 新增
@@ -231,3 +246,4 @@
 [2.3.3]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.3
 [2.3.4]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.4
 [2.3.5]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.5
+[2.3.6]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.6

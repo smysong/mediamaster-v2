@@ -31,7 +31,7 @@
 
 ## 配置文档
 
-使用帮助文档： https://www.songmy.top/blog/8
+使用帮助文档： http://wiki.songmy.top:8080/web/#/686311457
 
 ## 快速开始
 
@@ -56,7 +56,7 @@ services:
       - GIDLIST=100
     volumes:
       - /vol1/1000/Downloads:/Downloads
-      - /vol1/1000/Torrent:/Torrent
+      - /vol1/1000/Torrent:/Torrent #可选配置qBittorrent或Transmission已经支持通过API接口直接添加下载任务，迅雷远程设备通过专用程序监听，无需配置种子监听目录。如使用其他下载器监听种子文件需配置
       - /vol1/1000/Docker/mediamaster:/config
       - /vol1/1000/Media:/Media
     ports:
@@ -89,7 +89,6 @@ services:
       - GIDLIST=100
     volumes:
       - /vol1/1000/Downloads:/Downloads
-      - /vol1/1000/Torrent:/Torrent
       - /vol1/1000/Docker/mediamaster:/config
       - /vol1/1000/Media:/Media
     ports:
@@ -108,7 +107,6 @@ services:
     volumes:
       - /vol1/1000/Docker/transmission:/config
       - /vol1/1000/Downloads:/downloads
-      - /vol1/1000/Torrent:/watch
     ports:
       - 9091:9091
       - 51413:51413
@@ -166,6 +164,7 @@ docker run -it --name mediamaster \
 >  
 > -v /Torrent:/Torrent \
 > 在主机上新建Torrent 目录挂载到容器的 /Torrent 目录，用于存放下载的种子文件。
+> qBittorrent或Transmission已经支持通过API接口直接添加种子任务，迅雷远程设备通过专用程序监听种子，无需配置种子监听目录。如使用其他下载器监听种子文件时才需配置种子文件映射目录。
 > 
 > -v /Downloads:/Downloads \
 > 目录监控，将主机上下载器的下载目录挂载到容器/Downloads目录，可以实现自动转移并重命名下载完成的影片文件。
@@ -183,11 +182,3 @@ docker run -it --name mediamaster \
 > 使用浏览器访问：http://your-ip:8888 \
 > 默认用户名：admin \
 > 默认密码：password
-
-### 配置Transmission用户名和密码认证（可选）
-> 编辑配置文件：settings.json \
-> 修改如下配置：
-> "rpc-authentication-required": true,
-> "rpc-username": "your-username",
-> "rpc-password": "your-password",
-> "rpc-bind-address": "0.0.0.0",

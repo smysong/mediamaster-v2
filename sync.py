@@ -150,9 +150,9 @@ def extract_info_from_label(label):
 
 def get_tmdb_info(title, year, media_type):
     try:
-        # 检查缓存中是否有数据
         if (title, year) in cache[media_type]:
-            return cache[media_type][(title, year)]
+            tmdb_id, tmdb_title, tmdb_year = cache[media_type][(title, year)]
+            return tmdb_id, tmdb_title, tmdb_year
         TMDB_API_KEY = config.get("tmdb_api_key", "")
         TMDB_BASE_URL = config.get("tmdb_base_url", "")
         url = f"{TMDB_BASE_URL}/3/search/{media_type}"
@@ -165,18 +165,28 @@ def get_tmdb_info(title, year, media_type):
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
         search_results = response.json().get('results', [])
+
+        # 如果只有一个结果且标题完全匹配，则补全年份
+        if len(search_results) == 1:
+            result = search_results[0]
+            tmdb_title = result.get('title', '') if media_type == 'movie' else result.get('name', '')
+            tmdb_year = result.get('release_date', '')[:4] if media_type == 'movie' else result.get('first_air_date', '')[:4]
+            if tmdb_title == title:
+                # 只要查到tmdb_year就用tmdb_year
+                cache[media_type][(title, tmdb_year)] = (result['id'], tmdb_title, tmdb_year)
+                return result['id'], tmdb_title, tmdb_year
+
         for result in search_results:
+            tmdb_year = result.get('release_date', '')[:4] if media_type == 'movie' else result.get('first_air_date', '')[:4]
             if media_type == 'movie' and str(result.get('release_date', '')).startswith(str(year)):
-                # 将结果存入缓存
-                cache[media_type][(title, year)] = (result['id'], result.get('title', ''))
-                return result['id'], result.get('title', '')
+                cache[media_type][(title, tmdb_year)] = (result['id'], result.get('title', ''), tmdb_year)
+                return result['id'], result.get('title', ''), tmdb_year
             elif media_type == 'tv' and result.get('first_air_date', '').startswith(str(year)):
-                # 将结果存入缓存
-                cache[media_type][(title, year)] = (result['id'], result.get('name', ''))
-                return result['id'], result.get('name', '')
+                cache[media_type][(title, tmdb_year)] = (result['id'], result.get('name', ''), tmdb_year)
+                return result['id'], result.get('name', ''), tmdb_year
     except requests.RequestException as e:
         logging.error(f"请求错误: {e}")
-    return None, None
+    return None, None, year
 
 def get_tv_episode_name(tmdb_id, season_number, episode_number):
     try:
@@ -206,7 +216,7 @@ def extract_info(filename, folder_name=None, label_info=None):
         chinese_name_pattern_filename = r'([\u4e00-\u9fa5A-Za-z0-9：]+)(?=\.)'
         chinese_name_pattern_folder = r'】([\u4e00-\u9fa5A-Za-z0-9：$$(). ]+)'
         english_name_pattern = r'([A-Za-z0-9\.\s]+)(?=\.\d{4}(?:\.|$))'
-        year_pattern = r'(\d{4})(?=\.|$)'
+        year_pattern = r'(19\d{2}|20\d{2})'
         quality_pattern = r'(\d{1,4}[pPkK])'
         suffix_pattern = r'\.(\w+)$'
 
@@ -228,8 +238,9 @@ def extract_info(filename, folder_name=None, label_info=None):
         if english_name:
             english_name = english_name.replace('.', ' ').replace('-', ' ')
 
-        year = re.search(year_pattern, filename)
-        year = year.group() if year else None
+        # 年份：匹配所有，取最后一个
+        years = re.findall(year_pattern, filename)
+        year = years[-1] if years else None
 
         quality = re.search(quality_pattern, filename)
         if quality:
@@ -275,7 +286,8 @@ def extract_info(filename, folder_name=None, label_info=None):
         english_name_pattern = r'([A-Za-z0-9\.\s]+)(?=\.(?:S\d{1,2}|E\d{1,2}|EP\d{1,2}))'
         season_pattern = r'S(\d{1,2})'
         episode_pattern = r'(?:E|EP)(\d{1,2})'
-        year_pattern = r'(\d{4})'
+        # 年份只匹配19xx或20xx
+        year_pattern = r'(19\d{2}|20\d{2})'
         quality_pattern = r'(\d{1,4}[pPkK])'
         suffix_pattern = r'\.(\w+)$'
     
@@ -315,8 +327,9 @@ def extract_info(filename, folder_name=None, label_info=None):
         if english_name:
             english_name = english_name.replace('.', ' ').replace('-', ' ')
     
-        year = re.search(year_pattern, filename)
-        year = year.group() if year else None
+        # 匹配所有年份，取最后一个
+        years = re.findall(year_pattern, filename)
+        year = years[-1] if years else None
     
         quality = re.search(quality_pattern, filename)
         if quality:
@@ -471,9 +484,10 @@ def process_file(file_path, processed_filenames):
     处理单个文件：
     1. 提取媒体信息，尝试获取 TMDB ID。
     2. 若同一文件夹下连续3次未能获取到 TMDB ID，则将该文件夹移动到 unknown_directory。
-    3. 若 result 字典关键字段（如“名称”或“发行年份”）为 None，也直接转移文件夹。
+    3. 若 result 字典关键字段（如“名称”）为 None，也直接转移文件夹。
     4. 识别成功则清零计数。
     5. 其它原有逻辑保持不变。
+    6. 优化：无论本地是否有年份，均尝试 TMDB 查询，并用 TMDB 年份覆盖本地年份（只要查到）。
     """
     try:
         excluded_filenames = config.get("download_excluded_filenames", "").split(',')
@@ -515,32 +529,27 @@ def process_file(file_path, processed_filenames):
         # 将标签解析结果传递给 extract_info 进行辅助提取
         result = extract_info(filename, folder_name, label_info=label_info)
 
-        # 新增：判断关键字段是否缺失，缺失则转移到unknown_directory
-        if not result or not result.get('名称') or not result.get('发行年份'):
+        # 判断关键名称字段是否缺失，缺失则转移到unknown_directory
+        if not result or not result.get('名称'):
             logging.warning(f"无法识别文件或关键信息缺失: {filename}，解析结果: {result}")
             if unknown_directory:
                 src_folder = os.path.dirname(file_path)
                 dst_folder = os.path.join(unknown_directory, os.path.basename(src_folder))
                 try:
-                    if not os.path.exists(unknown_directory):
-                        os.makedirs(unknown_directory)
                     if not os.path.exists(dst_folder):
-                        # 根据 action 选择复制或移动整个文件夹
-                        if action == 'copy':
-                            shutil.copytree(src_folder, dst_folder)
-                            logging.info(f"已将无法识别的文件夹复制到未识别目录: {dst_folder}")
-                        else:
-                            shutil.move(src_folder, dst_folder)
-                            logging.info(f"已将无法识别的文件夹移动到未识别目录: {dst_folder}")
+                        os.makedirs(dst_folder)
+                    dst_file_path = os.path.join(dst_folder, filename)
+                    # 只复制/移动当前文件
+                    if action == 'copy':
+                        shutil.copy2(file_path, dst_file_path)
+                        logging.info(f"已将无法识别的文件复制到未识别目录: {dst_file_path}")
                     else:
-                        logging.warning(f"未识别目录已存在同名文件夹，未转移: {dst_folder}")
-                    # 记录该文件夹下所有文件，避免重复处理
-                    for root, dirs, files in os.walk(dst_folder):
-                        for f in files:
-                            processed_filenames.add(f)
+                        shutil.move(file_path, dst_file_path)
+                        logging.info(f"已将无法识别的文件移动到未识别目录: {dst_file_path}")
+                    processed_filenames.add(filename)
                     save_processed_files(processed_filenames)
                 except Exception as e:
-                    logging.error(f"转移未识别文件夹失败: {e}")
+                    logging.error(f"转移未识别文件失败: {e}")
             return
 
         if result:
@@ -550,7 +559,34 @@ def process_file(file_path, processed_filenames):
             media_type = result.get('类型') or ('tv' if '季' in result and '集' in result else 'movie')
             target_directory = episode_directory if media_type == 'tv' else movie_directory
 
-            tmdb_id, tmdb_name = get_tmdb_info(result['名称'], result['发行年份'], media_type)
+            # 始终尝试TMDB查询，不管本地是否有年份
+            tmdb_id, tmdb_name, tmdb_year = get_tmdb_info(result['名称'], result.get('发行年份'), media_type)
+            # 只要本地年份与tmdb年份不一致，就用tmdb年份覆盖
+            if tmdb_year and result.get('发行年份') != tmdb_year:
+                result['发行年份'] = tmdb_year
+
+            # 如果TMDB查不到年份，且本地也没有，则判定为关键信息缺失
+            if not result.get('发行年份'):
+                logging.warning(f"无法识别文件或关键信息缺失: {filename}，解析结果: {result}")
+                if unknown_directory:
+                    src_folder = os.path.dirname(file_path)
+                    dst_folder = os.path.join(unknown_directory, os.path.basename(src_folder))
+                    try:
+                        if not os.path.exists(dst_folder):
+                            os.makedirs(dst_folder)
+                        dst_file_path = os.path.join(dst_folder, filename)
+                        if action == 'copy':
+                            shutil.copy2(file_path, dst_file_path)
+                            logging.info(f"已将无法识别的文件复制到未识别目录: {dst_file_path}")
+                        else:
+                            shutil.move(file_path, dst_file_path)
+                            logging.info(f"已将无法识别的文件移动到未识别目录: {dst_file_path}")
+                        processed_filenames.add(filename)
+                        save_processed_files(processed_filenames)
+                    except Exception as e:
+                        logging.error(f"转移未识别文件失败: {e}")
+                return
+
             if tmdb_id:
                 logging.info(f"获取到 TMDB ID: {tmdb_id}，名称：{tmdb_name}")
 
@@ -568,13 +604,15 @@ def process_file(file_path, processed_filenames):
                 if media_type == 'tv':
                     season_number = result.get('季', '01')
                     episode_number = result.get('集', '01')
+                    # 补零：始终保证季号为两位数
+                    season_number_str = str(season_number).zfill(2)
                     season_dir = os.path.join(target_base_dir, f"Season {int(season_number)}")
                     if not os.path.exists(season_dir):
                         os.makedirs(season_dir)
                         logging.info(f"创建目录: {season_dir}")
 
                     episode_name = get_tv_episode_name(tmdb_id, season_number, episode_number)
-                    new_filename = f"{title} - S{season_number}E{str(episode_number).zfill(2)} - {episode_name}.{result['后缀名']}"
+                    new_filename = f"{title} - S{season_number_str}E{str(episode_number).zfill(2)} - {episode_name}.{result['后缀名']}"
                     target_file_path = os.path.join(season_dir, new_filename)
                 else:
                     new_filename = f"{title} - ({year}) {result['视频质量']}.{result['后缀名']}"
@@ -591,7 +629,7 @@ def process_file(file_path, processed_filenames):
                 nfo_filename = os.path.splitext(filename)[0] + '.nfo'
                 nfo_file_path = os.path.join(video_dir, nfo_filename)
                 if os.path.exists(nfo_file_path):
-                    new_nfo_filename = f"{title} - S{season_number}E{str(episode_number).zfill(2)} - {episode_name}.nfo" if media_type == 'tv' else f"{title} - ({year}) {result['视频质量']}.nfo"
+                    new_nfo_filename = f"{title} - S{season_number_str}E{str(episode_number).zfill(2)} - {episode_name}.nfo" if media_type == 'tv' else f"{title} - ({year}) {result['视频质量']}.nfo"
                     nfo_target_path = os.path.join(target_base_dir if media_type == 'movie' else season_dir, new_nfo_filename)
                     move_or_copy_file(file_path, target_file_path, action, media_type)
                     logging.info(f"转移NFO文件: {nfo_file_path} -> {nfo_target_path}")
@@ -608,32 +646,26 @@ def process_file(file_path, processed_filenames):
                 unrecognized_count[folder_name] = count
                 logging.warning(f"未能获取到 TMDB ID: {result['名称']} ({result['发行年份']})，累计失败次数: {count}")
 
-                # 超过1次则移动整个文件夹到 unknown_directory
+                # 超过1次则移动/复制当前文件到 unknown_directory 下以文件夹名为名的文件夹
                 if count >= 1 and unknown_directory:
                     src_folder = os.path.dirname(file_path)
                     dst_folder = os.path.join(unknown_directory, os.path.basename(src_folder))
                     try:
-                        if not os.path.exists(unknown_directory):
-                            os.makedirs(unknown_directory)
                         if not os.path.exists(dst_folder):
-                            # 根据 action 选择复制或移动整个文件夹
-                            if action == 'copy':
-                                shutil.copytree(src_folder, dst_folder)
-                                logging.info(f"已将无法识别的文件夹复制到未识别目录: {dst_folder}")
-                            else:
-                                shutil.move(src_folder, dst_folder)
-                                logging.info(f"已将无法识别的文件夹移动到未识别目录: {dst_folder}")
+                            os.makedirs(dst_folder)
+                        dst_file_path = os.path.join(dst_folder, filename)
+                        if action == 'copy':
+                            shutil.copy2(file_path, dst_file_path)
+                            logging.info(f"已将无法识别的文件复制到未识别目录: {dst_file_path}")
                         else:
-                            logging.warning(f"未识别目录已存在同名文件夹，未转移: {dst_folder}")
-                        # 记录该文件夹下所有文件，避免重复处理
-                        for root, dirs, files in os.walk(dst_folder):
-                            for f in files:
-                                processed_filenames.add(f)
+                            shutil.move(file_path, dst_file_path)
+                            logging.info(f"已将无法识别的文件移动到未识别目录: {dst_file_path}")
+                        processed_filenames.add(filename)
                         save_processed_files(processed_filenames)
                         # 清零计数
                         unrecognized_count.pop(folder_name, None)
                     except Exception as e:
-                        logging.error(f"转移未识别文件夹失败: {e}")
+                        logging.error(f"转移未识别文件失败: {e}")
     except Exception as e:
         logging.error(f"处理文件时发生错误: {file_path}, 错误信息: {e}")
 
