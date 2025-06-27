@@ -22,7 +22,7 @@ def load_config(db_path='/config/data.db'):
             config_items = cursor.fetchall()
             config = {option: value for option, value in config_items}
         
-        logging.info("加载配置文件成功")
+        logging.debug("加载配置文件成功")
         return config
     except sqlite3.Error as e:
         logging.error(f"数据库加载配置错误: {e}")
@@ -181,8 +181,14 @@ def process_media_directory(media_dir, exclude_dirs):
 
 if __name__ == '__main__':
     config = load_config()
-    
+
+    # 新增：判断actor_nfo配置项
+    actor_nfo = config.get('actor_nfo', '').strip().lower()
+    if actor_nfo != 'true':
+        logging.info('NFO演职人员汉化未启用，程序无需运行。')
+        exit(0)
+
     media_dir = config.get('episodes_path', '')
     exclude_dirs = config.get('nfo_exclude_dirs', '').split(',')
-    
+
     process_media_directory(media_dir, exclude_dirs)

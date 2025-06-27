@@ -937,6 +937,7 @@ GROUP_MAPPING = {
         "dateadded": {"type": "switch", "label": "使用影片发行日期"}
     },
     "中文演职人员": {
+        "actor_nfo": {"type": "switch", "label": "演职人员汉化"},
         "nfo_exclude_dirs": {"type": "text", "label": "排除目录"},
         "nfo_excluded_filenames": {"type": "text", "label": "排除文件名"},
         "nfo_excluded_subdir_keywords": {"type": "text", "label": "排除关键字"}

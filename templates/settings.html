@@ -54,7 +54,9 @@
                             {% elif key == 'run_interval_hours' %}
                             <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">运行间隔时间（小时），建议设置为4小时以上，以减少频繁请求。</small>
                             {% elif key == 'dateadded' %}
-                            <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">修改NFO文件中的添加日期为影片发行日期，Emby、Jellyfin等媒体服务器会读取此信息，在最新媒体中按发行日期排序，否则默认按添加日期排序。</small>
+                            <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">修改媒体库目录中NFO元数据文件中的添加日期为影片发行日期，Emby、Jellyfin等媒体服务器会读取此信息，在最新媒体中按发行日期排序，否则默认按添加日期排序。</small>
+                            {% elif key == 'actor_nfo' %}
+                            <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">NFO元数据文件演职人员汉化，开启后将尝试对演职人员信息进行中文汉化。如媒体库目录无NFO元数据文件则无需开启。</small>
                             {% elif key == 'douban_cookie' %}
                             <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">豆瓣cookie非必要选项，保持系统默认即可。</small>
                             {% elif key == 'douban_rss_url' %}
@@ -94,6 +96,23 @@
                 $('#form-group-notification_api_key').show();
             } else {
                 $('#form-group-notification_api_key').hide();
+            }
+
+            // 新增：根据 actor_nfo 开关显示/隐藏相关配置项
+            var actorNfo = $('#actor_nfo').val() || $('#actor_nfo').find("option:selected").val();
+            var nfoFields = [
+                'nfo_exclude_dirs',
+                'nfo_excluded_filenames',
+                'nfo_excluded_subdir_keywords'
+            ];
+            if (actorNfo === 'True') {
+                nfoFields.forEach(function(key) {
+                    $('#form-group-' + key).show();
+                });
+            } else {
+                nfoFields.forEach(function(key) {
+                    $('#form-group-' + key).hide();
+                });
             }
 
             // 获取下载器类型和下载管理开关
@@ -140,6 +159,7 @@
         $('#download_type').on('change', toggleDownloaderFields);
         $('#download_mgmt').on('change', toggleDownloaderFields);
         $('#notification').on('change', toggleDownloaderFields);
+        $('#actor_nfo').on('change', toggleDownloaderFields);
         // 页面加载时初始化
         toggleDownloaderFields();
 

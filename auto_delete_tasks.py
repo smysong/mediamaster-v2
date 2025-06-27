@@ -24,7 +24,7 @@ def load_config(db_path='/config/data.db'):
             config_items = cursor.fetchall()
             config = {option: value for option, value in config_items}
         
-        logging.info("加载配置文件成功")
+        logging.debug("加载配置文件成功")
         return config
     except sqlite3.Error as e:
         logging.error(f"数据库加载配置错误: {e}")

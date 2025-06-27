@@ -23,7 +23,7 @@ def load_config(db_path):
             config_items = cursor.fetchall()
             config = {option: value for option, value in config_items}
         
-        logging.info("加载配置文件成功")
+        logging.debug("加载配置文件成功")
         return config
     except sqlite3.Error as e:
         logging.error(f"数据库加载配置错误: {e}")
@@ -304,6 +304,11 @@ def delete_obsolete_episodes(db_path, current_episodes):
             all_seasons = cursor.fetchall()
 
             for season, episodes_str in all_seasons:
+                # 类型检查，确保 episodes_str 是字符串
+                if isinstance(episodes_str, int):
+                    episodes_str = str(episodes_str)
+                    logging.warning(f"电视剧 '{title}' 第 {season} 季的集数字段为整数，已转换为字符串: {episodes_str}")
+
                 # 检查 episodes_str 是否为空字符串
                 if not episodes_str or not episodes_str.strip():
                     existing_episodes = set()

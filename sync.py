@@ -45,7 +45,7 @@ def load_config(db_path='/config/data.db'):
             config_items = cursor.fetchall()
             config = {option: value for option, value in config_items}
         
-        logging.info("加载配置文件成功")
+        logging.debug("加载配置文件成功")
         return config
     except sqlite3.Error as e:
         logging.error(f"数据库加载配置错误: {e}")
@@ -148,42 +148,85 @@ def extract_info_from_label(label):
     logging.warning(f"标签解析失败: {label}")
     return None
 
-def get_tmdb_info(title, year, media_type):
-    try:
-        if (title, year) in cache[media_type]:
-            tmdb_id, tmdb_title, tmdb_year = cache[media_type][(title, year)]
-            return tmdb_id, tmdb_title, tmdb_year
+def get_tmdb_info(title, year, media_type, season=None):
+    def search_tmdb(language):
         TMDB_API_KEY = config.get("tmdb_api_key", "")
         TMDB_BASE_URL = config.get("tmdb_base_url", "")
         url = f"{TMDB_BASE_URL}/3/search/{media_type}"
         params = {
             'api_key': TMDB_API_KEY,
             'query': title,
-            'language': 'zh-CN',
+            'language': language,
             'include_adult': 'false'
         }
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
-        search_results = response.json().get('results', [])
+        return response.json().get('results', [])
 
-        # 如果只有一个结果且标题完全匹配，则补全年份
+    try:
+        cache_key = (title, year, season) if season else (title, year)
+        if cache_key in cache[media_type]:
+            tmdb_id, tmdb_title, tmdb_year = cache[media_type][cache_key]
+            return tmdb_id, tmdb_title, tmdb_year
+
+        # 先用zh-CN查找
+        search_results = search_tmdb('zh-CN')
+
+        # 1. 只有一个结果直接返回，无需匹配标题
         if len(search_results) == 1:
             result = search_results[0]
             tmdb_title = result.get('title', '') if media_type == 'movie' else result.get('name', '')
             tmdb_year = result.get('release_date', '')[:4] if media_type == 'movie' else result.get('first_air_date', '')[:4]
-            if tmdb_title == title:
-                # 只要查到tmdb_year就用tmdb_year
+            cache[media_type][(title, tmdb_year)] = (result['id'], tmdb_title, tmdb_year)
+            return result['id'], tmdb_title, tmdb_year
+
+        # 2. 多结果时，优先用标题和年份精确匹配
+        for result in search_results:
+            tmdb_title = result.get('title', '') if media_type == 'movie' else result.get('name', '')
+            tmdb_year = result.get('release_date', '')[:4] if media_type == 'movie' else result.get('first_air_date', '')[:4]
+            if tmdb_title == title and tmdb_year == str(year):
                 cache[media_type][(title, tmdb_year)] = (result['id'], tmdb_title, tmdb_year)
                 return result['id'], tmdb_title, tmdb_year
 
-        for result in search_results:
+        # 如果zh-CN没找到标题精确匹配，再用zh-SG查一次
+        search_results_sg = search_tmdb('zh-SG')
+        for result in search_results_sg:
+            tmdb_title = result.get('title', '') if media_type == 'movie' else result.get('name', '')
             tmdb_year = result.get('release_date', '')[:4] if media_type == 'movie' else result.get('first_air_date', '')[:4]
-            if media_type == 'movie' and str(result.get('release_date', '')).startswith(str(year)):
-                cache[media_type][(title, tmdb_year)] = (result['id'], result.get('title', ''), tmdb_year)
-                return result['id'], result.get('title', ''), tmdb_year
-            elif media_type == 'tv' and result.get('first_air_date', '').startswith(str(year)):
-                cache[media_type][(title, tmdb_year)] = (result['id'], result.get('name', ''), tmdb_year)
-                return result['id'], result.get('name', ''), tmdb_year
+            if tmdb_title == title and tmdb_year == str(year):
+                cache[media_type][(title, tmdb_year)] = (result['id'], tmdb_title, tmdb_year)
+                return result['id'], tmdb_title, tmdb_year
+
+        # 3. 针对电视剧多季情况：如果有季号，且没找到年份匹配，则只用名称匹配首个有首播年份的结果
+        if media_type == 'tv' and season:
+            for result in search_results:
+                tmdb_title = result.get('name', '')
+                tmdb_year = result.get('first_air_date', '')[:4]
+                if tmdb_title == title and tmdb_year:
+                    cache[media_type][(title, tmdb_year, season)] = (result['id'], tmdb_title, tmdb_year)
+                    return result['id'], tmdb_title, tmdb_year
+            for result in search_results_sg:
+                tmdb_title = result.get('name', '')
+                tmdb_year = result.get('first_air_date', '')[:4]
+                if tmdb_title == title and tmdb_year:
+                    cache[media_type][(title, tmdb_year, season)] = (result['id'], tmdb_title, tmdb_year)
+                    return result['id'], tmdb_title, tmdb_year
+
+        # 4. 只用名称匹配首个有年份的结果
+        for result in search_results:
+            tmdb_title = result.get('title', '') if media_type == 'movie' else result.get('name', '')
+            tmdb_year = result.get('release_date', '')[:4] if media_type == 'movie' else result.get('first_air_date', '')[:4]
+            if tmdb_title == title and tmdb_year:
+                cache[media_type][(title, tmdb_year)] = (result['id'], tmdb_title, tmdb_year)
+                return result['id'], tmdb_title, tmdb_year
+        # 如果zh-CN没找到标题匹配，再用zh-SG查一次
+        for result in search_results_sg:
+            tmdb_title = result.get('title', '') if media_type == 'movie' else result.get('name', '')
+            tmdb_year = result.get('release_date', '')[:4] if media_type == 'movie' else result.get('first_air_date', '')[:4]
+            if tmdb_title == title and tmdb_year:
+                cache[media_type][(title, tmdb_year)] = (result['id'], tmdb_title, tmdb_year)
+                return result['id'], tmdb_title, tmdb_year
+
     except requests.RequestException as e:
         logging.error(f"请求错误: {e}")
     return None, None, year
@@ -213,7 +256,7 @@ def extract_info(filename, folder_name=None, label_info=None):
     """
     # 提取电影信息
     def extract_movie_info(filename, folder_name=None):
-        chinese_name_pattern_filename = r'([\u4e00-\u9fa5A-Za-z0-9：]+)(?=\.)'
+        chinese_name_pattern_filename = r'([\u4e00-\u9fa5A-Za-z0-9："“”·]+)(?=\.)'
         chinese_name_pattern_folder = r'】([\u4e00-\u9fa5A-Za-z0-9：$$(). ]+)'
         english_name_pattern = r'([A-Za-z0-9\.\s]+)(?=\.\d{4}(?:\.|$))'
         year_pattern = r'(19\d{2}|20\d{2})'
@@ -281,11 +324,11 @@ def extract_info(filename, folder_name=None, label_info=None):
         提取电视剧信息，支持文件名为纯数字（如01、02、1、2、3）时，将数字作为集数。
         其他信息（如名称、年份、季、清晰度）优先从文件夹名和下载任务标签获取。
         """
-        chinese_name_pattern_filename = r'([\u4e00-\u9fa5A-Za-z0-9：]+)(?=\.)'
+        chinese_name_pattern_filename = r'([\u4e00-\u9fa5A-Za-z0-9："“”·]+)(?=\.)'
         chinese_name_pattern_folder = r'】([\u4e00-\u9fa5A-Za-z0-9：$$(). ]+)'
         english_name_pattern = r'([A-Za-z0-9\.\s]+)(?=\.(?:S\d{1,2}|E\d{1,2}|EP\d{1,2}))'
         season_pattern = r'S(\d{1,2})'
-        episode_pattern = r'(?:E|EP)(\d{1,2})'
+        episode_pattern = r'(?:E|EP)(\d{1,3})|第\s?(\d{1,3})\s?集|(?<!\d)(\d{1,3})集'
         # 年份只匹配19xx或20xx
         year_pattern = r'(19\d{2}|20\d{2})'
         quality_pattern = r'(\d{1,4}[pPkK])'
@@ -300,9 +343,15 @@ def extract_info(filename, folder_name=None, label_info=None):
             # 文件名为纯数字，直接作为集数
             episode_number = pure_number_match.group(1).zfill(2)
         else:
-            # 正常匹配E01、EP01等
-            episode = re.search(episode_pattern, filename)
-            episode_number = episode.group(1) if episode else None
+            # 正常匹配E01、EP01、以及“第09集”“09集”“9集”
+            episode = re.search(episode_pattern, filename, re.IGNORECASE)
+            if episode:
+                # 优先英文匹配，否则取中文匹配，否则取纯数字匹配
+                episode_number = episode.group(1) or episode.group(2) or episode.group(3)
+                if episode_number:
+                    episode_number = episode_number.zfill(2)
+            else:
+                episode_number = None
     
         # 季号优先从文件名Sxx获取
         season = re.search(season_pattern, filename)
@@ -384,7 +433,7 @@ def extract_info(filename, folder_name=None, label_info=None):
         raw_info = extract_tv_info(filename, folder_name)
     else:
         # 判断是电影还是电视剧
-        is_tv = re.search(r'(?:S\d{1,2}|E\d{1,2}|EP\d{1,2})', filename)
+        is_tv = re.search(r'(?:S\d{1,2}|E\d{1,2}|EP\d{1,2}|第\s?\d{1,3}\s?集|(?<!\d)\d{1,3}集)', filename, re.IGNORECASE)
         raw_info = extract_tv_info(filename, folder_name) if is_tv else extract_movie_info(filename, folder_name)
 
     # 优先合并标签信息
@@ -560,7 +609,8 @@ def process_file(file_path, processed_filenames):
             target_directory = episode_directory if media_type == 'tv' else movie_directory
 
             # 始终尝试TMDB查询，不管本地是否有年份
-            tmdb_id, tmdb_name, tmdb_year = get_tmdb_info(result['名称'], result.get('发行年份'), media_type)
+            season = result.get('季') if media_type == 'tv' else None
+            tmdb_id, tmdb_name, tmdb_year = get_tmdb_info(result['名称'], result.get('发行年份'), media_type, season)
             # 只要本地年份与tmdb年份不一致，就用tmdb年份覆盖
             if tmdb_year and result.get('发行年份') != tmdb_year:
                 result['发行年份'] = tmdb_year
@@ -586,6 +636,18 @@ def process_file(file_path, processed_filenames):
                     except Exception as e:
                         logging.error(f"转移未识别文件失败: {e}")
                 return
+
+            # 新增：如果未能获取到 TMDB ID，且名称包含“第X季”，则去掉“第X季”再查一次
+            if not tmdb_id and media_type == 'tv' and result['名称']:
+                import re
+                new_title = re.sub(r'\s*第[一二三四五六七八九十1234567890]+季', '', result['名称'])
+                if new_title != result['名称']:
+                    logging.info(f"尝试去除季信息后再次查询TMDB: {new_title}")
+                    tmdb_id, tmdb_name, tmdb_year = get_tmdb_info(new_title, result.get('发行年份'), media_type, season)
+                    if tmdb_id:
+                        result['名称'] = new_title
+                        if tmdb_year and result.get('发行年份') != tmdb_year:
+                            result['发行年份'] = tmdb_year
 
             if tmdb_id:
                 logging.info(f"获取到 TMDB ID: {tmdb_id}，名称：{tmdb_name}")

@@ -124,7 +124,7 @@ class MediaDownloader:
                 config_items = cursor.fetchall()
                 self.config = {option: value for option, value in config_items}
             
-            logging.info("加载配置文件成功")
+            logging.debug("加载配置文件成功")
             return self.config
         except sqlite3.Error as e:
             logging.error(f"数据库加载配置错误: {e}")
