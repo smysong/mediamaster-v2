@@ -57,6 +57,7 @@ def main():
     scripts = {
         "movie_bthd.py": "高清影视之家",
         "tvshow_hdtv.py": "高清剧集网",
+        "movie_tvshow_btys.py": "BT影视",
         "movie_tvshow_bt0.py": "不太灵影视",
         "movie_tvshow_gy.py": "观影"
     }

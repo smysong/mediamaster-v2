@@ -14,7 +14,7 @@
                     <div class="form-group row"
                          id="form-group-{{ key }}"
                          {% if key in hide_keys %}style="display:none;"{% endif %}>
-                        <label for="{{ key }}" class="col-sm-3 col-form-label" style="font-size: clamp(12px, 1.2vw, 16px); align-content:center;">{{ field.label }}</label>
+                            <label for="{{ key }}" class="col-sm-3 col-form-label" style="font-size: clamp(12px, 1.2vw, 16px); align-content:center;">{{ field.label }}</label>
                         <div class="col-sm-9" style="font-size: clamp(12px, 1.2vw, 16px);">
                             <!-- 隐藏字段存储 ID -->
                             <input type="hidden" name="{{ key }}_id" value="{{ field.id }}">

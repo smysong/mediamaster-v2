@@ -417,7 +417,16 @@ class TvshowIndexer:
     def run(self):
         # 加载配置文件
         self.load_config()
-        
+
+         # 新增：检查程序启用状态
+        program_enabled = self.config.get("hdtv_enabled", False)
+        # 支持字符串和布尔类型
+        if isinstance(program_enabled, str):
+            program_enabled = program_enabled.lower() == "true"
+        if not program_enabled:
+            logging.info("站点已被禁用，立即退出。")
+            exit(0)
+
         # 获取订阅电视节目信息
         all_tv_info = self.extract_tv_info()
 
@@ -470,6 +479,15 @@ if __name__ == "__main__":
 
         # 加载配置文件
         indexer.load_config()
+
+        # 新增：检查程序启用状态
+        program_enabled = indexer.config.get("hdtv_enabled", False)
+        # 支持字符串和布尔类型
+        if isinstance(program_enabled, str):
+            program_enabled = program_enabled.lower() == "true"
+        if not program_enabled:
+            logging.info("站点已被禁用，立即退出。")
+            exit(0)
 
         # 检查配置中的用户名和密码是否有效
         username = indexer.config.get("bt_login_username", "")

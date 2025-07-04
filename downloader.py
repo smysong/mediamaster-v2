@@ -548,7 +548,88 @@ class MediaDownloader:
             logging.error("种子文件下载链接加载超时")
         except Exception as e:
             logging.error(f"下载种子文件过程中出错: {e}")
-    
+
+    def btys_download_torrent(self, result, title_text, year=None, season=None, episode_range=None, resolution=None, title=None):
+        """BT影视解析并下载种子文件"""
+        try:
+            self.site_captcha(result['link'])  # 调用 site_captcha 方法
+            self.driver.get(result['link'])
+            logging.info(f"进入：{title_text} 详情页面...")
+            logging.info(f"开始查找种子文件下载页面按钮...")
+
+            WebDriverWait(self.driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "video-info-main")))
+            logging.info("页面加载完成")
+
+            attachment_url = None
+            max_retries = 5
+            retries = 0
+
+            while not attachment_url and retries < max_retries:
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_all_elements_located((By.CLASS_NAME, "btn-aux"))
+                )
+                links = self.driver.find_elements(By.CLASS_NAME, "btn-aux")
+                for link in links:
+                    link_text = link.text.strip()
+                    if "下载种子" in link_text:
+                        attachment_url = link.get_attribute('href')
+                        # 点击“下载种子文件”按钮
+                        self.driver.execute_script("arguments[0].click();", link)
+                        self.driver.switch_to.window(self.driver.window_handles[-1])
+                        logging.info("已点击“下载种子文件”按钮，进入下载页面")
+                        break
+
+                if not attachment_url:
+                    self.driver.close()  # 关闭新标签页
+                    self.driver.switch_to.window(self.driver.window_handles[0])  # 切回原标签页
+                    logging.warning(f"没有找到种子文件下载页面按钮，重试中... ({retries + 1}/{max_retries})")
+                    time.sleep(2)
+                    retries += 1
+
+            if attachment_url:
+                # 等待“点击下载”按钮可点击，并用 ActionChains 模拟真实鼠标点击
+                try:
+                    # 最长等待15秒，直到按钮可点击
+                    download_btn = WebDriverWait(self.driver, 15).until(
+                        EC.element_to_be_clickable((By.ID, "link"))
+                    )
+                    # 再加一点点延迟，确保倒计时动画和事件都绑定完毕
+                    time.sleep(0.5)
+                    actions = ActionChains(self.driver)
+                    actions.move_to_element(download_btn).click().perform()
+                    logging.info("已点击“点击下载”按钮，开始下载种子文件...")
+                    self.driver.close()  # 关闭新标签页
+                    self.driver.switch_to.window(self.driver.window_handles[0])  # 切回原标签页
+                except TimeoutException:
+                    logging.error("未找到“点击下载”按钮，无法下载种子文件")
+                    self.driver.close()  # 关闭新标签页
+                    self.driver.switch_to.window(self.driver.window_handles[0])  # 切回原标签页
+                    return
+
+                time.sleep(10)
+                # 新增：重命名种子文件
+                latest_torrent = get_latest_torrent_file()
+                if latest_torrent:
+                    if not resolution:
+                        resolution = "未知分辨率"
+                    if not year:
+                        year = ""
+                    if not title:
+                        title = title_text
+                    # 判断是否为电视剧命名
+                    if season and episode_range:
+                        new_name = f"{title} ({year})-S{season}-[{episode_range}]-{resolution}.torrent"
+                    else:
+                        new_name = f"{title} ({year})-{resolution}.torrent"
+                    rename_torrent_file(latest_torrent, new_name)
+            else:
+                logging.error("经过多次重试后仍未找到种子文件下载链接。")
+
+        except TimeoutException:
+            logging.error("种子文件下载链接加载超时")
+        except Exception as e:
+            logging.error(f"下载种子文件过程中出错: {e}")
+
     def bt0_download_torrent(self, result, title_text, year=None, season=None, episode_range=None, resolution=None, title=None):
         """不太灵影视解析并下载种子文件"""
         try:
@@ -686,7 +767,7 @@ class MediaDownloader:
         all_movie_info = self.extract_movie_info()
     
         # 定义来源优先级
-        sources_priority = ["BTHD", "BT0", "GY"]
+        sources_priority = ["BTHD", "BTYS", "BT0", "GY"]
     
         # 遍历每部电影信息
         for movie in all_movie_info:
@@ -748,6 +829,8 @@ class MediaDownloader:
             try:
                 if source == "BTHD":
                     self.bthd_download_torrent(download_result, download_title, year=year, resolution=resolution, title=title)
+                elif source == "BTYS":
+                    self.btys_download_torrent(download_result, download_title, year=year, resolution=resolution, title=title)
                 elif source == "BT0":
                     self.bt0_download_torrent(download_result, download_title, year=year, resolution=resolution, title=title)
                 elif source == "GY":
@@ -778,7 +861,7 @@ class MediaDownloader:
         all_tv_info = self.extract_tv_info()
     
         # 定义来源优先级
-        sources_priority = ["HDTV", "BT0", "GY"]
+        sources_priority = ["HDTV", "BTYS", "BT0", "GY"]
     
         # 遍历每个电视节目信息
         for tvshow in all_tv_info:
@@ -892,6 +975,8 @@ class MediaDownloader:
                 resolution = result.get("resolution")
                 if result_source == "HDTV":
                     self.hdtv_download_torrent(result, result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
+                elif result_source == "BTYS":
+                    self.btys_download_torrent(result, result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
                 elif result_source == "BT0":
                     self.bt0_download_torrent(result, result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
                 elif result_source == "GY":
@@ -1015,6 +1100,8 @@ if __name__ == "__main__":
             logging.info(f"手动运行下载功能，站点: {args.site}, 标题: {args.title}, 链接: {args.link}")
             if args.site.upper() == "BTHD":
                 downloader.bthd_download_torrent({"link": args.link}, args.title)
+            elif args.site.upper() == "BTYS":
+                downloader.btys_download_torrent({"link": args.link}, args.title)
             elif args.site.upper() == "BT0":
                 downloader.bt0_download_torrent({"link": args.link}, args.title)
             elif args.site.upper() == "GY":

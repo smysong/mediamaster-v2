@@ -517,6 +517,19 @@ def save_processed_files(processed_filenames):
         for filename in processed_filenames:
             f.write(filename + '\n')
 
+def get_alias_mapping(db_path, alias_name):
+    """从数据库获取指定关系映射"""
+    try:
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT target_title, target_season FROM LIB_TV_ALIAS WHERE alias = ?", (alias_name,))
+            row = cursor.fetchone()
+            if row:
+                return {'target_title': row[0], 'target_season': row[1]}
+    except Exception as e:
+        logging.error(f"查询指定关系失败: {e}")
+    return None
+
 def refresh_media_library():
     # 刷新媒体库
     subprocess.run(['python', 'scan_media.py'])  
@@ -577,6 +590,17 @@ def process_file(file_path, processed_filenames):
 
         # 将标签解析结果传递给 extract_info 进行辅助提取
         result = extract_info(filename, folder_name, label_info=label_info)
+
+        # 新增：指定关系替换逻辑
+        if result and result.get('名称'):
+            db_path = config.get("db_path", "/config/data.db")
+            alias_map = get_alias_mapping(db_path, result['名称'])
+            if alias_map:
+                logging.info(f"应用剧集关联: {result['名称']} -> {alias_map['target_title']}")
+                result['名称'] = alias_map['target_title']
+                # 如果指定了目标季号，则覆盖
+                if alias_map.get('target_season'):
+                    result['季'] = alias_map['target_season']
 
         # 判断关键名称字段是否缺失，缺失则转移到unknown_directory
         if not result or not result.get('名称'):

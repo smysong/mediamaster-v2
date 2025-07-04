@@ -691,6 +691,79 @@ def delete_subscription(type, id):
     db.commit()
     return redirect(url_for('subscriptions'))
 
+@app.route('/tv_alias')
+@login_required
+def tv_alias_list():
+    try:
+        db = get_db()
+        alias_list = db.execute('SELECT * FROM LIB_TV_ALIAS ORDER BY id DESC').fetchall()
+        nickname = session.get('nickname')
+        avatar_url = session.get('avatar_url')
+        return render_template('tv_alias_list.html', alias_list=alias_list, nickname=nickname, avatar_url=avatar_url, version=APP_VERSION)
+    except Exception as e:
+        logger.error(f"访问tv_alias_list出错: {e}")
+        flash('加载剧集关联时发生错误，请检查日志。', 'error')
+        return render_template('tv_alias_list.html', alias_list=[], nickname=session.get('nickname'), avatar_url=session.get('avatar_url'), version=APP_VERSION)
+
+@app.route('/tv_alias/add', methods=['GET', 'POST'])
+@login_required
+def tv_alias_add():
+    db = get_db()
+    if request.method == 'POST':
+        alias = request.form.get('alias', '').strip()
+        target_title = request.form.get('target_title', '').strip()
+        target_season = request.form.get('target_season', '').strip() or None
+        if not alias or not target_title:
+            flash('别名和目标名称不能为空', 'error')
+            return redirect(url_for('tv_alias_add'))
+        try:
+            db.execute('INSERT INTO LIB_TV_ALIAS (ALIAS, TARGET_TITLE, TARGET_SEASON) VALUES (?, ?, ?)', (alias, target_title, target_season))
+            db.commit()
+            flash('添加成功', 'success')
+            return redirect(url_for('tv_alias_list'))
+        except sqlite3.IntegrityError:
+            flash('该别名已存在', 'error')
+            return redirect(url_for('tv_alias_add'))
+    nickname = session.get('nickname')
+    avatar_url = session.get('avatar_url')
+    return render_template('tv_alias_edit.html', alias=None, nickname=nickname, avatar_url=avatar_url, version=APP_VERSION)
+
+@app.route('/tv_alias/edit/<int:alias_id>', methods=['GET', 'POST'])
+@login_required
+def tv_alias_edit(alias_id):
+    db = get_db()
+    alias = db.execute('SELECT * FROM LIB_TV_ALIAS WHERE id = ?', (alias_id,)).fetchone()
+    if not alias:
+        flash('未找到该映射', 'error')
+        return redirect(url_for('tv_alias_list'))
+    if request.method == 'POST':
+        new_alias = request.form.get('alias', '').strip()
+        target_title = request.form.get('target_title', '').strip()
+        target_season = request.form.get('target_season', '').strip() or None
+        if not new_alias or not target_title:
+            flash('别名和目标名称不能为空', 'error')
+            return redirect(url_for('tv_alias_edit', alias_id=alias_id))
+        try:
+            db.execute('UPDATE LIB_TV_ALIAS SET ALIAS = ?, TARGET_TITLE = ?, TARGET_SEASON = ? WHERE id = ?', (new_alias, target_title, target_season, alias_id))
+            db.commit()
+            flash('修改成功', 'success')
+            return redirect(url_for('tv_alias_list'))
+        except sqlite3.IntegrityError:
+            flash('该别名已存在', 'error')
+            return redirect(url_for('tv_alias_edit', alias_id=alias_id))
+    nickname = session.get('nickname')
+    avatar_url = session.get('avatar_url')
+    return render_template('tv_alias_edit.html', alias=alias, nickname=nickname, avatar_url=avatar_url, version=APP_VERSION)
+
+@app.route('/tv_alias/delete/<int:alias_id>', methods=['POST'])
+@login_required
+def tv_alias_delete(alias_id):
+    db = get_db()
+    db.execute('DELETE FROM LIB_TV_ALIAS WHERE id = ?', (alias_id,))
+    db.commit()
+    flash('删除成功', 'success')
+    return redirect(url_for('tv_alias_list'))
+
 @app.route('/service_control')
 @login_required
 def service_control():
@@ -785,6 +858,11 @@ def search_media(media_type, title, year):
             "script": "python tvshow_hdtv.py --manual --title \"{title}\" --year {year}",
             "type": "tv",
             "site": "HDTV"
+        },
+        {
+            "script": "python movie_tvshow_btys.py --manual --type {type} --title \"{title}\" --year {year}",
+            "type": "both",
+            "site": "BTYS"
         },
         {
             "script": "python movie_tvshow_bt0.py --manual --type {type} --title \"{title}\" --year {year}",
@@ -975,19 +1053,27 @@ GROUP_MAPPING = {
         "xunlei_device_name": {"type": "text", "label": "迅雷设备名称"},
         "xunlei_dir": {"type": "text", "label": "迅雷下载目录"}
     },
+    "站点索引开关": {
+        "bthd_enabled": {"type": "switch", "label": "高清影视之家"},
+        "hdtv_enabled": {"type": "switch", "label": "高清剧集网"},
+        "btys_enabled": {"type": "switch", "label": "BT影视"},
+        "bt0_enabled": {"type": "switch", "label": "不太灵影视"},
+        "gy_enabled": {"type": "switch", "label": "观影"}
+    },
     "私有资源站点设置": {
         "bt_login_username": {"type": "text", "label": "站点登录用户名"},
         "bt_login_password": {"type": "password", "label": "站点登录密码"},
-        "bt_movie_base_url": {"type": "text", "label": "电影站点"},
-        "bt_tv_base_url": {"type": "text", "label": "电视剧站点"}
+        "bt_movie_base_url": {"type": "text", "label": "高清影视之家"},
+        "bt_tv_base_url": {"type": "text", "label": "高清剧集网"}
     },
     "公开资源站点设置": {
         "bt0_login_username": {"type": "text", "label": "不太灵影视登录用户名"},
         "bt0_login_password": {"type": "password", "label": "不太灵影视登录密码"},
         "gy_login_username": {"type": "text", "label": "观影登录用户名"},
         "gy_login_password": {"type": "password", "label": "观影登录密码"},
-        "bt0_base_url": {"type": "text", "label": "不太灵影视站点"},
-        "gy_base_url": {"type": "text", "label": "观影站点"}
+        "btys_base_url": {"type": "text", "label": "BT影视"},
+        "bt0_base_url": {"type": "text", "label": "不太灵影视"},
+        "gy_base_url": {"type": "text", "label": "观影"}
     }
 }
 @app.route('/settings')

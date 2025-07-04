@@ -2,6 +2,17 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.3.8] - 2025-07-04
+
+### 碎碎念
+- 又到周五了，即将迎来愉快的周末，同时也迎来了本次的功能更新。祝大家周末愉快！
+- 今后常规型升级更新将固定在周五进行推送；紧急修复型更新依然保持动态进行推送。
+
+### 新增
+- 新增“站点索引开关”选项，可根据实际使用情况开启或关闭某些站点。（关闭不常用站点后可提升资源搜索速度）
+- 新增“剧集关联功能”。详细介绍请查看：[配置文档](http://wiki.songmy.top:8080/web/#/686311457/102215715)
+- 新增公开资源站点：[BT影视](https://www.btbtl.com)
+
 ## [2.3.7] - 2025-06-27
 
 ### 致谢
@@ -263,3 +274,4 @@
 [2.3.5]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.5
 [2.3.6]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.6
 [2.3.7]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.7
+[2.3.8]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.8

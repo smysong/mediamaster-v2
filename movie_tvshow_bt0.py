@@ -634,6 +634,15 @@ class MediaIndexer:
         # 加载配置文件
         self.load_config()
 
+         # 新增：检查程序启用状态
+        program_enabled = self.config.get("bt0_enabled", False)
+        # 支持字符串和布尔类型
+        if isinstance(program_enabled, str):
+            program_enabled = program_enabled.lower() == "true"
+        if not program_enabled:
+            logging.info("站点已被禁用，立即退出。")
+            exit(0)
+
         # 获取订阅电影信息
         all_movie_info = self.extract_movie_info()
 
@@ -682,7 +691,16 @@ if __name__ == "__main__":
     if args.manual:
         # 加载配置文件
         indexer.load_config()
-    
+
+        # 新增：检查程序启用状态
+        program_enabled = indexer.config.get("bt0_enabled", False)
+        # 支持字符串和布尔类型
+        if isinstance(program_enabled, str):
+            program_enabled = program_enabled.lower() == "true"
+        if not program_enabled:
+            logging.info("站点已被禁用，立即退出。")
+            exit(0)
+
         # 初始化 WebDriver
         indexer.setup_webdriver()
     

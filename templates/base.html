@@ -760,6 +760,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link {% if request.path == url_for('tv_alias_list') %}active{% endif %}" href="{{ url_for('tv_alias_list') }}">
+                                <i class="bi bi-view-list"></i>
+                                剧集关联
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link {% if request.path == url_for('manual_search') %}active{% endif %}" href="{{ url_for('manual_search') }}">
                                 <i class="bi bi-search"></i>
                                 资源搜索

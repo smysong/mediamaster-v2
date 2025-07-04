@@ -159,6 +159,17 @@ def create_tables():
         )
     ''')
 
+    # 创建LIB_TV_ALIAS表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS LIB_TV_ALIAS (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            ALIAS TEXT NOT NULL,
+            TARGET_TITLE TEXT NOT NULL,
+            TARGET_SEASON TEXT,
+            UNIQUE(ALIAS)
+        )
+    ''')
+
     # 插入默认用户数据
     cursor.execute("SELECT COUNT(*) FROM USERS WHERE USERNAME = 'admin'")
     if cursor.fetchone()[0] == 0:
@@ -214,7 +225,13 @@ def create_tables():
         ("bt_movie_base_url", "https://100.tudoutudou.top"),
         ("bt_tv_base_url", "https://200.tudoutudou.top"),
         ("bt0_base_url", "https://www.7bt0.com"),
+        ("btys_base_url", "https://www.btbtl.com"),
         ("gy_base_url", "https://www.gyg.si"),
+        ("bthd_enabled", "False"),
+        ("hdtv_enabled", "False"),
+        ("bt0_enabled", "True"),
+        ("btys_enabled", "True"),
+        ("gy_enabled", "True"),
         ("run_interval_hours", "6")
     ]
 
@@ -237,7 +254,7 @@ def check_and_update_tables():
     # 定义所有表名
     tables = [
         "USERS", "CONFIG", "LIB_MOVIES", "LIB_TVS", "LIB_TV_SEASONS",
-        "RSS_MOVIES", "RSS_TVS", "MISS_MOVIES", "MISS_TVS"
+        "RSS_MOVIES", "RSS_TVS", "MISS_MOVIES", "MISS_TVS", "LIB_TV_ALIAS"
     ]
 
     for table in tables:
@@ -297,7 +314,13 @@ def ensure_all_configs_exist():
         ("bt_movie_base_url", "https://100.tudoutudou.top"),
         ("bt_tv_base_url", "https://200.tudoutudou.top"),
         ("bt0_base_url", "https://www.7bt0.com"),
+        ("btys_base_url", "https://www.btbtl.com"),
         ("gy_base_url", "https://www.gyg.si"),
+        ("bthd_enabled", "False"),
+        ("hdtv_enabled", "False"),
+        ("bt0_enabled", "True"),
+        ("btys_enabled", "True"),
+        ("gy_enabled", "True"),
         ("run_interval_hours", "6")
     ]
 
@@ -358,7 +381,13 @@ def check_config_data():
         "bt_movie_base_url": "https://100.tudoutudou.top",
         "bt_tv_base_url": "https://200.tudoutudou.top",
         "bt0_base_url": "https://www.7bt0.com",
+        "btys_base_url": "https://www.btbtl.com",
         "gy_base_url": "https://www.gyg.si",
+        "bthd_enabled": "False",
+        "hdtv_enabled": "False",
+        "bt0_enabled": "True",
+        "btys_enabled": "True",
+        "gy_enabled": "True",
         "run_interval_hours": "6"
     }
 
