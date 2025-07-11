@@ -750,7 +750,7 @@
                         bannerItem.className = 'banner-item';
 
                         // 优先显示默认banner，加载成功后再显示TMDB图片
-                        bannerItem.style.backgroundImage = `url(https://dailybing.com/api/v1)`;
+                        bannerItem.style.backgroundImage = `url(https://bing.img.run/rand.php)`;
                         if (movieDetails.backdrop_path) {
                             const tmdbBackdropUrl = `https://image.tmdb.org/t/p/original${movieDetails.backdrop_path}`;
                             const imgLoader = new Image();
@@ -758,7 +758,7 @@
                                 bannerItem.style.backgroundImage = `url(${tmdbBackdropUrl})`;
                             };
                             imgLoader.onerror = function() {
-                                bannerItem.style.backgroundImage = `url(https://dailybing.com/api/v1)`;
+                                bannerItem.style.backgroundImage = `url(https://bing.img.run/rand.php)`;
                             };
                             imgLoader.src = tmdbBackdropUrl;
                         }

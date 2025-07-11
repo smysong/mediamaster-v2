@@ -6,7 +6,7 @@
 
 **特别说明**
 
-目前支持站点：不太灵影视、观影、高清剧集网、高清影视之家。
+目前支持站点：BT影视、不太灵影视、观影、高清剧集网、高清影视之家。
 
 支持下载器：迅雷、qBittorrent、Transmission
 
@@ -48,7 +48,7 @@ WEB管理信息：
 version: '3.8'
 services:
   mediamaster:
-    image: docker.1ms.run/smysong/mediamaster-mediamaster-v2:latest
+    image: docker.1ms.run/smysong/mediamaster-v2:latest
     container_name: mediamaster
     environment:
       - UID=1000
@@ -68,7 +68,7 @@ services:
 networks:
   media-network:
     driver: bridge
-    enable_ipv6: true
+    enable_ipv6: true #如本地网络无IPV6可设置为false
     ipam:
       config:
         - subnet: 172.16.238.0/24
@@ -79,7 +79,7 @@ networks:
 version: '3.8'
 services:
   mediamaster:
-    image: docker.1ms.run/smysong/mediamaster-mediamaster-v2:latest
+    image: docker.1ms.run/smysong/mediamaster-v2:latest
     container_name: mediamaster
     networks:
       media-network:
@@ -116,7 +116,7 @@ services:
 networks:
   media-network:
     driver: bridge
-    enable_ipv6: true
+    enable_ipv6: true #如本地网络无IPV6可设置为false
     ipam:
       config:
         - subnet: 172.16.238.0/24
@@ -129,11 +129,11 @@ networks:
 
 
 ```
-docker pull docker.1ms.run/smysong/mediamaster-mediamaster-v2:latest
+docker pull docker.1ms.run/smysong/mediamaster-v2:latest
 ```
 
 
-这将下载 smysong/mediamaster-mediamaster-v2:latest 镜像到本地。
+这将下载 smysong/mediamaster-v2:latest 镜像到本地。
 
 ### 步骤 2: 运行镜像
 **接下来，你可以运行这个镜像。需要挂载一些配置文件或数据卷，你需要指定适当的挂载点。以下是一个示例命令，用于运行镜像，并挂载配置文件和数据卷：**
@@ -145,7 +145,7 @@ docker run -it --name mediamaster \
            -v /Media:/Media \
            -v /Torrent:/Torrent \
            -v /Downloads:/Downloads \
-           docker.1ms.run/smysong/mediamaster-mediamaster-v2:latest
+           docker.1ms.run/smysong/mediamaster-v2:latest
 ```
 
 在这个命令中：
@@ -169,7 +169,7 @@ docker run -it --name mediamaster \
 > -v /Downloads:/Downloads \
 > 目录监控，将主机上下载器的下载目录挂载到容器/Downloads目录，可以实现自动转移并重命名下载完成的影片文件。
 >  
-> docker.1ms.run/smysong/mediamaster-mediamaster-v2:latest \
+> docker.1ms.run/smysong/mediamaster-v2:latest \
 > 是要运行的镜像名称。
 
 ```

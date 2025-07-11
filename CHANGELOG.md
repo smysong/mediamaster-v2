@@ -2,6 +2,17 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.3.9] - 2025-07-11
+
+### 致谢
+- 感谢“什么值得买”社区值友：sunny_dunn 指出部署文档中存在的错误；安装部署文档现已修正。
+
+### 新增
+- 新增“刮削媒体元数据服务”开启后可以进行媒体库元数据刮削并保存至媒体库NFO文件中。详细介绍请查看：[配置文档](http://wiki.songmy.top:8080/web/#/686311457/102215717)
+
+### 修复
+- 修复Bing API接口失效导致默认图片和登录页面背景图片加载失败的问题。改为使用：[Bing每日壁纸档案库](https://bing.img.run/)提供的开放API接口。
+
 ## [2.3.8] - 2025-07-04
 
 ### 碎碎念
@@ -275,3 +286,4 @@
 [2.3.6]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.6
 [2.3.7]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.7
 [2.3.8]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.8
+[2.3.9]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.9

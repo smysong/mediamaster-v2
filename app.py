@@ -1014,6 +1014,9 @@ GROUP_MAPPING = {
     "媒体添加时间": {
         "dateadded": {"type": "switch", "label": "使用影片发行日期"}
     },
+    "媒体元数据刮削": {
+        "scrape_metadata": {"type": "switch", "label": "刮削媒体元数据"},
+    },
     "中文演职人员": {
         "actor_nfo": {"type": "switch", "label": "演职人员汉化"},
         "nfo_exclude_dirs": {"type": "text", "label": "排除目录"},

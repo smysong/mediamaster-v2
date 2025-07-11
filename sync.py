@@ -535,6 +535,8 @@ def refresh_media_library():
     subprocess.run(['python', 'scan_media.py'])  
     # 刷新正在订阅
     subprocess.run(['python', 'check_subscr.py'])   
+    # 刮削NFO元数据
+    subprocess.run(['python', 'scrape_metadata.py'])
     # 刷新媒体库tmdb_id
     subprocess.run(['python', 'tmdb_id.py'])
 
