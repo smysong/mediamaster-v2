@@ -5,36 +5,27 @@ import logging
 import sys
 import signal
 import sqlite3
+import psutil
+import threading
 
 # 配置日志
 logging.basicConfig(
-    level=logging.INFO,  # 设置日志级别为 INFO
-    format="%(levelname)s - %(message)s",  # 设置日志格式
+    level=logging.INFO,
+    format="%(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("/tmp/log/main.log", mode='w'),  # 输出到文件并清空之前的日志
-        logging.StreamHandler()  # 输出到控制台
+        logging.FileHandler("/tmp/log/main.log", mode='w'),
+        logging.StreamHandler()
     ]
 )
 
 def get_run_interval_from_db():
-    """
-    从 database/data.db 数据库的 CONFIG 表中读取 run_interval_hours 的值。
-    如果读取失败或值不存在，返回默认值 6 小时。
-    """
     try:
-        # 连接到数据库
         conn = sqlite3.connect('/config/data.db')
         cursor = conn.cursor()
-        
-        # 查询 run_interval_hours 的值
         cursor.execute("SELECT VALUE FROM CONFIG WHERE OPTION = 'run_interval_hours';")
         result = cursor.fetchone()
-        
-        # 关闭数据库连接
         cursor.close()
         conn.close()
-        
-        # 如果查询结果存在，返回整数值；否则返回默认值 6
         if result:
             return int(result[0])
         else:
@@ -98,21 +89,81 @@ def report_versions():
         logging.error(f"无法启动版本检测及统计服务: {e}")
         sys.exit(0)
 
-# 全局变量，用于控制主循环
+def monitor_chrome_process():
+    chrome_started_time = None
+    chromedriver_started_time = None
+
+    for proc in psutil.process_iter(['pid', 'name', 'create_time']):
+        try:
+            process_name = proc.info['name'].lower()
+            create_time = proc.info['create_time']
+
+            if 'chrome' in process_name:
+                if chrome_started_time is None or create_time < chrome_started_time:
+                    chrome_started_time = create_time
+            if 'chromedriver' in process_name:
+                if chromedriver_started_time is None or create_time < chromedriver_started_time:
+                    chromedriver_started_time = create_time
+
+        except psutil.NoSuchProcess:
+            continue
+
+    def terminate_process(process_name_filter, started_time, threshold_seconds, log_prefix):
+        if started_time:
+            run_time = time.time() - started_time
+            if run_time > threshold_seconds:
+                logging.warning(f"{log_prefix} 进程已运行超过 {threshold_seconds // 60} 分钟，判定为异常，正在终止。")
+                for proc in psutil.process_iter(['pid', 'name']):
+                    try:
+                        if process_name_filter in proc.info['name'].lower():
+                            p = psutil.Process(proc.info['pid'])
+                            p.terminate()
+                            logging.info(f"已终止 {log_prefix} 进程 PID: {proc.info['pid']}")
+                    except psutil.NoSuchProcess:
+                        pass
+
+    # 监控 Chrome 进程
+    terminate_process('chrome', chrome_started_time, 20 * 60, "Chrome")
+
+    # 监控 Chromedriver 进程
+    terminate_process('chromedriver', chromedriver_started_time, 20 * 60, "Chromedriver")
+
+    # 👇 清理所有僵尸进程（defunct）
+    def kill_zombie_processes():
+        for proc in psutil.process_iter(['pid', 'name', 'status']):
+            try:
+                if proc.info['status'] == psutil.STATUS_ZOMBIE:
+                    logging.info(f"发现僵尸进程 {proc.info['pid']} - {proc.info['name']}，正在清理...")
+                    proc.wait(timeout=0)  # 尝试回收
+            except psutil.NoSuchProcess:
+                pass
+
+    # 调用清理僵尸进程函数
+    kill_zombie_processes()
+
+def chrome_monitor_thread():
+    while running:
+        monitor_chrome_process()
+        time.sleep(300)  # 每5分钟检查一次
+
+def start_chrome_monitor():
+    thread = threading.Thread(target=chrome_monitor_thread, daemon=True)
+    thread.start()
+    logging.info("Chrome 进程监控已启动")
+
+# 全局变量
 running = True
 app_pid = None
 sync_pid = None
-xunlei_started = False  # 新增标志位，记录 xunlei_torrent 是否已启动
+xunlei_started = False
 
-# 定义信号处理器函数
+# 信号处理函数
 def shutdown_handler(signum, frame):
     global running, app_pid, sync_pid
     logging.info(f"收到信号 {signum}，正在关闭程序...")
 
-    # 停止主循环
     running = False
 
-    # 终止子进程
     if app_pid:
         logging.info(f"终止 app.py 进程 (PID: {app_pid})")
         try:
@@ -127,31 +178,24 @@ def shutdown_handler(signum, frame):
         except ProcessLookupError:
             logging.warning(f"进程 {sync_pid} 不存在，跳过终止操作。")
 
-    # 等待子进程优雅地关闭
-    time.sleep(5)  # 可以根据实际情况调整等待时间
-
+    time.sleep(5)
     logging.info("程序已关闭。")
     sys.exit(0)
 
-# 注册信号处理器
 signal.signal(signal.SIGTERM, shutdown_handler)
 signal.signal(signal.SIGINT, shutdown_handler)
 
 def main():
-    global app_pid, sync_pid, running, xunlei_started  # 引入新增的全局变量
+    global app_pid, sync_pid, running, xunlei_started
 
-    # 从数据库读取运行间隔时间
     run_interval_hours = get_run_interval_from_db()
     run_interval_seconds = run_interval_hours * 3600
 
-    # 启动 app.py
     app_pid = start_app()
-
-    # 启动 sync.py
     sync_pid = start_sync()
+    start_chrome_monitor()  # 启动 Chrome 监控线程
 
     while running:
-        # 执行所有任务脚本
         run_script('subscr.py')
         logging.info("-" * 80)
         logging.info("获取最新豆瓣订阅：已执行完毕，等待5秒...")
@@ -176,10 +220,9 @@ def main():
         logging.info("-" * 80)
         time.sleep(5)
 
-        # downloader.py 执行完成之后，判断是否首次启动 xunlei_torrent.py
         if not xunlei_started:
             start_xunlei_torrent()
-            xunlei_started = True  # 标记为已启动
+            xunlei_started = True
 
         run_script('scan_media.py')
         logging.info("-" * 80)

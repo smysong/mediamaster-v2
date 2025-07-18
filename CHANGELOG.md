@@ -2,6 +2,12 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.3.10] - 2025-07-18
+
+### 修复
+- 修复某些情况下Chrome驱动、Chrome浏览器相关进程未正常结束持续在后台运行，导致需要使用Chrome驱动、Chrome浏览器的程序在运行时无法初始化报程序运行发生错误的问题。主程序中增加对Chrome驱动、Chrome浏览器相关进程的监控和检测，当Chrome驱动、Chrome浏览器相关进程超过20分钟未正常结束时，将尝试自动结束相关进程。
+- 修复“更新媒体添加时间”服务组件遇到不支持的NFO文件编码导致程序异常崩溃的问题。添加常见编码支持以及不支持的编码异常处理逻辑。
+
 ## [2.3.9] - 2025-07-11
 
 ### 致谢
@@ -287,3 +293,4 @@
 [2.3.7]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.7
 [2.3.8]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.8
 [2.3.9]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.9
+[2.3.10]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.10

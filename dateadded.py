@@ -13,20 +13,39 @@ logging.basicConfig(
     ]
 )
 
+def read_file_with_encoding(file_path):
+    """
+    尝试使用多种编码读取文件内容，失败则返回 None。
+    """
+    encodings = ['utf-8', 'gbk', 'iso-8859-1', 'latin-1']
+    for encoding in encodings:
+        try:
+            with open(file_path, 'r', encoding=encoding) as file:
+                return file.read()
+        except UnicodeDecodeError:
+            continue
+    logging.error(f"无法解码文件: {file_path}，所有尝试的编码均失败")
+    return None
+
+
 def update_dateadded(directory):
-    # 遍历指定目录及其子目录中的所有文件
+    """
+    更新指定目录下所有 .nfo 文件中的 <dateadded> 标签值。
+    """
     logging.debug(f"开始遍历目录及其子目录: {directory}")
     for root, dirs, files in os.walk(directory):
         # 排除 music 目录（不区分大小写）
         dirs[:] = [d for d in dirs if d.lower() != 'music']
-        
+
         for filename in files:
             # 排除 artist.nfo 文件（不区分大小写）
             if filename.lower().endswith('.nfo') and not filename.lower() == 'artist.nfo':
                 file_path = os.path.join(root, filename)
                 logging.debug(f"处理文件: {file_path}")
-                with open(file_path, 'r', encoding='utf-8') as file:
-                    content = file.read()
+
+                content = read_file_with_encoding(file_path)
+                if content is None:
+                    continue
 
                 # 使用正则表达式查找<dateadded>, <releasedate>和<aired>标签
                 dateadded_match = re.search(r'<dateadded>(.*?)</dateadded>', content, re.DOTALL)
@@ -56,8 +75,10 @@ def update_dateadded(directory):
                         continue
 
                     # 替换<dateadded>标签中的内容
-                    updated_content = content.replace(f'<dateadded>{dateadded_content}</dateadded>',
-                                                      f'<dateadded>{replacement_content}</dateadded>')
+                    updated_content = content.replace(
+                        f'<dateadded>{dateadded_content}</dateadded>',
+                        f'<dateadded>{replacement_content}</dateadded>'
+                    )
                     logging.info(f"更新 [添加日期] 为: {replacement_content}")
 
                     # 将更新后的内容写回文件
@@ -68,7 +89,11 @@ def update_dateadded(directory):
                 else:
                     logging.warning(f"未找到 [添加日期] 标签在文件: {file_path}")
 
+
 def get_config_value(db_path, option):
+    """
+    从 SQLite 数据库中读取配置项。
+    """
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute("SELECT VALUE FROM CONFIG WHERE OPTION = ?", (option,))
@@ -76,12 +101,13 @@ def get_config_value(db_path, option):
     conn.close()
     return result[0] if result else None
 
+
 if __name__ == '__main__':
     db_path = '/config/data.db'
     media_dir = get_config_value(db_path, 'media_dir')
     dateadded_enabled = get_config_value(db_path, 'dateadded')
     logging.debug(f"从数据库获取配置: media_dir={media_dir}, dateadded={dateadded_enabled}")
-    if dateadded_enabled.lower() == "true":  # 显式检查是否为 "true"
+    if dateadded_enabled and dateadded_enabled.lower() == "true":  # 显式检查是否为 "true"
         update_dateadded(media_dir)
     else:
         logging.info('添加日期功能已禁用.')
