@@ -90,52 +90,56 @@ class MediaIndexer:
             exit(0)
 
     def site_captcha(self, url):
-        self.driver.get(url)
         try:
-            # 检查滑动验证码元素是否存在
-            captcha_prompt = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "p.ui-prompt"))
-            )
-            if captcha_prompt.text in ["滑动上面方块到右侧解锁", "Slide to Unlock"]:
-                logging.info("检测到滑动验证码，开始验证")
-
-                # 等待滑块元素出现
-                handler = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.ID, "handler"))
+            self.driver.get(url)
+            try:
+                # 检查滑动验证码元素是否存在
+                captcha_prompt = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "p.ui-prompt"))
                 )
+                if captcha_prompt.text in ["滑动上面方块到右侧解锁", "Slide to Unlock"]:
+                    logging.info("检测到滑动验证码，开始验证")
 
-                # 等待目标位置元素出现
-                target = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.ID, "handler-placeholder"))
-                )
+                    # 等待滑块元素出现
+                    handler = WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.ID, "handler"))
+                    )
 
-                # 获取滑块的初始位置
-                handler_location = handler.location
+                    # 等待目标位置元素出现
+                    target = WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.ID, "handler-placeholder"))
+                    )
 
-                # 获取目标位置的初始位置
-                target_location = target.location
+                    # 获取滑块的初始位置
+                    handler_location = handler.location
 
-                # 计算滑块需要移动的距离
-                move_distance = target_location['x'] - handler_location['x']
+                    # 获取目标位置的初始位置
+                    target_location = target.location
 
-                # 使用 ActionChains 模拟拖动滑块
-                actions = ActionChains(self.driver)
-                actions.click_and_hold(handler).move_by_offset(move_distance, 0).release().perform()
+                    # 计算滑块需要移动的距离
+                    move_distance = target_location['x'] - handler_location['x']
 
-                logging.info("滑块已成功拖动到目标位置")
+                    # 使用 ActionChains 模拟拖动滑块
+                    actions = ActionChains(self.driver)
+                    actions.click_and_hold(handler).move_by_offset(move_distance, 0).release().perform()
 
-                # 等待页面跳转完成
-                WebDriverWait(self.driver, 30).until(
-                    EC.url_changes(url)
-                )
+                    logging.info("滑块已成功拖动到目标位置")
 
-                logging.info("页面已成功跳转")
-            else:
+                    # 等待页面跳转完成
+                    WebDriverWait(self.driver, 30).until(
+                        EC.url_changes(url)
+                    )
+
+                    logging.info("页面已成功跳转")
+                else:
+                    logging.info("未检测到滑动验证码")
+            except TimeoutException:
                 logging.info("未检测到滑动验证码")
-        except TimeoutException:
-            logging.info("未检测到滑动验证码")
         except Exception as e:
             logging.error(f"访问站点时出错: {e}")
+            logging.info("由于访问失败，程序将正常退出")
+            self.driver.quit()
+            exit(1)
 
     def extract_movie_info(self):
         """从数据库读取订阅电影信息"""
@@ -193,8 +197,13 @@ class MediaIndexer:
             logging.info(f"开始搜索电影: {item['标题']}  年份: {item['年份']}")
             search_query = quote(item['标题'])
             full_search_url = f"{search_url}{search_query}"
-            self.driver.get(full_search_url)
-            logging.debug(f"访问搜索URL: {full_search_url}")
+            try:
+                self.driver.get(full_search_url)
+                logging.debug(f"访问搜索URL: {full_search_url}")
+            except Exception as e:
+                logging.error(f"无法访问搜索页面: {full_search_url}，错误: {e}")
+                logging.info("跳过当前搜索项，继续执行下一个媒体搜索")
+                continue
             try:
                 # 等待搜索结果加载
                 WebDriverWait(self.driver, 15).until(
@@ -238,6 +247,18 @@ class MediaIndexer:
                                 self.driver.close()  # 关闭新标签页
                                 self.driver.switch_to.window(self.driver.window_handles[0])  # 切回原标签页
                                 continue
+
+                            # 检查资源类型标签
+                            try:
+                                category_element = self.driver.find_element(By.CSS_SELECTOR, ".video-tag-icon")
+                                category_text = category_element.text.strip()
+                                if category_text != "Movie":
+                                    logging.info(f"资源类型不匹配，跳过采集: {category_text}")
+                                    self.driver.close()
+                                    self.driver.switch_to.window(self.driver.window_handles[0])
+                                    continue
+                            except Exception as e:
+                                logging.warning("无法找到资源类型标签，默认继续采集")
 
                             # 新版资源采集逻辑
                             categorized_results = {
@@ -348,8 +369,13 @@ class MediaIndexer:
             logging.info(f"开始搜索电视节目: {item['剧集']} 年份: {item['年份']} 季: {item['季']}")
             search_query = quote(item['剧集'])
             full_search_url = f"{search_url}{search_query}"
-            self.driver.get(full_search_url)
-            logging.debug(f"访问搜索URL: {full_search_url}")
+            try:
+                self.driver.get(full_search_url)
+                logging.debug(f"访问搜索URL: {full_search_url}")
+            except Exception as e:
+                logging.error(f"无法访问搜索页面: {full_search_url}，错误: {e}")
+                logging.info("跳过当前搜索项，继续执行下一个媒体搜索")
+                continue
             try:
                 # 等待搜索结果加载
                 WebDriverWait(self.driver, 15).until(
@@ -393,6 +419,18 @@ class MediaIndexer:
                                 self.driver.close()  # 关闭新标签页
                                 self.driver.switch_to.window(self.driver.window_handles[0])  # 切回原标签页
                                 continue
+
+                            # 检查资源类型标签
+                            try:
+                                category_element = self.driver.find_element(By.CSS_SELECTOR, ".video-tag-icon")
+                                category_text = category_element.text.strip()
+                                if category_text != "TV":
+                                    logging.info(f"资源类型不匹配，跳过采集: {category_text}")
+                                    self.driver.close()
+                                    self.driver.switch_to.window(self.driver.window_handles[0])
+                                    continue
+                            except Exception as e:
+                                logging.warning("无法找到资源类型标签，默认继续采集")
 
                             categorized_results = {
                                 "首选分辨率": {

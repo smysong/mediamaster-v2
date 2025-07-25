@@ -91,45 +91,49 @@ class MediaIndexer:
             exit(0)
 
     def site_captcha(self, url):
-        self.driver.get(url)
         try:
-            # 检查新的验证码元素是否存在
-            captcha_prompt = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div.container .title"))
-            )
-            if "请确认您不是机器人" in captcha_prompt.text:
-                logging.info("检测到验证码，开始验证")
-    
-                # 等待复选框元素出现
-                checkbox = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.ID, "checkbox"))
+            self.driver.get(url)
+            try:
+                # 检查新的验证码元素是否存在
+                captcha_prompt = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "div.container .title"))
                 )
-    
-                # 使用 ActionChains 模拟点击复选框
-                actions = ActionChains(self.driver)
-                actions.move_to_element(checkbox).click().perform()
-    
-                logging.info("复选框已成功点击")
-    
-                # 等待加载指示器消失，表示验证完成
-                WebDriverWait(self.driver, 30).until_not(
-                    EC.presence_of_element_located((By.ID, "loading-indicator"))
-                )
-    
-                logging.info("验证码验证成功")
-    
-                # 等待页面跳转完成
-                WebDriverWait(self.driver, 30).until(
-                    EC.url_changes(url)
-                )
-    
-                logging.info("页面已成功跳转")
-            else:
+                if "请确认您不是机器人" in captcha_prompt.text:
+                    logging.info("检测到验证码，开始验证")
+        
+                    # 等待复选框元素出现
+                    checkbox = WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.ID, "checkbox"))
+                    )
+        
+                    # 使用 ActionChains 模拟点击复选框
+                    actions = ActionChains(self.driver)
+                    actions.move_to_element(checkbox).click().perform()
+        
+                    logging.info("复选框已成功点击")
+        
+                    # 等待加载指示器消失，表示验证完成
+                    WebDriverWait(self.driver, 30).until_not(
+                        EC.presence_of_element_located((By.ID, "loading-indicator"))
+                    )
+        
+                    logging.info("验证码验证成功")
+        
+                    # 等待页面跳转完成
+                    WebDriverWait(self.driver, 30).until(
+                        EC.url_changes(url)
+                    )
+        
+                    logging.info("页面已成功跳转")
+                else:
+                    logging.info("未检测到验证码")
+            except TimeoutException:
                 logging.info("未检测到验证码")
-        except TimeoutException:
-            logging.info("未检测到验证码")
         except Exception as e:
             logging.error(f"访问站点时出错: {e}")
+            logging.info("由于访问失败，程序将正常退出")
+            self.driver.quit()
+            exit(1)
     
         # 无论是否检测到验证码，都检查是否有提示框并点击“不再提醒”按钮
         try:
@@ -247,8 +251,13 @@ class MediaIndexer:
             logging.info(f"开始搜索电影: {item['标题']}  年份: {item['年份']}")
             search_query = quote(item['标题'])
             full_search_url = f"{search_url}{search_query}"
-            self.driver.get(full_search_url)
-            logging.debug(f"访问搜索URL: {full_search_url}")
+            try:
+                self.driver.get(full_search_url)
+                logging.debug(f"访问搜索URL: {full_search_url}")
+            except Exception as e:
+                logging.error(f"无法访问搜索页面: {full_search_url}，错误: {e}")
+                logging.info("跳过当前搜索项，继续执行下一个媒体搜索")
+                continue
             try:
                 # 等待搜索结果加载
                 WebDriverWait(self.driver, 10).until(
@@ -392,8 +401,13 @@ class MediaIndexer:
             logging.info(f"开始搜索电视节目: {item['剧集']} 年份: {item['年份']} 季: {item['季']}")
             search_query = quote(item['剧集'])
             full_search_url = f"{search_url}{search_query}"
-            self.driver.get(full_search_url)
-            logging.debug(f"访问搜索URL: {full_search_url}")
+            try:
+                self.driver.get(full_search_url)
+                logging.debug(f"访问搜索URL: {full_search_url}")
+            except Exception as e:
+                logging.error(f"无法访问搜索页面: {full_search_url}，错误: {e}")
+                logging.info("跳过当前搜索项，继续执行下一个媒体搜索")
+                continue
             try:
                 # 等待搜索结果加载
                 WebDriverWait(self.driver, 10).until(

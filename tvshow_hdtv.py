@@ -90,56 +90,60 @@ class TvshowIndexer:
             exit(0)
 
     def site_captcha(self, url):
-        self.driver.get(url)
         try:
-            # 检查滑动验证码元素是否存在
-            captcha_prompt = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "p.ui-prompt"))
-            )
-            if captcha_prompt.text in ["滑动上面方块到右侧解锁", "Slide to Unlock"]:
-                logging.info("检测到滑动验证码，开始验证")
-
-                # 等待滑块元素出现
-                handler = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.ID, "handler"))
+            self.driver.get(url)
+            try:
+                # 检查滑动验证码元素是否存在
+                captcha_prompt = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "p.ui-prompt"))
                 )
+                if captcha_prompt.text in ["滑动上面方块到右侧解锁", "Slide to Unlock"]:
+                    logging.info("检测到滑动验证码，开始验证")
 
-                # 等待目标位置元素出现
-                target = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.ID, "handler-placeholder"))
-                )
+                    # 等待滑块元素出现
+                    handler = WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.ID, "handler"))
+                    )
 
-                # 获取滑块的初始位置
-                handler_location = handler.location
+                    # 等待目标位置元素出现
+                    target = WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.ID, "handler-placeholder"))
+                    )
 
-                # 获取目标位置的初始位置
-                target_location = target.location
+                    # 获取滑块的初始位置
+                    handler_location = handler.location
 
-                # 计算滑块需要移动的距离
-                move_distance = target_location['x'] - handler_location['x']
+                    # 获取目标位置的初始位置
+                    target_location = target.location
 
-                # 使用 ActionChains 模拟拖动滑块
-                actions = ActionChains(self.driver)
-                actions.click_and_hold(handler).move_by_offset(move_distance, 0).release().perform()
+                    # 计算滑块需要移动的距离
+                    move_distance = target_location['x'] - handler_location['x']
 
-                logging.info("滑块已成功拖动到目标位置")
+                    # 使用 ActionChains 模拟拖动滑块
+                    actions = ActionChains(self.driver)
+                    actions.click_and_hold(handler).move_by_offset(move_distance, 0).release().perform()
 
-                # 等待页面跳转完成
-                WebDriverWait(self.driver, 30).until(
-                    EC.url_changes(url)
-                )
+                    logging.info("滑块已成功拖动到目标位置")
 
-                logging.info("页面已成功跳转")
-            else:
+                    # 等待页面跳转完成
+                    WebDriverWait(self.driver, 30).until(
+                        EC.url_changes(url)
+                    )
+
+                    logging.info("页面已成功跳转")
+                else:
+                    logging.info("未检测到滑动验证码")
+            except TimeoutException:
                 logging.info("未检测到滑动验证码")
-        except TimeoutException:
-            logging.info("未检测到滑动验证码")
         except Exception as e:
             logging.error(f"访问站点时出错: {e}")
+            logging.info("由于访问失败，程序将正常退出")
+            self.driver.quit()
+            exit(1)
 
     def login(self, url, username, password):
-        self.driver.get(url)
         try:
+            self.driver.get(url)
             # 检查是否已经自动登录
             if self.is_logged_in():
                 logging.info("自动登录成功，无需再次登录")
@@ -166,10 +170,11 @@ class TvshowIndexer:
                 EC.presence_of_element_located((By.PARTIAL_LINK_TEXT, '跳转'))
             )
             logging.info("登录成功！")
-        except TimeoutException:
-            logging.error("登录失败或页面未正确加载，未找到预期元素！")
+        except Exception as e:
+            logging.error(f"访问登录页面失败: {e}")
+            logging.info("由于访问失败，程序将正常退出")
             self.driver.quit()
-            exit(0)
+            exit(1)
 
     def is_logged_in(self):
         try:

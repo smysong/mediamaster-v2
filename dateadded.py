@@ -60,13 +60,18 @@ def update_dateadded(directory):
                     dateadded_date = dateadded_content.split()[0]
 
                     if releasedate_match:
-                        replacement_content = releasedate_match.group(1)
+                        replacement_content = releasedate_match.group(1).strip()
                         logging.debug(f"发行日期: {replacement_content}")
                     elif aired_match:
-                        replacement_content = aired_match.group(1)
+                        replacement_content = aired_match.group(1).strip()
                         logging.debug(f"播出日期: {replacement_content}")
                     else:
                         logging.warning(f"未找到 [发行日期] 或 [播出日期] 标签在文件: {file_path}")
+                        continue
+
+                    # 检查年份是否为 0001
+                    if replacement_content.startswith('0001'):
+                        logging.warning(f"[发行日期] 或 [播出日期] 年份无效 (0001)，跳过处理: {file_path}")
                         continue
 
                     # 比较 dateadded 的年月日部分与 replacement_content 是否相同

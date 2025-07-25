@@ -2,6 +2,14 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.3.11] - 2025-07-25
+
+### 优化
+- 优化“更新媒体添加时间”服务组件，增加对于NFO文件中发行年份的检查，检查年份是否为 0001，如果为0001则判断为无效年份，跳过更新媒体添加时间。
+- 优化资源索引程序对于站点URL访问失败时的处理逻辑，避免因站点访问失败导致程序异常崩溃的问题。
+- 优化“不太灵影视”站点索引程序，支持多页搜索结果遍历，可获取到更多资源。
+- 优化“BT影视”站点索引程序，支持资源类型判断，对于相同标题和年份的资源会进行类型判断，避免电影被当成剧集或剧集被当成电影。
+
 ## [2.3.10] - 2025-07-18
 
 ### 修复
@@ -294,3 +302,4 @@
 [2.3.8]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.8
 [2.3.9]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.9
 [2.3.10]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.10
+[2.3.11]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.11
