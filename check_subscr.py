@@ -1,8 +1,9 @@
 import sqlite3
 import logging
 import json
-import sqlite3
 import requests
+import random
+import time
 
 # 配置日志
 logging.basicConfig(
@@ -64,10 +65,21 @@ def subscribe_tvs(cursor):
             continue
 
         total_episodes = int(total_episodes)
-        if not cursor.execute('SELECT 1 FROM LIB_TVS WHERE title = ? AND year = ?', (title, year)).fetchone():
+        
+        # 检查是否已经存在于 MISS_TVS 表中
+        miss_row = cursor.execute(
+            'SELECT missing_episodes FROM MISS_TVS WHERE title = ? AND year = ? AND season = ?',
+            (title, year, season)
+        ).fetchone()
+        
+        # 检查LIB_TVS中是否已存在
+        lib_exists = cursor.execute('SELECT 1 FROM LIB_TVS WHERE title = ? AND year = ?', (title, year)).fetchone()
+        
+        if not lib_exists:
+            # 完全未入库的情况
             missing_episodes_str = ','.join(map(str, range(1, total_episodes + 1)))
-            # 检查是否已经存在于 MISS_TVS 表中
-            if not cursor.execute('SELECT 1 FROM MISS_TVS WHERE title = ? AND year = ? AND season = ?', (title, year, season)).fetchone():
+            if not miss_row:
+                # 完全新订阅
                 cursor.execute(
                     'INSERT INTO MISS_TVS (title, year, season, missing_episodes, douban_id) VALUES (?, ?, ?, ?, ?)',
                     (title, year, season, missing_episodes_str, douban_id)
@@ -75,9 +87,23 @@ def subscribe_tvs(cursor):
                 logging.info(f"电视剧：{title} 第{season}季 已添加订阅！")
                 send_notification(f"电视剧：{title} 第{season}季 已添加订阅！")
             else:
-                logging.warning(f"电视剧：{title} 第{season}季 已存在于订阅列表中，跳过插入。")
+                # 已存在订阅，检查是否需要更新（总集数是否变化）
+                subscribed_missing = set(int(ep) for ep in miss_row[0].split(',') if ep.strip().isdigit()) if miss_row[0] else set()
+                total_episodes_set = set(range(1, total_episodes + 1))
+                
+                # 如果总集数发生变化，则更新
+                if len(total_episodes_set) != len(subscribed_missing):
+                    # 更新缺失集数为最新的总集数范围
+                    new_missing_episodes_str = ','.join(map(str, sorted(total_episodes_set)))
+                    cursor.execute(
+                        'UPDATE MISS_TVS SET missing_episodes = ? WHERE title = ? AND year = ? AND season = ?',
+                        (new_missing_episodes_str, title, year, season)
+                    )
+                    logging.info(f"电视剧：{title} 第{season}季 总集数已更新为{total_episodes}集，已更新订阅！")
+                else:
+                    logging.warning(f"电视剧：{title} 第{season}季 已存在于订阅列表中，跳过插入。")
         else:
-            # 已入库部分集数，需补全缺失集
+            # 部分或全部已入库的情况
             existing_episodes_str = cursor.execute(
                 '''SELECT episodes FROM LIB_TV_SEASONS WHERE tv_id = (SELECT id FROM LIB_TVS WHERE title = ? AND year = ?) AND season = ?''',
                 (title, year, season)
@@ -91,23 +117,26 @@ def subscribe_tvs(cursor):
                     existing_episodes = set(int(ep) for ep in val.split(',') if ep.strip().isdigit())
                 else:
                     existing_episodes = set()
-                total_episodes_set = set(range(1, total_episodes + 1))
-                missing_episodes_set = total_episodes_set - existing_episodes
+            else:
+                existing_episodes = set()
+                
+            total_episodes_set = set(range(1, total_episodes + 1))
+            missing_episodes_set = total_episodes_set - existing_episodes
 
-            # 查询当前订阅表中已记录的缺失集
-            miss_row = cursor.execute(
-                'SELECT missing_episodes FROM MISS_TVS WHERE title = ? AND year = ? AND season = ?',
-                (title, year, season)
-            ).fetchone()
             if miss_row and miss_row[0]:
                 subscribed_missing = set(int(ep) for ep in miss_row[0].split(',') if ep.strip().isdigit())
             else:
                 subscribed_missing = set()
 
+            # 检查RSS_TVS中的总集数是否与当前订阅表中的总集数一致
+            current_subscribed_total = len(subscribed_missing) + len(existing_episodes)
+            
             # 需要补充的缺失集
             need_add_missing = missing_episodes_set - subscribed_missing
+            
             if miss_row:
-                if need_add_missing:
+                # 如果总集数发生了变化，或者需要添加新的缺失集
+                if len(total_episodes_set) != current_subscribed_total or need_add_missing:
                     # 合并后写回
                     new_missing_episodes = sorted(subscribed_missing | need_add_missing)
                     new_missing_episodes_str = ','.join(map(str, new_missing_episodes))
@@ -192,6 +221,173 @@ def update_subscriptions(cursor):
                 else:
                     logging.info(f"电视剧：{title} 第{season}季 订阅未发生变化！")
 
+def update_miss_titles(cursor):
+    """检查并更新正在订阅中的标题与豆瓣想看保持一致"""
+    # 更新MISS_MOVIES中的标题
+    cursor.execute('''
+        SELECT mm.douban_id, mm.title AS miss_title, rm.title AS rss_title
+        FROM MISS_MOVIES mm
+        JOIN RSS_MOVIES rm ON mm.douban_id = rm.douban_id
+        WHERE mm.title != rm.title
+    ''')
+    movies_to_update = cursor.fetchall()
+    
+    for douban_id, miss_title, rss_title in movies_to_update:
+        cursor.execute('UPDATE MISS_MOVIES SET title = ? WHERE douban_id = ?', (rss_title, douban_id))
+        logging.info(f"已更新电影标题: '{miss_title}' -> '{rss_title}' (豆瓣ID: {douban_id})")
+    
+    # 更新MISS_TVS中的标题
+    cursor.execute('''
+        SELECT mt.douban_id, mt.title AS miss_title, rt.title AS rss_title
+        FROM MISS_TVS mt
+        JOIN RSS_TVS rt ON mt.douban_id = rt.douban_id
+        WHERE mt.title != rt.title
+    ''')
+    tvs_to_update = cursor.fetchall()
+    
+    for douban_id, miss_title, rss_title in tvs_to_update:
+        cursor.execute('UPDATE MISS_TVS SET title = ? WHERE douban_id = ?', (rss_title, douban_id))
+        logging.info(f"已更新电视剧标题: '{miss_title}' -> '{rss_title}' (豆瓣ID: {douban_id})")
+    
+    if not movies_to_update and not tvs_to_update:
+        logging.info("正在订阅列表中没有需要更新的标题")
+    else:
+        logging.info(f"共更新 {len(movies_to_update)} 个电影和 {len(tvs_to_update)} 个电视剧的标题")
+
+def update_tmdb_items(cursor):
+    """检查并更新没有douban_id的电影和电视剧信息"""
+    # 获取TMDB配置
+    TMDB_API_KEY = config.get("tmdb_api_key", "")
+    TMDB_BASE_URL = config.get("tmdb_base_url", "")
+    
+    if not TMDB_API_KEY:
+        logging.warning("TMDB API Key未配置，跳过TMDB项目检查")
+        return
+    
+    # 检查没有douban_id的电影
+    cursor.execute('SELECT id, title, year FROM MISS_MOVIES WHERE douban_id IS NULL OR douban_id = ""')
+    movies_without_douban = cursor.fetchall()
+    
+    for movie_id, local_title, year in movies_without_douban:
+        try:
+            # 使用TMDB搜索电影
+            search_url = f"{TMDB_BASE_URL}/3/search/movie"
+            params = {
+                'api_key': TMDB_API_KEY,
+                'query': local_title,
+                'year': year,
+                'language': 'zh-CN'
+            }
+            
+            response = requests.get(search_url, params=params, timeout=10)
+            if response.status_code == 200:
+                search_data = response.json()
+                if search_data.get('results'):
+                    # 获取最匹配的结果
+                    movie_result = search_data['results'][0]
+                    tmdb_title = movie_result.get('title', '')
+                    tmdb_id = movie_result.get('id', '')
+                    
+                    # 标准化标题比较
+                    local_title_normalized = str(local_title).strip() if local_title is not None else ''
+                    tmdb_title_normalized = str(tmdb_title).strip() if tmdb_title is not None else ''
+                    
+                    # 如果标题不一致，更新本地数据库
+                    if tmdb_title_normalized != local_title_normalized:
+                        cursor.execute('UPDATE MISS_MOVIES SET title = ? WHERE id = ?', 
+                                     (tmdb_title_normalized, movie_id))
+                        logging.info(f"已更新电影标题: '{local_title_normalized}' -> '{tmdb_title_normalized}' (TMDB ID: {tmdb_id})")
+                else:
+                    logging.warning(f"未找到电影 '{local_title}' ({year}) 的TMDB信息")
+            else:
+                logging.error(f"获取电影 '{local_title}' 信息失败，状态码: {response.status_code}")
+        except requests.RequestException as e:
+            logging.error(f"请求TMDB API时发生错误: {e}")
+        except Exception as e:
+            logging.error(f"处理电影 '{local_title}' 时发生未知错误: {e}")
+        
+        # 随机休眠避免频繁请求
+        sleep_time = random.uniform(1, 3)
+        time.sleep(sleep_time)
+    
+    # 检查没有douban_id的电视剧
+    cursor.execute('SELECT id, title, year, season, missing_episodes FROM MISS_TVS WHERE douban_id IS NULL OR douban_id = ""')
+    tvs_without_douban = cursor.fetchall()
+    
+    for tv_id, local_title, year, season, missing_episodes in tvs_without_douban:
+        try:
+            # 使用TMDB搜索电视剧
+            search_url = f"{TMDB_BASE_URL}/3/search/tv"
+            params = {
+                'api_key': TMDB_API_KEY,
+                'query': local_title,
+                'year': year,
+                'language': 'zh-CN'
+            }
+            
+            response = requests.get(search_url, params=params, timeout=10)
+            if response.status_code == 200:
+                search_data = response.json()
+                if search_data.get('results'):
+                    # 获取最匹配的结果
+                    tv_result = search_data['results'][0]
+                    tmdb_title = tv_result.get('name', '')
+                    tmdb_id = tv_result.get('id', '')
+                    
+                    # 获取详细季数信息
+                    season_url = f"{TMDB_BASE_URL}/3/tv/{tmdb_id}/season/{season}"
+                    season_params = {'api_key': TMDB_API_KEY}
+                    season_response = requests.get(season_url, params=season_params, timeout=10)
+                    
+                    if season_response.status_code == 200:
+                        season_data = season_response.json()
+                        tmdb_episodes_count = len(season_data.get('episodes', []))
+                        
+                        # 标准化标题比较
+                        local_title_normalized = str(local_title).strip() if local_title is not None else ''
+                        tmdb_title_normalized = str(tmdb_title).strip() if tmdb_title is not None else ''
+                        
+                        # 更新标题（如果需要）
+                        if tmdb_title_normalized != local_title_normalized:
+                            cursor.execute('UPDATE MISS_TVS SET title = ? WHERE id = ?', 
+                                         (tmdb_title_normalized, tv_id))
+                            logging.info(f"已更新电视剧标题: '{local_title_normalized}' -> '{tmdb_title_normalized}' (TMDB ID: {tmdb_id})")
+                        
+                        # 检查并更新集数信息
+                        if missing_episodes:
+                            try:
+                                local_episodes_set = set(int(ep) for ep in missing_episodes.split(',') if ep.strip().isdigit())
+                                local_episodes_count = len(local_episodes_set)
+                                
+                                # 如果TMDB上的集数与本地不一致
+                                if tmdb_episodes_count != local_episodes_count:
+                                    # 重新生成缺失集数（假设所有集数都缺失）
+                                    new_missing_episodes_str = ','.join(map(str, range(1, tmdb_episodes_count + 1)))
+                                    cursor.execute('UPDATE MISS_TVS SET missing_episodes = ? WHERE id = ?', 
+                                                 (new_missing_episodes_str, tv_id))
+                                    logging.info(f"已更新电视剧 '{tmdb_title_normalized}' 第{season}季的集数: {local_episodes_count} -> {tmdb_episodes_count}")
+                            except ValueError as e:
+                                logging.error(f"处理电视剧 '{local_title}' 集数时发生错误: {e}")
+                    else:
+                        logging.error(f"获取电视剧 '{local_title}' 第{season}季信息失败，状态码: {season_response.status_code}")
+                else:
+                    logging.warning(f"未找到电视剧 '{local_title}' 的TMDB信息")
+            else:
+                logging.error(f"搜索电视剧 '{local_title}' 信息失败，状态码: {response.status_code}")
+        except requests.RequestException as e:
+            logging.error(f"请求TMDB API时发生错误: {e}")
+        except Exception as e:
+            logging.error(f"处理电视剧 '{local_title}' 时发生未知错误: {e}")
+        
+        # 随机休眠避免频繁请求
+        sleep_time = random.uniform(1, 3)
+        time.sleep(sleep_time)
+    
+    if not movies_without_douban and not tvs_without_douban:
+        logging.info("没有需要检查的TMDB项目")
+    else:
+        logging.info(f"共检查了 {len(movies_without_douban)} 个电影和 {len(tvs_without_douban)} 个电视剧的TMDB信息")
+
 def send_notification(title_text):
     # 通知功能
     try:
@@ -228,6 +424,12 @@ def main():
     cursor = conn.cursor()
 
     try:
+        # 检查并更新豆瓣订阅项目的标题
+        update_miss_titles(cursor)
+
+        # 检查并更新TMDB订阅项目的标题和集数
+        update_tmdb_items(cursor)
+
         # 订阅电影
         subscribe_movies(cursor)
 

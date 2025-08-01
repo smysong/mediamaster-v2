@@ -300,10 +300,10 @@ def delete_obsolete_episodes(db_path, current_episodes):
             cursor.execute('DELETE FROM LIB_TVS WHERE id = ?', (tv_id,))
             logging.info(f"已从数据库中删除电视剧 '{title}' 及其所有季。")
         else:
-            cursor.execute('SELECT season, episodes FROM LIB_TV_SEASONS WHERE tv_id = ?', (tv_id,))
+            cursor.execute('SELECT id, season, episodes FROM LIB_TV_SEASONS WHERE tv_id = ?', (tv_id,))
             all_seasons = cursor.fetchall()
 
-            for season, episodes_str in all_seasons:
+            for season_id, season, episodes_str in all_seasons:
                 # 类型检查，确保 episodes_str 是字符串
                 if isinstance(episodes_str, int):
                     episodes_str = str(episodes_str)
@@ -320,11 +320,25 @@ def delete_obsolete_episodes(db_path, current_episodes):
                         logging.error(f"无法解析电视剧 '{title}' 第 {season} 季的集数: {episodes_str}. 错误: {e}")
                         existing_episodes = set()
 
-                current_episodes_set = set(current_episodes[title].get(season, {}).get('episodes', []))
+                # 获取当前扫描到的集数，如果不存在则默认为空集
+                current_episodes_for_season = current_episodes.get(title, {}).get('seasons', {}).get(season, {}).get('episodes', [])
+                current_episodes_set = set(current_episodes_for_season)
 
-                if not current_episodes_set.issubset(existing_episodes):
-                    cursor.execute('DELETE FROM LIB_TV_SEASONS WHERE tv_id = ? AND season = ?', (tv_id, season))
-                    logging.info(f"已从数据库中删除电视剧 '{title}' 第 {season} 季。")
+                # 检查是否有集数被删除
+                removed_episodes = existing_episodes - current_episodes_set
+                if removed_episodes:
+                    # 从数据库中移除被删除的集数
+                    updated_episodes = existing_episodes - removed_episodes
+                    if updated_episodes:
+                        updated_episodes_str = ','.join(map(str, sorted(updated_episodes)))
+                        cursor.execute('UPDATE LIB_TV_SEASONS SET episodes = ? WHERE id = ?', (updated_episodes_str, season_id))
+                        logging.info(f"已从电视剧 '{title}' 第 {season} 季中移除集数: {sorted(removed_episodes)}")
+                    else:
+                        # 如果该季所有集数都被删除，则删除该季记录
+                        cursor.execute('DELETE FROM LIB_TV_SEASONS WHERE id = ?', (season_id,))
+                        logging.info(f"电视剧 '{title}' 第 {season} 季所有集数已被删除，移除该季记录。")
+                else:
+                    logging.debug(f"电视剧 '{title}' 第 {season} 季没有集数被删除。")
 
     conn.commit()
     conn.close()

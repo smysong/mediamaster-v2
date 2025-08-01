@@ -363,6 +363,24 @@
             animation: blink 1s infinite;
         }
 
+        .api-error {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            padding: 50px 20px;
+            color: #dc3545;
+            font-size: clamp(12px, 1.2vw, 16px);
+            font-weight: bold;
+            width: 100%;
+            max-width: 600px;
+            background: rgba(255, 255, 255, 0.9);
+            z-index: 20;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+        }
+
         @keyframes blink {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
@@ -375,58 +393,67 @@
             <span>加载中...</span>
         </div>
 
-        <div id="banner" class="banner">
-            <div class="banner-list">
-                <!-- 随机推荐内容将在这里填充 -->
-            </div>
+        <!-- API Key 无效提示 -->
+        <div id="api-error-message" class="api-error" style="display: none;">
+            无法获取热门推荐<br>TMDB API KEY 无效或无法获取TMDB数据<br>请检查系统设置TMDB API密钥及本地网络与api.tmdb.org的网络连通性！
         </div>
 
-        <!-- 搜索框 -->
-        <div class="search">
-            <form id="inner_search_form" action="javascript:void(0);" method="get" accept-charset="utf-8">
-                <label class="inner_search_wrapper">
-                    <span class="k-input k-textbox k-input-solid k-input-md k-rounded-md">
-                        <input dir="auto" id="inner_search_v4" name="query" type="text" autocorrect="off" autofill="off" autocomplete="off" spellcheck="false" placeholder="搜索电影、电视节目" value="" data-role="textbox" aria-disabled="false" class="k-input-inner" inputmode="text">
-                    </span>
-                </label>
-                <input type="submit" value="搜索" data-role="button" class="k-button k-button-md k-rounded-md k-button-solid k-button-solid-base" role="button" aria-disabled="false" tabindex="0">
-            </form>
+        <!-- 主要内容区域 -->
+        <div id="main-content">
+            <div id="banner" class="banner">
+                <div class="banner-list">
+                    <!-- 随机推荐内容将在这里填充 -->
+                </div>
+            </div>
+
+            <!-- 搜索框 -->
+            <div class="search">
+                <form id="inner_search_form" action="javascript:void(0);" method="get" accept-charset="utf-8">
+                    <label class="inner_search_wrapper">
+                        <span class="k-input k-textbox k-input-solid k-input-md k-rounded-md">
+                            <input dir="auto" id="inner_search_v4" name="query" type="text" autocorrect="off" autofill="off" autocomplete="off" spellcheck="false" placeholder="搜索电影、电视节目" value="" data-role="textbox" aria-disabled="false" class="k-input-inner" inputmode="text">
+                        </span>
+                    </label>
+                    <input type="submit" value="搜索" data-role="button" class="k-button k-button-md k-rounded-md k-button-solid k-button-solid-base" role="button" aria-disabled="false" tabindex="0">
+                </form>
+            </div>
+
+            <!-- 搜索结果区域 -->
+            <section id="search-results-section" class="search-results-section" style="display:none;">
+                <h2>搜索结果</h2>
+                <div class="search-results-carousel-container">
+                    <div class="search-list" id="search-results-list"></div>
+                </div>
+            </section>
+
+            <section id="now-playing">
+                <h2>影院热映</h2>
+                <div class="carousel-container">
+                    <button class="carousel-arrow prev" onclick="scrollCarousel('now-playing-list', -1)">&#10094;</button>
+                    <div class="movie-list" id="now-playing-list"></div>
+                    <button class="carousel-arrow next" onclick="scrollCarousel('now-playing-list', 1)">&#10095;</button>
+                </div>
+            </section>
+
+            <section id="today-movies">
+                <h2>热门电影</h2>
+                <div class="carousel-container">
+                    <button class="carousel-arrow prev" onclick="scrollCarousel('today-movies-list', -1)">&#10094;</button>
+                    <div class="movie-list" id="today-movies-list"></div>
+                    <button class="carousel-arrow next" onclick="scrollCarousel('today-movies-list', 1)">&#10095;</button>
+                </div>
+            </section>
+
+            <section id="today-tv-shows">
+                <h2>热门剧集</h2>
+                <div class="carousel-container">
+                    <button class="carousel-arrow prev" onclick="scrollCarousel('today-tv-shows-list', -1)">&#10094;</button>
+                    <div class="tv-list" id="today-tv-shows-list"></div>
+                    <button class="carousel-arrow next" onclick="scrollCarousel('today-tv-shows-list', 1)">&#10095;</button>
+                </div>
+            </section>
         </div>
-
-        <!-- 搜索结果区域 -->
-        <section id="search-results-section" class="search-results-section" style="display:none;">
-            <h2>搜索结果</h2>
-            <div class="search-results-carousel-container">
-                <div class="search-list" id="search-results-list"></div>
-            </div>
-        </section>
-
-        <section id="now-playing">
-            <h2>影院热映</h2>
-            <div class="carousel-container">
-                <button class="carousel-arrow prev" onclick="scrollCarousel('now-playing-list', -1)">&#10094;</button>
-                <div class="movie-list" id="now-playing-list"></div>
-                <button class="carousel-arrow next" onclick="scrollCarousel('now-playing-list', 1)">&#10095;</button>
-            </div>
-        </section>
-
-        <section id="today-movies">
-            <h2>热门电影</h2>
-            <div class="carousel-container">
-                <button class="carousel-arrow prev" onclick="scrollCarousel('today-movies-list', -1)">&#10094;</button>
-                <div class="movie-list" id="today-movies-list"></div>
-                <button class="carousel-arrow next" onclick="scrollCarousel('today-movies-list', 1)">&#10095;</button>
-            </div>
-        </section>
-
-        <section id="today-tv-shows">
-            <h2>热门剧集</h2>
-            <div class="carousel-container">
-                <button class="carousel-arrow prev" onclick="scrollCarousel('today-tv-shows-list', -1)">&#10094;</button>
-                <div class="tv-list" id="today-tv-shows-list"></div>
-                <button class="carousel-arrow next" onclick="scrollCarousel('today-tv-shows-list', 1)">&#10095;</button>
-            </div>
-        </section>
+        
         <!-- Modal -->
         <div id="mediaDetailsModal" class="modal fade" tabindex="-1" aria-labelledby="InfoCardLabel">
             <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -458,14 +485,24 @@
         </div>
     </div>
 </main>
+
 <script>
     // 获取从后端传递的 tmdb_api_key
     const tmdbApiKey = "{{ tmdb_api_key }}";
 
     // 显示加载动画
     const loadingElement = document.getElementById('loading');
+    const apiErrorMessage = document.getElementById('api-error-message');
+    const mainContent = document.getElementById('main-content');
+    
     function hideLoading() {
         loadingElement.style.display = 'none';
+    }
+    
+    function showApiError() {
+        apiErrorMessage.style.display = 'block';
+        mainContent.style.display = 'none'; // 隐藏原有元素
+        hideLoading();
     }
 
     // 搜索功能
@@ -828,24 +865,51 @@
         setInterval(showNextBannerItem, intervalTime);
     }
 
+    // 检查 TMDB API Key 是否有效
+    function checkApiKeyValidity(apiKey) {
+        const url = `https://api.tmdb.org/3/genre/movie/list?api_key=${apiKey}&language=zh-CN`;
+        return fetch(url)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('API Key 无效');
+                }
+                return response.json();
+            })
+            .then(data => {
+                return data.genres && data.genres.length > 0;
+            })
+            .catch(error => {
+                console.error('API Key 验证失败:', error);
+                return false;
+            });
+    }
+
     // 初始化时获取推荐资源
     if (tmdbApiKey) {
-        Promise.all([
-            fetchTrendingMovies(tmdbApiKey),
-            fetchNowPlayingMovies(tmdbApiKey),
-            fetchTrendingTVShows(tmdbApiKey)
-        ]).then(results => {
-            const [trendingMovies, nowPlayingMovies, trendingTVShows] = results;
-            // 正确传递三个分类的数据
-            populateBanner(trendingMovies, nowPlayingMovies, trendingTVShows);
-            hideLoading(); // 隐藏加载动画
-        }).catch(error => {
-            console.error('获取推荐内容时出错:', error);
-            hideLoading(); // 隐藏加载动画
+        // 首先验证 API Key 是否有效
+        checkApiKeyValidity(tmdbApiKey).then(isValid => {
+            if (!isValid) {
+                showApiError();
+                return;
+            }
+            
+            Promise.all([
+                fetchTrendingMovies(tmdbApiKey),
+                fetchNowPlayingMovies(tmdbApiKey),
+                fetchTrendingTVShows(tmdbApiKey)
+            ]).then(results => {
+                const [trendingMovies, nowPlayingMovies, trendingTVShows] = results;
+                // 正确传递三个分类的数据
+                populateBanner(trendingMovies, nowPlayingMovies, trendingTVShows);
+                hideLoading(); // 隐藏加载动画
+            }).catch(error => {
+                console.error('获取推荐内容时出错:', error);
+                showApiError(); // 显示错误信息
+            });
         });
     } else {
         console.error('TMDB API Key 未找到');
-        hideLoading(); // 隐藏加载动画
+        showApiError(); // 显示错误信息
     }
 
     // 滚动推荐列表

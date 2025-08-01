@@ -2,6 +2,7 @@ import os
 import logging
 import subprocess
 import sys
+import shutil
 
 # 定义日志保存目录和处理记录保存目录
 log_dir = "/tmp/log"  # 日志保存目录
@@ -14,6 +15,7 @@ downloads_dir = "/Downloads"  # 下载文件目录
 media_dir = "/Media"  # 媒体库根目录
 movie_dir = "/Media/Movie"  # 电影目录
 episodes_dir = "/Media/Episodes"  # 电视剧目录
+chrome_cache_dir = "/app/ChromeCache"  # Chrome 缓存目录
 
 # 配置日志
 logging.basicConfig(
@@ -36,6 +38,29 @@ def ensure_directory_exists(directory):
             sys.exit(0)
     else:
         logging.info(f"目录已存在: {directory}")
+
+def clear_chrome_cache():
+    """检查Chrome缓存目录是否为空，如果不为空则清空缓存目录"""
+    if not os.path.exists(chrome_cache_dir):
+        logging.info(f"Chrome缓存目录不存在: {chrome_cache_dir}")
+        return
+    
+    try:
+        # 检查目录是否为空
+        if os.listdir(chrome_cache_dir):
+            logging.info(f"正在清理Chrome缓存目录: {chrome_cache_dir}")
+            # 清空目录中的所有内容
+            for filename in os.listdir(chrome_cache_dir):
+                file_path = os.path.join(chrome_cache_dir, filename)
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            logging.info(f"Chrome缓存目录已清空: {chrome_cache_dir}")
+        else:
+            logging.info(f"Chrome缓存目录为空: {chrome_cache_dir}")
+    except Exception as e:
+        logging.error(f"清空Chrome缓存目录失败: {e}")
 
 def get_status_code_from_log(log_file):
     """从日志文件中提取状态码"""
@@ -88,5 +113,7 @@ if __name__ == "__main__":
     ensure_directory_exists(movie_dir)
     ensure_directory_exists(episodes_dir)
     logging.info("所有目录检查完成。")
+    # 清理 Chrome 缓存目录
+    clear_chrome_cache()
     # 执行数据库检查
     check_database()

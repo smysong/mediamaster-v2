@@ -284,7 +284,7 @@ class MediaIndexer:
                             continue
     
                         # 检查标题和年份是否与搜索匹配
-                        if item['标题'] in hover_title and str(item['年份']) == hover_year:
+                        if item['标题'] == hover_title and str(item['年份']) == hover_year:
                             logging.info(f"找到匹配的电影卡片: {hover_title} ({hover_year})")
                             found_match = True  # 找到匹配的卡片
                             
@@ -433,7 +433,7 @@ class MediaIndexer:
                             continue
     
                         # 检查标题和年份是否与搜索匹配
-                        if item['剧集'] in hover_title and str(item['年份']) == hover_year:
+                        if item['剧集'] == hover_title and str(item['年份']) == hover_year:
                             logging.info(f"找到匹配的电视节目卡片: {hover_title} ({hover_year})")
                             found_match = True  # 找到匹配的卡片
     

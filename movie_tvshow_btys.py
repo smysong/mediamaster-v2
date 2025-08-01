@@ -223,7 +223,7 @@ class MediaIndexer:
                         logging.debug(f"卡片提取的标题: {card_title}, 年份: {card_year}")
 
                         # 检查标题和年份是否与搜索匹配
-                        if item['标题'] in card_title and str(item['年份']) == card_year:
+                        if item['标题'] == card_title and str(item['年份']) == card_year:
                             logging.info(f"找到匹配的电影卡片: {card_title} ({card_year})")
                             found_match = True  # 找到匹配的卡片
 
@@ -395,7 +395,7 @@ class MediaIndexer:
                         logging.debug(f"卡片提取的标题: {card_title}, 年份: {card_year}")
 
                         # 检查标题和年份是否与搜索匹配
-                        if item['剧集'] in card_title and str(item['年份']) == card_year:
+                        if item['剧集'] == card_title and str(item['年份']) == card_year:
                             logging.info(f"找到匹配的电视节目卡片: {card_title} ({card_year})")
                             found_match = True  # 找到匹配的卡片
 

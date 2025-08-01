@@ -219,6 +219,140 @@ class DouBanRSSParser:
         else:
             logging.info("没有过时的数据需要删除")
 
+    def check_and_update_media_info(self):
+        """
+        统一检查并更新数据库中电影和剧集的信息
+        包括电影标题和TV剧集的标题及集数
+        通过合并查询减少API请求次数
+        """
+        cursor = self.db_connection.cursor()
+        
+        # 查询RSS_MOVIES表中的所有电影
+        cursor.execute('SELECT douban_id, title FROM RSS_MOVIES')
+        movies_list = cursor.fetchall()
+        
+        # 查询RSS_TVS表中的所有剧集（包含标题和集数）
+        cursor.execute('SELECT douban_id, title, episode FROM RSS_TVS')
+        tvs_list = cursor.fetchall()
+        
+        if not movies_list and not tvs_list:
+            logging.info("数据库中没有项目需要检查信息")
+            return
+        
+        logging.info(f"开始检查媒体信息更新：共 {len(movies_list)} 个电影和 {len(tvs_list)} 个剧集")
+        
+        # 处理电影标题检查
+        for douban_id, local_title in movies_list:
+            logging.info(f"检查电影: {local_title} (豆瓣ID: {douban_id})")
+            self._check_and_update_single_item("电影", douban_id, local_title, cursor)
+            
+            # 随机休眠避免频繁请求
+            sleep_time = random.uniform(10, 15)
+            time.sleep(sleep_time)
+        
+        # 处理TV剧集标题和集数检查
+        for douban_id, local_title, local_episode in tvs_list:
+            logging.info(f"检查剧集: {local_title} (豆瓣ID: {douban_id})")
+            self._check_and_update_single_item("剧集", douban_id, local_title, cursor, local_episode)
+            
+            # 随机休眠避免频繁请求
+            sleep_time = random.uniform(10, 15)
+            time.sleep(sleep_time)
+        
+        logging.info("媒体信息检查完成")
+
+    def _check_and_update_single_item(self, media_type, douban_id, local_title, cursor, local_episode=None):
+        """
+        检查并更新单个项目的信息
+        
+        Args:
+            media_type: 媒体类型("电影"或"剧集")
+            douban_id: 豆瓣ID
+            local_title: 本地标题
+            cursor: 数据库游标
+            local_episode: 本地集数(仅对剧集有效)
+        """
+        # 获取豆瓣上的最新信息
+        api_url = f'https://movie.douban.com/j/subject_suggest?q={local_title}'
+        try:
+            response = requests.get(api_url, headers=self.pcheaders, timeout=10)
+            if response.status_code == 200:
+                api_data = response.json()
+                if api_data:
+                    # 查找匹配的豆瓣ID
+                    for movie_info in api_data:
+                        if movie_info.get('id') == str(douban_id):
+                            latest_title = movie_info.get('title', '')
+                            
+                            # 标准化标题数据格式
+                            local_title_normalized = str(local_title).strip() if local_title is not None else ''
+                            latest_title_normalized = str(latest_title).strip() if latest_title is not None else ''
+                            
+                            # 初始化更新标志
+                            title_updated = False
+                            
+                            # 比较标题是否有变化
+                            if latest_title_normalized != local_title_normalized:
+                                logging.info(f"发现{media_type}标题更新: 本地 '{local_title_normalized}' -> 豆瓣 '{latest_title_normalized}'")
+                                
+                                # 更新数据库中的标题
+                                if media_type == "电影":
+                                    cursor.execute('UPDATE RSS_MOVIES SET title = ? WHERE douban_id = ?', 
+                                                (latest_title_normalized, douban_id))
+                                else:  # 剧集
+                                    cursor.execute('UPDATE RSS_TVS SET title = ? WHERE douban_id = ?', 
+                                                (latest_title_normalized, douban_id))
+                                
+                                title_updated = True
+                            
+                            # 如果是剧集，还要检查集数
+                            episode_updated = False
+                            if media_type == "剧集" and local_episode is not None:
+                                latest_episode = movie_info.get('episode', '')
+                                
+                                # 跳过无效集数
+                                if str(latest_episode).lower() in ['unknow', 'unknown', 'n/a', 'null', 'none']:
+                                    logging.warning(f"跳过集数无效的剧集: {local_title} (豆瓣集数为: {latest_episode})")
+                                else:
+                                    # 标准化集数数据格式
+                                    local_episode_normalized = str(local_episode).strip() if local_episode is not None else ''
+                                    latest_episode_normalized = str(latest_episode).strip() if latest_episode is not None else ''
+                                    
+                                    # 比较集数是否有变化
+                                    if latest_episode_normalized != local_episode_normalized:
+                                        logging.info(f"发现剧集 {local_title} 集数更新: 本地 {local_episode_normalized} -> 豆瓣 {latest_episode_normalized}")
+                                        
+                                        # 更新数据库中的集数
+                                        cursor.execute('UPDATE RSS_TVS SET episode = ? WHERE douban_id = ?', 
+                                                    (latest_episode_normalized, douban_id))
+                                        episode_updated = True
+                            
+                            # 提交数据库更改
+                            if title_updated or episode_updated:
+                                self.db_connection.commit()
+                                if title_updated and episode_updated:
+                                    logging.info(f"已更新{media_type} '{local_title_normalized}' 的标题和集数信息")
+                                elif title_updated:
+                                    logging.info(f"已更新{media_type} '{local_title_normalized}' 的标题信息")
+                                elif episode_updated:
+                                    logging.info(f"已更新{media_type} '{local_title_normalized}' 的集数信息")
+                            else:
+                                logging.info(f"{media_type} '{local_title_normalized}' 的信息无变化")
+                            
+                            return  # 找到匹配项后退出循环
+                    else:
+                        logging.warning(f"未找到豆瓣ID为 {douban_id} 的{media_type}信息")
+                else:
+                    logging.warning(f"未找到{media_type} '{local_title}' 的豆瓣信息")
+            else:
+                logging.error(f"获取{media_type} '{local_title}' 信息失败，状态码: {response.status_code}")
+        except requests.RequestException as e:
+            logging.error(f"请求豆瓣API时发生错误: {e}")
+        except sqlite3.Error as e:
+            logging.error(f"更新数据库时发生错误: {e}")
+        except Exception as e:
+            logging.error(f"处理{media_type} '{local_title}' 时发生未知错误: {e}")
+
     def run(self):
         rss_data = self.fetch_rss_data()
         if rss_data:
@@ -268,4 +402,5 @@ class DouBanRSSParser:
 if __name__ == "__main__":
     parser = DouBanRSSParser()
     parser.run()
+    parser.check_and_update_media_info()
     parser.close_db()

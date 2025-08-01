@@ -128,15 +128,23 @@ def monitor_chrome_process():
     # 监控 Chromedriver 进程
     terminate_process('chromedriver', chromedriver_started_time, 20 * 60, "Chromedriver")
 
-    # 👇 清理所有僵尸进程（defunct）
     def kill_zombie_processes():
+        """
+        检测并记录僵尸进程
+        僵尸进程只能由其父进程清理，这里仅做记录
+        """
+        zombie_count = 0
         for proc in psutil.process_iter(['pid', 'name', 'status']):
             try:
                 if proc.info['status'] == psutil.STATUS_ZOMBIE:
-                    logging.info(f"发现僵尸进程 {proc.info['pid']} - {proc.info['name']}，正在清理...")
-                    proc.wait(timeout=0)  # 尝试回收
-            except psutil.NoSuchProcess:
+                    zombie_count += 1
+                    logging.debug(f"检测到僵尸进程 PID: {proc.info['pid']}, NAME: {proc.info['name']}")
+            except (psutil.NoSuchProcess, psutil.AccessDenied, KeyError):
+                # 忽略进程已不存在、无访问权限或键不存在的情况
                 pass
+        
+        if zombie_count > 0:
+            logging.info(f"检测到 {zombie_count} 个僵尸进程，等待系统自动清理")
 
     # 调用清理僵尸进程函数
     kill_zombie_processes()
@@ -196,6 +204,13 @@ def main():
     start_chrome_monitor()  # 启动 Chrome 监控线程
 
     while running:
+
+        run_script('scan_media.py')
+        logging.info("-" * 80)
+        logging.info("扫描媒体库：已执行完毕，等待5秒...")
+        logging.info("-" * 80)
+        time.sleep(5)
+
         run_script('subscr.py')
         logging.info("-" * 80)
         logging.info("获取最新豆瓣订阅：已执行完毕，等待5秒...")
@@ -223,12 +238,6 @@ def main():
         if not xunlei_started:
             start_xunlei_torrent()
             xunlei_started = True
-
-        run_script('scan_media.py')
-        logging.info("-" * 80)
-        logging.info("扫描媒体库：已执行完毕，等待5秒...")
-        logging.info("-" * 80)
-        time.sleep(5)
 
         run_script('tmdb_id.py')
         logging.info("-" * 80)
