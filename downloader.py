@@ -441,14 +441,14 @@ class MediaDownloader:
             self.driver.get(result['link'])
             logging.info(f"进入：{title_text} 详情页面...")
             logging.info(f"开始查找种子文件下载链接...")
-    
+
             WebDriverWait(self.driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "cl")))
             logging.info("页面加载完成")
-    
+
             attachment_url = None
             max_retries = 5
             retries = 0
-    
+
             while not attachment_url and retries < max_retries:
                 WebDriverWait(self.driver, 10).until(
                     EC.presence_of_all_elements_located((By.TAG_NAME, "a"))
@@ -459,12 +459,12 @@ class MediaDownloader:
                     if "torrent" in link_text:
                         attachment_url = link.get_attribute('href')
                         break
-    
+
                 if not attachment_url:
                     logging.warning(f"没有找到种子文件下载链接，重试中... ({retries + 1}/{max_retries})")
                     time.sleep(2)
                     retries += 1
-    
+
             if attachment_url:
                 logging.info(f"找到种子文件下载链接: {attachment_url}")
                 self.driver.get(attachment_url)
@@ -482,13 +482,17 @@ class MediaDownloader:
                         title = title_text
                     new_name = f"{title} ({year})-{resolution}.torrent"
                     rename_torrent_file(latest_torrent, new_name)
+                else:
+                    raise Exception("未能找到下载的种子文件")
             else:
-                logging.error("经过多次重试后仍未找到种子文件下载链接。")
-    
+                raise Exception("经过多次重试后仍未找到种子文件下载链接")
+
         except TimeoutException:
             logging.error("种子文件下载链接加载超时")
+            raise
         except Exception as e:
             logging.error(f"下载种子文件过程中出错: {e}")
+            raise
     
     def hdtv_download_torrent(self, result, title_text, year=None, season=None, episode_range=None, resolution=None, title=None):
         """高清剧集网解析并下载种子文件"""
@@ -497,14 +501,14 @@ class MediaDownloader:
             self.driver.get(result['link'])
             logging.info(f"进入：{title_text} 详情页面...")
             logging.info(f"开始查找种子文件下载链接...")
-    
+
             WebDriverWait(self.driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "plc")))
             logging.info("页面加载完成")
-    
+
             attachment_url = None
             max_retries = 5
             retries = 0
-    
+
             while not attachment_url and retries < max_retries:
                 WebDriverWait(self.driver, 10).until(
                     EC.presence_of_all_elements_located((By.TAG_NAME, "a"))
@@ -515,12 +519,12 @@ class MediaDownloader:
                     if "torrent" in link_text:
                         attachment_url = link.get_attribute('href')
                         break
-    
+
                 if not attachment_url:
                     logging.warning(f"没有找到种子文件下载链接，重试中... ({retries + 1}/{max_retries})")
                     time.sleep(2)
                     retries += 1
-    
+
             if attachment_url:
                 logging.info(f"找到种子文件下载链接: {attachment_url}")
                 self.driver.get(attachment_url)
@@ -541,13 +545,17 @@ class MediaDownloader:
                         title = title_text
                     new_name = f"{title} ({year})-S{season}-[{episode_range}]-{resolution}.torrent"
                     rename_torrent_file(latest_torrent, new_name)
+                else:
+                    raise Exception("未能找到下载的种子文件")
             else:
-                logging.error("经过多次重试后仍未找到种子文件下载链接。")
-    
+                raise Exception("经过多次重试后仍未找到种子文件下载链接")
+
         except TimeoutException:
             logging.error("种子文件下载链接加载超时")
+            raise
         except Exception as e:
             logging.error(f"下载种子文件过程中出错: {e}")
+            raise
 
     def btys_download_torrent(self, result, title_text, year=None, season=None, episode_range=None, resolution=None, title=None):
         """BT影视解析并下载种子文件"""
@@ -604,7 +612,7 @@ class MediaDownloader:
                     logging.error("未找到“点击下载”按钮，无法下载种子文件")
                     self.driver.close()  # 关闭新标签页
                     self.driver.switch_to.window(self.driver.window_handles[0])  # 切回原标签页
-                    return
+                    raise Exception("未找到“点击下载”按钮，无法下载种子文件")
 
                 time.sleep(10)
                 # 新增：重命名种子文件
@@ -622,13 +630,17 @@ class MediaDownloader:
                     else:
                         new_name = f"{title} ({year})-{resolution}.torrent"
                     rename_torrent_file(latest_torrent, new_name)
+                else:
+                    raise Exception("未能找到下载的种子文件")
             else:
-                logging.error("经过多次重试后仍未找到种子文件下载链接。")
+                raise Exception("经过多次重试后仍未找到种子文件下载链接")
 
         except TimeoutException:
             logging.error("种子文件下载链接加载超时")
+            raise
         except Exception as e:
             logging.error(f"下载种子文件过程中出错: {e}")
+            raise
 
     def bt0_download_torrent(self, result, title_text, year=None, season=None, episode_range=None, resolution=None, title=None):
         """不太灵影视解析并下载种子文件"""
@@ -637,14 +649,14 @@ class MediaDownloader:
             self.driver.get(result['link'])
             logging.info(f"进入：{title_text} 详情页面...")
             logging.info(f"开始查找种子文件下载链接...")
-    
+
             WebDriverWait(self.driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "tr-actions")))
             logging.info("页面加载完成")
-    
+
             attachment_url = None
             max_retries = 5
             retries = 0
-    
+
             while not attachment_url and retries < max_retries:
                 WebDriverWait(self.driver, 10).until(
                     EC.presence_of_all_elements_located((By.CLASS_NAME, "download-link"))
@@ -655,12 +667,12 @@ class MediaDownloader:
                     if "下载种子" in link_text:
                         attachment_url = link.get_attribute('href')
                         break
-    
+
                 if not attachment_url:
                     logging.warning(f"没有找到种子文件下载链接，重试中... ({retries + 1}/{max_retries})")
                     time.sleep(2)
                     retries += 1
-    
+
             if attachment_url:
                 logging.info(f"找到种子文件下载链接: {attachment_url}")
                 self.driver.get(attachment_url)
@@ -681,13 +693,17 @@ class MediaDownloader:
                     else:
                         new_name = f"{title} ({year})-{resolution}.torrent"
                     rename_torrent_file(latest_torrent, new_name)
+                else:
+                    raise Exception("未能找到下载的种子文件")
             else:
-                logging.error("经过多次重试后仍未找到种子文件下载链接。")
-    
+                raise Exception("经过多次重试后仍未找到种子文件下载链接")
+
         except TimeoutException:
             logging.error("种子文件下载链接加载超时")
+            raise
         except Exception as e:
             logging.error(f"下载种子文件过程中出错: {e}")
+            raise
     
     def gy_download_torrent(self, result, title_text, year=None, season=None, episode_range=None, resolution=None, title=None):
         """观影解析并下载种子文件"""
@@ -696,40 +712,40 @@ class MediaDownloader:
             self.driver.get(result['link'])
             logging.info(f"进入：{title_text} 详情页面...")
             logging.info(f"开始查找种子文件下载链接...")
-    
+
             WebDriverWait(self.driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "alert-info")))
             logging.info("页面加载完成")
-    
+
             attachment_urls = []
             max_retries = 5
             retries = 0
-    
+
             while not attachment_urls and retries < max_retries:
                 WebDriverWait(self.driver, 10).until(
                     EC.presence_of_all_elements_located((By.CLASS_NAME, "alert-info"))
                 )
                 links_case1 = self.driver.find_elements(By.CSS_SELECTOR, ".down123 li")
                 links_case2 = self.driver.find_elements(By.CSS_SELECTOR, ".down321 .right span")
-    
+
                 for link in links_case1:
                     link_text = link.text.strip()
                     if "种子下载" in link_text:
                         attachment_url = link.get_attribute('data-clipboard-text')
                         if attachment_url:
                             attachment_urls.append(attachment_url)
-    
+
                 for link in links_case2:
                     link_text = link.text.strip()
                     if "种子下载" in link_text:
                         attachment_url = link.get_attribute('data-clipboard-text')
                         if attachment_url:
                             attachment_urls.append(attachment_url)
-    
+
                 if not attachment_urls:
                     logging.warning(f"没有找到种子文件下载链接，重试中... ({retries + 1}/{max_retries})")
                     time.sleep(2)
                     retries += 1
-    
+
             if attachment_urls:
                 gy_base_url = self.config.get("gy_base_url", "")
                 for attachment_url in attachment_urls:
@@ -753,38 +769,42 @@ class MediaDownloader:
                         else:
                             new_name = f"{title} ({year})-{resolution}.torrent"
                         rename_torrent_file(latest_torrent, new_name)
+                    else:
+                        raise Exception("未能找到下载的种子文件")
             else:
-                logging.error("经过多次重试后仍未找到种子文件下载链接。")
-    
+                raise Exception("经过多次重试后仍未找到种子文件下载链接")
+
         except TimeoutException:
             logging.error("种子文件下载链接加载超时")
+            raise
         except Exception as e:
             logging.error(f"下载种子文件过程中出错: {e}")
+            raise
 
     def process_movie_downloads(self):
         """处理电影下载任务"""
         # 读取订阅的电影信息
         all_movie_info = self.extract_movie_info()
-    
+
         # 定义来源优先级
         sources_priority = ["BTHD", "BTYS", "BT0", "GY"]
-    
+
         # 遍历每部电影信息
         for movie in all_movie_info:
             title = movie["标题"]
             year = movie["年份"]
-            download_result = None
-    
+            
             # 遍历来源优先级
+            download_success = False
             for source in sources_priority:
                 index_file_name = f"{title}-{year}-{source}.json"
                 index_file_path = os.path.join("/tmp/index", index_file_name)
-    
+
                 # 检查索引文件是否存在
                 if not os.path.exists(index_file_path):
                     logging.warning(f"索引文件不存在: {index_file_path}，尝试下一个来源")
                     continue
-    
+
                 # 读取索引文件内容
                 try:
                     with open(index_file_path, 'r', encoding='utf-8') as f:
@@ -792,77 +812,83 @@ class MediaDownloader:
                 except Exception as e:
                     logging.error(f"读取索引文件时出错: {index_file_path}, 错误: {e}")
                     continue
-    
-                # 按优先级选择下载结果
+
+                # 收集所有可能的下载结果，按优先级排序
+                all_download_results = []
+                
+                # 按优先级添加结果
                 if index_data.get("首选分辨率"):
-                    download_result = index_data["首选分辨率"][0]
-                elif index_data.get("备选分辨率"):
-                    download_result = index_data["备选分辨率"][0]
-                elif index_data.get("其他分辨率"):
-                    download_result = index_data["其他分辨率"][0]
-    
-                # 如果找到匹配结果，停止尝试其他来源
-                if download_result:
+                    all_download_results.extend([(result, "首选分辨率") for result in index_data["首选分辨率"]])
+                if index_data.get("备选分辨率"):
+                    all_download_results.extend([(result, "备选分辨率") for result in index_data["备选分辨率"]])
+                if index_data.get("其他分辨率"):
+                    all_download_results.extend([(result, "其他分辨率") for result in index_data["其他分辨率"]])
+
+                # 遍历所有可能的下载结果
+                for download_result, resolution_type in all_download_results:
                     download_title = download_result.get("title")
-                    logging.info(f"在来源 {source} 中找到匹配结果: {download_title}")
+                    logging.info(f"在来源 {source} 中找到匹配结果: {download_title} (分辨率类型: {resolution_type})")
+                    
+                    # 获取下载链接和标题
+                    link = download_result.get("link")
+                    resolution = download_result.get("resolution")
+
+                    if not link:
+                        logging.warning(f"未找到种子下载链接: {title} ({year})，尝试下一个结果")
+                        continue
+
+                    # 根据来源调用相应的下载方法，重命名时传递title参数
+                    logging.info(f"开始下载: {download_title} ({resolution}) 来源: {source}")
+                    try:
+                        if source == "BTHD":
+                            self.bthd_download_torrent(download_result, download_title, year=year, resolution=resolution, title=title)
+                        elif source == "BTYS":
+                            self.btys_download_torrent(download_result, download_title, year=year, resolution=resolution, title=title)
+                        elif source == "BT0":
+                            self.bt0_download_torrent(download_result, download_title, year=year, resolution=resolution, title=title)
+                        elif source == "GY":
+                            self.gy_download_torrent(download_result, download_title, year=year, resolution=resolution, title=title)
+                        
+                        # 下载成功
+                        download_success = True
+                        logging.info(f"电影下载成功: {title} ({year})")
+                        
+                        # 下载成功后，更新数据库，标记该电影已完成订阅
+                        try:
+                            with sqlite3.connect(self.db_path) as conn:
+                                cursor = conn.cursor()
+                                cursor.execute(
+                                    "DELETE FROM MISS_MOVIES WHERE title=? AND year=?",
+                                    (title, year)
+                                )
+                                conn.commit()
+                            logging.info(f"已更新订阅数据库，移除已完成的电影订阅: {title} ({year})")
+                        except Exception as e:
+                            logging.error(f"更新订阅数据库时出错: {e}")
+                        
+                        # 只有下载成功时才发送通知
+                        self.send_notification(movie, download_title, resolution)
+                        break  # 不再尝试当前来源的其他结果
+                        
+                    except Exception as e:
+                        logging.error(f"下载过程中发生错误: {e}，尝试当前来源的下一个结果")
+                        continue  # 继续尝试当前来源的其他结果
+                
+                # 如果当前来源中有成功下载的，就不再尝试其他来源
+                if download_success:
                     break
-    
-            # 如果没有可下载的结果
-            if not download_result:
-                logging.info(f"没有匹配的下载结果: {title} ({year})")
-                continue
-    
-            # 获取下载链接和标题
-            link = download_result.get("link")
-            download_title = download_result.get("title")
-            resolution = download_result.get("resolution")
-    
-            if not link:
-                logging.warning(f"未找到种子下载链接: {title} ({year})")
-                continue
-
-            # 下载成功标志
-            download_success = False
-
-            # 根据来源调用相应的下载方法，重命名时传递title参数
-            logging.info(f"开始下载: {download_title} ({resolution}) 来源: {source}")
-            try:
-                if source == "BTHD":
-                    self.bthd_download_torrent(download_result, download_title, year=year, resolution=resolution, title=title)
-                elif source == "BTYS":
-                    self.btys_download_torrent(download_result, download_title, year=year, resolution=resolution, title=title)
-                elif source == "BT0":
-                    self.bt0_download_torrent(download_result, download_title, year=year, resolution=resolution, title=title)
-                elif source == "GY":
-                    self.gy_download_torrent(download_result, download_title, year=year, resolution=resolution, title=title)
-                download_success = True
-            except Exception as e:
-                logging.error(f"下载过程中发生错误: {e}")
-
-            if download_success:
-                # 下载成功后，更新数据库，标记该电影已完成订阅
-                try:
-                    with sqlite3.connect(self.db_path) as conn:
-                        cursor = conn.cursor()
-                        cursor.execute(
-                            "DELETE FROM MISS_MOVIES WHERE title=? AND year=?",
-                            (title, year)
-                        )
-                        conn.commit()
-                    logging.info(f"已更新订阅数据库，移除已完成的电影订阅: {title} ({year})")
-                except Exception as e:
-                    logging.error(f"更新订阅数据库时出错: {e}")
-            # 发送通知
-            self.send_notification(movie, download_title, resolution)
+            
+            if not download_success:
+                logging.error(f"所有来源都尝试失败，未能下载电影: {title} ({year})")
     
     def process_tvshow_downloads(self):
         """处理电视节目下载任务"""
         # 读取订阅的电视节目信息
         all_tv_info = self.extract_tv_info()
-    
+
         # 定义来源优先级
         sources_priority = ["HDTV", "BTYS", "BT0", "GY"]
-    
+
         # 遍历每个电视节目信息
         for tvshow in all_tv_info:
             title = tvshow["剧集"]
@@ -870,123 +896,150 @@ class MediaDownloader:
             season = tvshow["季"]
             missing_episodes = sorted(map(int, tvshow["缺失集数"]))  # 转换为整数集合并排序
             logging.debug(f"缺失集数: {missing_episodes}")
-            download_results = []  # 存储所有匹配的下载结果
-    
-            # 遍历来源优先级
-            for source in sources_priority:
-                index_file_name = f"{title}-S{season}-{year}-{source}.json"
-                index_file_path = os.path.join("/tmp/index", index_file_name)
-    
-                # 检查索引文件是否存在
-                if not os.path.exists(index_file_path):
-                    logging.warning(f"索引文件不存在: {index_file_path}，尝试下一个来源")
+            
+            original_missing_episodes = missing_episodes[:]  # 保存原始缺失集数列表
+            successfully_downloaded_episodes = []  # 记录成功下载的集数
+
+            # 创建一个集合来跟踪已经处理过的资源，避免重复下载
+            processed_resources = set()
+
+            # 按集数分组处理，确保每集都能尝试不同来源
+            for episode in missing_episodes[:]:  # 使用副本以避免在迭代时修改列表
+                # 如果这一集已经被下载过了（在多集资源中），则跳过
+                if episode in successfully_downloaded_episodes:
                     continue
-    
-                # 读取索引文件内容
-                try:
-                    with open(index_file_path, 'r', encoding='utf-8') as f:
-                        index_data = json.load(f)
-                except Exception as e:
-                    logging.error(f"读取索引文件时出错: {index_file_path}, 错误: {e}")
-                    continue
-    
-                # 定义分辨率优先级
-                resolution_priorities = ["首选分辨率", "备选分辨率", "其他分辨率"]
-    
-                # 遍历分辨率优先级
-                for resolution_priority in resolution_priorities:
-                    # 对全集、集数范围和单集数据按 start_episode 排序
-                    for key in ["全集", "集数范围", "单集"]:
-                        if key in index_data.get(resolution_priority, {}):
-                            index_data[resolution_priority][key] = sorted(
-                                index_data[resolution_priority][key],
-                                key=lambda x: int(x.get("start_episode", 0))
-                            )
-    
-                    # 优先匹配全集
-                    for item in index_data.get(resolution_priority, {}).get("全集", []):
-                        if item.get("start_episode") is None or item.get("end_episode") is None:
-                            logging.warning(f"无效数据，跳过处理: {item}")
+                    
+                episode_downloaded = False
+                
+                # 遍历来源优先级
+                for source in sources_priority:
+                    index_file_name = f"{title}-S{season}-{year}-{source}.json"
+                    index_file_path = os.path.join("/tmp/index", index_file_name)
+
+                    # 检查索引文件是否存在
+                    if not os.path.exists(index_file_path):
+                        logging.warning(f"索引文件不存在: {index_file_path}，尝试下一个来源")
+                        continue
+
+                    # 读取索引文件内容
+                    try:
+                        with open(index_file_path, 'r', encoding='utf-8') as f:
+                            index_data = json.load(f)
+                    except Exception as e:
+                        logging.error(f"读取索引文件时出错: {index_file_path}, 错误: {e}")
+                        continue
+
+                    # 定义分辨率优先级
+                    resolution_priorities = ["首选分辨率", "备选分辨率", "其他分辨率"]
+                    
+                    # 收集所有可能的下载结果
+                    all_download_options = []
+                    
+                    # 按分辨率优先级收集结果
+                    for resolution_priority in resolution_priorities:
+                        # 收集单集
+                        for item in index_data.get(resolution_priority, {}).get("单集", []):
+                            if item.get("start_episode") is not None and int(item["start_episode"]) == episode:
+                                all_download_options.append((item, source, resolution_priority, "单集"))
+                        
+                        # 收集集数范围
+                        for item in index_data.get(resolution_priority, {}).get("集数范围", []):
+                            if (item.get("start_episode") is not None and item.get("end_episode") is not None and
+                                int(item["start_episode"]) <= episode <= int(item["end_episode"])):
+                                all_download_options.append((item, source, resolution_priority, "集数范围"))
+                        
+                        # 收集全集
+                        for item in index_data.get(resolution_priority, {}).get("全集", []):
+                            if (item.get("start_episode") is not None and item.get("end_episode") is not None and
+                                int(item["start_episode"]) <= episode <= int(item["end_episode"])):
+                                all_download_options.append((item, source, resolution_priority, "全集"))
+                    
+                    # 遍历所有可能的下载选项
+                    for download_result, result_source, resolution_priority, item_type in all_download_options:
+                        # 创建资源唯一标识符
+                        resource_identifier = (result_source, download_result.get("title"), 
+                                            download_result.get("link"), 
+                                            download_result.get("start_episode"), 
+                                            download_result.get("end_episode"))
+                        
+                        # 如果这个资源已经被处理过，跳过
+                        if resource_identifier in processed_resources:
                             continue
-                        episode_range = set(range(int(item["start_episode"]), int(item["end_episode"]) + 1))
-                        logging.debug(f"尝试匹配全集 ({resolution_priority}): {item['title']} 集数范围: {sorted(episode_range)}")
-                        if episode_range.intersection(missing_episodes):
-                            download_results.append((item, source))
-                            missing_episodes = [ep for ep in missing_episodes if ep not in episode_range]
-    
-                    # 匹配集数范围
-                    for item in index_data.get(resolution_priority, {}).get("集数范围", []):
-                        if item.get("start_episode") is None or item.get("end_episode") is None:
-                            logging.warning(f"无效数据，跳过处理: {item}")
+                        
+                        # 找到匹配结果，尝试下载
+                        logging.info(f"在来源 {result_source} 中找到匹配结果: {download_result['title']} (类型: {item_type}, 分辨率优先级: {resolution_priority})")
+                        
+                        # 处理集数范围命名
+                        start_ep = download_result.get("start_episode")
+                        end_ep = download_result.get("end_episode")
+                        
+                        # 计算本次下载包含的集数
+                        if start_ep and end_ep:
+                            episode_nums = list(range(int(start_ep), int(end_ep) + 1))
+                        elif start_ep:
+                            episode_nums = [int(start_ep)]
+                        else:
+                            episode_nums = []
+                        
+                        # 检查这些集数是否都已经下载过了
+                        already_downloaded = any(ep in successfully_downloaded_episodes for ep in episode_nums)
+                        if already_downloaded:
+                            # 标记这个资源已处理，避免重复尝试
+                            processed_resources.add(resource_identifier)
                             continue
-                        episode_range = set(range(int(item["start_episode"]), int(item["end_episode"]) + 1))
-                        logging.debug(f"尝试匹配集数范围 ({resolution_priority}): {item['title']} 集数范围: {sorted(episode_range)}")
-                        if episode_range.intersection(missing_episodes):
-                            download_results.append((item, source))
-                            missing_episodes = [ep for ep in missing_episodes if ep not in episode_range]
-    
-                    # 匹配单集
-                    for item in index_data.get(resolution_priority, {}).get("单集", []):
-                        if item.get("start_episode") is None:
-                            logging.warning(f"无效数据，跳过处理: {item}")
-                            continue
-                        episode = int(item["start_episode"])
-                        logging.debug(f"尝试匹配单集 ({resolution_priority}): {item['title']} 集数: {episode}")
-                        if episode in missing_episodes:
-                            download_results.append((item, source))
-                            missing_episodes.remove(episode)
-    
-                    # 如果没有缺失集数，跳出分辨率优先级循环
-                    if not missing_episodes:
+                        
+                        # 处理集数范围
+                        if start_ep and end_ep:
+                            if int(start_ep) == int(end_ep):
+                                episode_range = f"{start_ep}集"
+                            elif int(start_ep) == 1 and int(end_ep) > 1 and download_result.get("is_full_season", False):
+                                episode_range = f"全{end_ep}集"
+                            else:
+                                episode_range = f"{start_ep}-{end_ep}集"
+                        elif start_ep:
+                            episode_range = f"{start_ep}集"
+                        else:
+                            episode_range = "未知集数"
+                            
+                        resolution = download_result.get("resolution")
+                        
+                        # 尝试下载
+                        try:
+                            if result_source == "HDTV":
+                                self.hdtv_download_torrent(download_result, download_result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
+                            elif result_source == "BTYS":
+                                self.btys_download_torrent(download_result, download_result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
+                            elif result_source == "BT0":
+                                self.bt0_download_torrent(download_result, download_result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
+                            elif result_source == "GY":
+                                self.gy_download_torrent(download_result, download_result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
+                            
+                            # 下载成功
+                            successfully_downloaded_episodes.extend(episode_nums)
+                            logging.info(f"成功下载集数: {episode_nums}")
+                            self.send_notification(tvshow, download_result["title"], resolution)
+                            
+                            # 标记这个资源已处理
+                            processed_resources.add(resource_identifier)
+                            
+                            episode_downloaded = True
+                            break  # 不再尝试当前来源的其他结果
+                            
+                        except Exception as e:
+                            logging.error(f"下载失败: {download_result['title']}, 错误: {e}，尝试当前来源的下一个结果")
+                            # 标记这个资源已处理，避免重复尝试
+                            processed_resources.add(resource_identifier)
+                            # 继续尝试当前来源的其他结果
+                    
+                    # 如果当前来源中有成功下载的，就不再尝试其他来源
+                    if episode_downloaded:
                         break
-    
-                # 如果没有缺失集数，跳出来源优先级循环
-                if not missing_episodes:
-                    break
+                
+                if not episode_downloaded:
+                    logging.warning(f"集数 {episode} 下载失败，所有来源均已尝试")
 
-            # 记录已下载的集数
-            downloaded_episodes = []
-
-            # 下载所有匹配的结果
-            for result, result_source in download_results:
-                logging.info(f"在来源 {result_source} 中找到匹配结果: {result['title']}")
-                # 处理集数范围命名
-                start_ep = result.get("start_episode")
-                end_ep = result.get("end_episode")
-                # 计算本次下载包含的集数
-                if start_ep and end_ep:
-                    episode_nums = list(range(int(start_ep), int(end_ep) + 1))
-                elif start_ep:
-                    episode_nums = [int(start_ep)]
-                else:
-                    episode_nums = []
-                # 处理集数范围
-                if start_ep and end_ep:
-                    if int(start_ep) == int(end_ep):
-                        episode_range = f"{start_ep}集"
-                    elif int(start_ep) == 1 and int(end_ep) > 1 and result.get("is_full_season", False):
-                        episode_range = f"全{end_ep}集"
-                    else:
-                        episode_range = f"{start_ep}-{end_ep}集"
-                elif start_ep:
-                    episode_range = f"{start_ep}集"
-                else:
-                    episode_range = "未知集数"
-                resolution = result.get("resolution")
-                if result_source == "HDTV":
-                    self.hdtv_download_torrent(result, result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
-                elif result_source == "BTYS":
-                    self.btys_download_torrent(result, result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
-                elif result_source == "BT0":
-                    self.bt0_download_torrent(result, result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
-                elif result_source == "GY":
-                    self.gy_download_torrent(result, result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
-                self.send_notification(tvshow, result["title"], resolution)
-                # 记录已下载的集数
-                downloaded_episodes.extend(episode_nums)
-
-            # 下载成功后，更新数据库，移除已下载的集数
-            if downloaded_episodes:
+            # 只对实际下载成功的集数更新数据库
+            if successfully_downloaded_episodes:
                 try:
                     with sqlite3.connect(self.db_path) as conn:
                         cursor = conn.cursor()
@@ -998,8 +1051,8 @@ class MediaDownloader:
                         row = cursor.fetchone()
                         if row:
                             current_missing = [ep.strip() for ep in row[0].split(',') if ep.strip()]
-                            # 计算剩余缺失集
-                            updated_missing = [ep for ep in current_missing if ep and int(ep) not in downloaded_episodes]
+                            # 计算剩余缺失集（从原始缺失集中移除成功下载的集数）
+                            updated_missing = [ep for ep in current_missing if ep and int(ep) not in successfully_downloaded_episodes]
                             if updated_missing:
                                 # 还有未下载的缺失集，更新数据库
                                 cursor.execute(
@@ -1018,8 +1071,10 @@ class MediaDownloader:
                 except Exception as e:
                     logging.error(f"更新订阅数据库时出错: {e}")
 
-            if missing_episodes:
-                logging.warning(f"未找到匹配的下载结果: {title} S{season} ({year}) 缺失集数: {missing_episodes}")
+            # 计算仍然未找到匹配的集数
+            still_missing = [ep for ep in original_missing_episodes if ep not in successfully_downloaded_episodes]
+            if still_missing:
+                logging.warning(f"未找到匹配的下载结果或下载失败: {title} S{season} ({year}) 缺失集数: {still_missing}")
 
     def close_driver(self):
         if self.driver:
