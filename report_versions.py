@@ -2,6 +2,9 @@ import requests
 import logging
 import uuid
 import os
+import schedule
+import time
+import threading
 
 # 配置日志记录
 logging.basicConfig(level=logging.INFO, format="%(levelname)s - %(message)s")
@@ -59,6 +62,25 @@ def send_client_data(client_id, version):
     except requests.RequestException as e:
         logging.error(f"发送版本统计数据时发生错误: {e}")
 
+def send_heartbeat():
+    """
+    发送心跳包以保持在线状态
+    """
+    client_id = get_client_id()
+    send_client_data(client_id, CURRENT_VERSION)
+    logging.info("发送心跳包以更新在线状态")
+
+def run_scheduler():
+    """
+    运行调度器发送心跳包
+    """
+    # 每15分钟发送一次心跳包
+    schedule.every(15).minutes.do(send_heartbeat)
+    
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
 def main():
     client_id = get_client_id()
     logging.info(f"版本: {CURRENT_VERSION}")
@@ -66,6 +88,17 @@ def main():
 
     # 发送客户端数据到服务器
     send_client_data(client_id, CURRENT_VERSION)
+    
+    # 启动心跳包线程
+    heartbeat_thread = threading.Thread(target=run_scheduler, daemon=True)
+    heartbeat_thread.start()
+    
+    # 为了保持程序运行，添加一个简单的循环
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        logging.info("程序退出")
 
 if __name__ == "__main__":
     main()

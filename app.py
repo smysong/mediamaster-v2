@@ -489,6 +489,105 @@ def subscriptions():
     avatar_url = session.get('avatar_url')
     return render_template('subscriptions.html', miss_movies=miss_movies, miss_tvs=miss_tvs, nickname=nickname, avatar_url=avatar_url, version=APP_VERSION)
 
+@app.route('/add_subscription', methods=['POST'])
+@login_required
+def add_subscription():
+    try:
+        # 获取请求数据
+        data = request.json
+        subscription_type = data.get('type')
+        title = data.get('title')
+        year = data.get('year')
+        season = data.get('season', 1)  # 默认第一季
+        start_episode = data.get('start_episode')
+        end_episode = data.get('end_episode')
+
+        # 检查必要字段
+        if not subscription_type or not title or not year:
+            return jsonify({"success": False, "message": "缺少必要的订阅信息"}), 400
+
+        db = get_db()
+
+        if subscription_type == 'tv':  # 电视剧订阅
+            # 验证剧集信息
+            if start_episode is None or end_episode is None:
+                return jsonify({"success": False, "message": "电视剧订阅需要提供起始集和结束集"}), 400
+            
+            try:
+                start_episode = int(start_episode)
+                end_episode = int(end_episode)
+                season = int(season)
+            except (ValueError, TypeError):
+                return jsonify({"success": False, "message": "季、起始集和结束集必须是数字"}), 400
+                
+            if start_episode <= 0 or end_episode <= 0 or start_episode > end_episode:
+                return jsonify({"success": False, "message": "起始集和结束集必须是正整数，且起始集不能大于结束集"}), 400
+
+            # 生成缺失的集数字符串，例如 "1,2,3,...,episodes"
+            missing_episodes = ','.join(map(str, range(start_episode, end_episode + 1)))
+
+            # 生成手动订阅的douban_id
+            # 获取当前最大的manual编号
+            max_id_row = db.execute(
+                "SELECT MAX(CAST(SUBSTR(douban_id, 8) AS INTEGER)) as max_id FROM MISS_TVS WHERE douban_id LIKE 'manual-%'"
+            ).fetchone()
+            
+            max_id = max_id_row['max_id'] if max_id_row['max_id'] else 0
+            new_douban_id = f"manual-{max_id + 1}"
+
+            # 检查是否已存在相同的订阅
+            existing_tv = db.execute(
+                'SELECT * FROM MISS_TVS WHERE title = ? AND year = ? AND season = ?',
+                (title, year, season)
+            ).fetchone()
+
+            if existing_tv:
+                return jsonify({"success": False, "message": "该电视剧订阅已存在"}), 400
+
+            # 插入电视剧订阅
+            db.execute(
+                'INSERT INTO MISS_TVS (douban_id, title, year, season, missing_episodes) VALUES (?, ?, ?, ?, ?)',
+                (new_douban_id, title, year, season, missing_episodes)
+            )
+            db.commit()
+            logger.info(f"用户添加电视剧订阅: {title} ({year}) 季{season} 集{start_episode}-{end_episode} DOUBAN_ID: {new_douban_id}")
+            return jsonify({"success": True, "message": "电视剧订阅添加成功"})
+
+        elif subscription_type == 'movie':  # 电影订阅
+            # 生成手动订阅的douban_id
+            # 获取当前最大的manual编号
+            max_id_row = db.execute(
+                "SELECT MAX(CAST(SUBSTR(douban_id, 8) AS INTEGER)) as max_id FROM MISS_MOVIES WHERE douban_id LIKE 'manual%'"
+            ).fetchone()
+            
+            max_id = max_id_row['max_id'] if max_id_row['max_id'] else 0
+            new_douban_id = f"manual{max_id + 1}"
+
+            # 检查是否已存在相同的订阅
+            existing_movie = db.execute(
+                'SELECT * FROM MISS_MOVIES WHERE title = ? AND year = ?',
+                (title, year)
+            ).fetchone()
+
+            if existing_movie:
+                return jsonify({"success": False, "message": "该电影订阅已存在"}), 400
+
+            # 插入电影订阅
+            db.execute(
+                'INSERT INTO MISS_MOVIES (douban_id, title, year) VALUES (?, ?, ?)',
+                (new_douban_id, title, year)
+            )
+            db.commit()
+            logger.info(f"用户添加电影订阅: {title} ({year}) DOUBAN_ID: {new_douban_id}")
+            return jsonify({"success": True, "message": "电影订阅添加成功"})
+
+        else:
+            return jsonify({"success": False, "message": "无效的订阅类型"}), 400
+
+    except Exception as e:
+        logger.error(f"添加订阅失败: {e}")
+        return jsonify({"success": False, "message": "添加订阅失败，请稍后再试"}), 500
+
 @app.route('/douban_subscriptions')
 @login_required
 def douban_subscriptions():

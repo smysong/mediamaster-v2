@@ -787,7 +787,7 @@ class MediaDownloader:
         all_movie_info = self.extract_movie_info()
 
         # 定义来源优先级
-        sources_priority = ["BTHD", "BTYS", "BT0", "GY"]
+        sources_priority = ["BTHD", "BT0", "BTYS", "GY"]
 
         # 遍历每部电影信息
         for movie in all_movie_info:
@@ -887,7 +887,7 @@ class MediaDownloader:
         all_tv_info = self.extract_tv_info()
 
         # 定义来源优先级
-        sources_priority = ["HDTV", "BTYS", "BT0", "GY"]
+        sources_priority = ["HDTV", "BT0", "BTYS", "GY"]
 
         # 遍历每个电视节目信息
         for tvshow in all_tv_info:
@@ -902,11 +902,14 @@ class MediaDownloader:
 
             # 创建一个集合来跟踪已经处理过的资源，避免重复下载
             processed_resources = set()
+            
+            # 添加标志位，用于标识是否已经下载了全集
+            full_season_downloaded = False
 
             # 按集数分组处理，确保每集都能尝试不同来源
             for episode in missing_episodes[:]:  # 使用副本以避免在迭代时修改列表
                 # 如果这一集已经被下载过了（在多集资源中），则跳过
-                if episode in successfully_downloaded_episodes:
+                if episode in successfully_downloaded_episodes or full_season_downloaded:
                     continue
                     
                 episode_downloaded = False
@@ -932,15 +935,23 @@ class MediaDownloader:
                     # 定义分辨率优先级
                     resolution_priorities = ["首选分辨率", "备选分辨率", "其他分辨率"]
                     
+                    # 定义资源类型的优先级映射
+                    item_type_priority = {
+                        "全集": 0,
+                        "集数范围": 1,
+                        "单集": 2
+                    }
+                    
                     # 收集所有可能的下载结果
                     all_download_options = []
                     
                     # 按分辨率优先级收集结果
                     for resolution_priority in resolution_priorities:
-                        # 收集单集
-                        for item in index_data.get(resolution_priority, {}).get("单集", []):
-                            if item.get("start_episode") is not None and int(item["start_episode"]) == episode:
-                                all_download_options.append((item, source, resolution_priority, "单集"))
+                        # 收集全集
+                        for item in index_data.get(resolution_priority, {}).get("全集", []):
+                            if (item.get("start_episode") is not None and item.get("end_episode") is not None and
+                                int(item["start_episode"]) <= episode <= int(item["end_episode"])):
+                                all_download_options.append((item, source, resolution_priority, "全集"))
                         
                         # 收集集数范围
                         for item in index_data.get(resolution_priority, {}).get("集数范围", []):
@@ -948,13 +959,18 @@ class MediaDownloader:
                                 int(item["start_episode"]) <= episode <= int(item["end_episode"])):
                                 all_download_options.append((item, source, resolution_priority, "集数范围"))
                         
-                        # 收集全集
-                        for item in index_data.get(resolution_priority, {}).get("全集", []):
-                            if (item.get("start_episode") is not None and item.get("end_episode") is not None and
-                                int(item["start_episode"]) <= episode <= int(item["end_episode"])):
-                                all_download_options.append((item, source, resolution_priority, "全集"))
+                        # 收集单集
+                        for item in index_data.get(resolution_priority, {}).get("单集", []):
+                            if item.get("start_episode") is not None and int(item["start_episode"]) == episode:
+                                all_download_options.append((item, source, resolution_priority, "单集"))
+
+                    # 按照类型优先级、分辨率优先级对下载选项进行排序
+                    all_download_options.sort(key=lambda x: (
+                        item_type_priority.get(x[3], 99),  # x[3] 是 item_type
+                        resolution_priorities.index(x[2])  # x[2] 是 resolution_priority
+                    ))
                     
-                    # 遍历所有可能的下载选项
+                    # 遍历所有可能的下载选项（已按优先级排序）
                     for download_result, result_source, resolution_priority, item_type in all_download_options:
                         # 创建资源唯一标识符
                         resource_identifier = (result_source, download_result.get("title"), 
@@ -1022,6 +1038,17 @@ class MediaDownloader:
                             # 标记这个资源已处理
                             processed_resources.add(resource_identifier)
                             
+                            # 如果下载的是全集，则标记全集已下载
+                            if item_type == "全集":
+                                full_season_downloaded = True
+                                logging.info(f"全集已下载，跳过该季其余集数的处理")
+                                # 标记该全集包含的所有集数为已下载
+                                if start_ep and end_ep:
+                                    all_episodes_in_full = list(range(int(start_ep), int(end_ep) + 1))
+                                    for ep in all_episodes_in_full:
+                                        if ep not in successfully_downloaded_episodes:
+                                            successfully_downloaded_episodes.append(ep)
+                            
                             episode_downloaded = True
                             break  # 不再尝试当前来源的其他结果
                             
@@ -1037,6 +1064,10 @@ class MediaDownloader:
                 
                 if not episode_downloaded:
                     logging.warning(f"集数 {episode} 下载失败，所有来源均已尝试")
+                
+                # 如果已经下载了全集，则跳出集数循环
+                if full_season_downloaded:
+                    break
 
             # 只对实际下载成功的集数更新数据库
             if successfully_downloaded_episodes:

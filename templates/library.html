@@ -4,6 +4,15 @@
 {% endblock %}
 {% block title %}媒体库{% endblock %}
 {% block content %}
+
+<style>
+    @media (max-width: 768px) {
+        .modal-header {
+            flex-direction: column;
+        }
+    }
+</style>
+
     {% if media_type == 'movies' %}
         <h3>电影库&emsp;&emsp;共计 {{ total_movies }} 部影片</h3>
         <div class="poster-wall-container">

@@ -67,9 +67,148 @@
                 </table>
                 {% else %}
                 <p>目前没有正在订阅的电视剧。</p>
+                {% endif %}
             </div>
+        </div>
+        <!-- 添加订阅按钮 -->
+        <div class="card d-flex justify-content-end mb-3">
+            <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addSubscriptionModal">
+                添加订阅
+            </button>
         </div>
     </div>
 </main>
-{% endif %}
+
+<!-- 添加订阅模态框 -->
+<div class="modal fade" id="addSubscriptionModal" tabindex="-1" aria-labelledby="addSubscriptionModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addSubscriptionModalLabel">添加订阅</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addSubscriptionForm">
+                    <div class="mb-3">
+                        <label for="subscriptionType" class="form-label">类型</label>
+                        <select class="form-select" id="subscriptionType" required>
+                            <option value="">请选择类型</option>
+                            <option value="movie">电影</option>
+                            <option value="tv">剧集</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="title" class="form-label">标题</label>
+                        <input type="text" class="form-control" id="title" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="year" class="form-label">年份</label>
+                        <input type="number" class="form-control" id="year" required>
+                    </div>
+                    <div class="mb-3" id="tvFields" style="display: none;">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="season" class="form-label">季</label>
+                                <input type="number" class="form-control" id="season">
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-md-6">
+                                <label for="startEpisode" class="form-label">起始集</label>
+                                <input type="number" class="form-control" id="startEpisode">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="endEpisode" class="form-label">结束集</label>
+                                <input type="number" class="form-control" id="endEpisode">
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer" style="width: 100%;">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-sm btn-primary" id="submitSubscription">添加</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 类型选择变化时显示/隐藏剧集相关字段
+    document.getElementById('subscriptionType').addEventListener('change', function() {
+        const tvFields = document.getElementById('tvFields');
+        if (this.value === 'tv') {
+            tvFields.style.display = 'block';
+        } else {
+            tvFields.style.display = 'none';
+        }
+    });
+
+    // 提交订阅表单
+    document.getElementById('submitSubscription').addEventListener('click', function() {
+        const type = document.getElementById('subscriptionType').value;
+        const title = document.getElementById('title').value;
+        const year = document.getElementById('year').value;
+        const season = document.getElementById('season').value;
+        const startEpisode = document.getElementById('startEpisode').value;
+        const endEpisode = document.getElementById('endEpisode').value;
+
+        // 基本验证
+        if (!type || !title || !year) {
+            alert('请填写所有必填字段');
+            return;
+        }
+
+        // 如果是电视剧，验证季和集数
+        if (type === 'tv') {
+            if (!season || !startEpisode || !endEpisode) {
+                alert('请填写季、起始集和结束集');
+                return;
+            }
+            
+            if (parseInt(startEpisode) > parseInt(endEpisode)) {
+                alert('起始集不能大于结束集');
+                return;
+            }
+        }
+
+        // 发送请求到后端添加订阅
+        fetch('/add_subscription', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                type: type,
+                title: title,
+                year: year,
+                season: type === 'tv' ? parseInt(season) : undefined,
+                start_episode: type === 'tv' ? parseInt(startEpisode) : undefined,
+                end_episode: type === 'tv' ? parseInt(endEpisode) : undefined
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(data.message);
+                // 关闭模态框
+                const modal = bootstrap.Modal.getInstance(document.getElementById('addSubscriptionModal'));
+                modal.hide();
+                
+                // 重置表单
+                document.getElementById('addSubscriptionForm').reset();
+                document.getElementById('tvFields').style.display = 'none';
+                
+                // 刷新页面以显示新添加的订阅
+                location.reload();
+            } else {
+                alert('添加失败: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('添加订阅时发生错误，请查看控制台了解详情');
+        });
+    });
+</script>
 {% endblock %}

@@ -356,16 +356,37 @@ def update_tmdb_items(cursor):
                         # 检查并更新集数信息
                         if missing_episodes:
                             try:
-                                local_episodes_set = set(int(ep) for ep in missing_episodes.split(',') if ep.strip().isdigit())
-                                local_episodes_count = len(local_episodes_set)
+                                local_missing_episodes_set = set(int(ep) for ep in missing_episodes.split(',') if ep.strip().isdigit())
                                 
-                                # 如果TMDB上的集数与本地不一致
-                                if tmdb_episodes_count != local_episodes_count:
-                                    # 重新生成缺失集数（假设所有集数都缺失）
-                                    new_missing_episodes_str = ','.join(map(str, range(1, tmdb_episodes_count + 1)))
+                                # 获取 TMDB 上的所有集数
+                                tmdb_episodes_set = set(range(1, tmdb_episodes_count + 1))
+                                
+                                # 获取本地已存在的集数（从 LIB_TV_SEASONS 表中获取）
+                                existing_episodes_str = cursor.execute(
+                                    '''SELECT episodes FROM LIB_TV_SEASONS WHERE tv_id = (SELECT id FROM LIB_TVS WHERE title = ? AND year = ?) AND season = ?''',
+                                    (local_title, year, season)
+                                ).fetchone()
+                                
+                                if existing_episodes_str:
+                                    val = existing_episodes_str[0]
+                                    if isinstance(val, int):
+                                        existing_episodes = set([val])
+                                    elif isinstance(val, str):
+                                        existing_episodes = set(int(ep) for ep in val.split(',') if ep.strip().isdigit())
+                                    else:
+                                        existing_episodes = set()
+                                else:
+                                    existing_episodes = set()
+                                
+                                # 计算新的缺失集数：TMDB 上的所有集数 - 本地已存在的集数
+                                new_missing_episodes_set = tmdb_episodes_set - existing_episodes
+                                new_missing_episodes_str = ','.join(map(str, sorted(new_missing_episodes_set)))
+                                
+                                # 如果缺失集数有变化，则更新
+                                if set(local_missing_episodes_set) != new_missing_episodes_set:
                                     cursor.execute('UPDATE MISS_TVS SET missing_episodes = ? WHERE id = ?', 
-                                                 (new_missing_episodes_str, tv_id))
-                                    logging.info(f"已更新电视剧 '{tmdb_title_normalized}' 第{season}季的集数: {local_episodes_count} -> {tmdb_episodes_count}")
+                                                (new_missing_episodes_str, tv_id))
+                                    logging.info(f"已更新电视剧 '{tmdb_title_normalized}' 第{season}季的缺失集数: {sorted(local_missing_episodes_set)} -> {sorted(new_missing_episodes_set)}")
                             except ValueError as e:
                                 logging.error(f"处理电视剧 '{local_title}' 集数时发生错误: {e}")
                     else:

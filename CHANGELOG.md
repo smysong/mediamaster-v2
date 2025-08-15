@@ -2,6 +2,24 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.4.0] - 2025-08-15
+
+### 新增
+- 手动订阅功能：用户现在可以在订阅列表中手动添加订阅，剧集订阅支持指定起始集和结束集。
+- 剧集多季选择订阅：从热门推荐（TMDB）中订阅多季剧集时，支持选择订阅指定季。
+
+### 优化
+- 视觉优化：更新ICON图标，采用全新设计的LOGO。
+- 订阅服务优化：调整从热门推荐（TMDB）中订阅的剧集集数检查逻辑。
+- 下载服务优化：调整订阅检索下载服务的资源优先级选择策略（全集 > 集数范围 > 单集）。
+
+### 修复
+- 登录界面：修复Bing每日壁纸API接口失效导致的登录背景图加载失败和登录界面加载缓慢问题。
+- 界面显示：修复WEBUI界面部分元素排版或显示异常的问题。
+
+### 文档
+- 更新安装部署及使用帮助文档中的部分内容。
+
 ## [2.3.12] - 2025-08-01
 
 ### 优化
@@ -322,3 +340,4 @@
 [2.3.10]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.10
 [2.3.11]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.11
 [2.3.12]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.12
+[2.4.0]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.4.0
