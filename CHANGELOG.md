@@ -2,6 +2,21 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.4.1] - 2025-08-15
+
+### 说明
+- 由于推送v2.4.0后才发现“BT影视”站点索引程序存在一些问题（与v2.4.0版本更新无关，历史版本均存在下列问题），故推送v2.4.1版本进行修复。
+- v2.4.1作为补丁版本发布，修复了部分错误。
+
+### 修复
+- BT影视索引程序：修复BT影视站点索引程序中资源标题提取和解析不准确的问题。该问题会导致剧集搜索结果显著减少，因为系统无法正确识别集数信息，将大量有效资源误判为无法解析的无效资源。
+
+### 优化
+- BT影视索引程序：优化BT影视索引程序的多页搜索匹配逻辑。针对标题相似资源在搜索结果中可能分布在多个页面的情况，系统现在能够遍历多页搜索结果，避免因目标资源不在第一页而被遗漏的问题。
+
+### 引用变更
+- 参考 [2.4.0 更新日志](https://github.com/smysong/mediamaster-v2/releases/tag/v2.4.0) 中提到的功能改进和错误修复。
+
 ## [2.4.0] - 2025-08-15
 
 ### 新增
@@ -341,3 +356,4 @@
 [2.3.11]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.11
 [2.3.12]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.12
 [2.4.0]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.4.0
+[2.4.1]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.4.1

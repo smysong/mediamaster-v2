@@ -197,162 +197,176 @@ class MediaIndexer:
             logging.info(f"开始搜索电影: {item['标题']}  年份: {item['年份']}")
             search_query = quote(item['标题'])
             full_search_url = f"{search_url}{search_query}"
+            page_found_match = False  # 标记是否在任何页面找到匹配
+            
             try:
                 self.driver.get(full_search_url)
                 logging.debug(f"访问搜索URL: {full_search_url}")
-            except Exception as e:
-                logging.error(f"无法访问搜索页面: {full_search_url}，错误: {e}")
-                logging.info("跳过当前搜索项，继续执行下一个媒体搜索")
-                continue
-            try:
-                # 等待搜索结果加载
-                WebDriverWait(self.driver, 15).until(
-                    EC.presence_of_element_located((By.CLASS_NAME, "module-items"))
-                )
-                video_cards = self.driver.find_elements(By.CLASS_NAME, "module-item")
-                logging.debug(f"找到 {len(video_cards)} 个视频卡片")
-                found_match = False  # 标记是否找到匹配的卡片
-                for card in video_cards:
-                    try:
-                        # 直接提取标题和年份
-                        title_elem = card.find_element(By.CSS_SELECTOR, ".module-item-titlebox .module-item-title")
-                        card_title = title_elem.get_attribute("title").strip()
-                        year_elem = card.find_element(By.CSS_SELECTOR, ".module-item-caption span")
-                        card_year = year_elem.text.strip()
+                
+                while not page_found_match:
+                    # 等待搜索结果加载
+                    WebDriverWait(self.driver, 15).until(
+                        EC.presence_of_element_located((By.CLASS_NAME, "module-items"))
+                    )
+                    video_cards = self.driver.find_elements(By.CLASS_NAME, "module-item")
+                    logging.debug(f"找到 {len(video_cards)} 个视频卡片")
+                    
+                    found_match = False  # 标记是否找到匹配的卡片
+                    for card in video_cards:
+                        try:
+                            # 直接提取标题和年份
+                            title_elem = card.find_element(By.CSS_SELECTOR, ".module-item-titlebox .module-item-title")
+                            card_title = title_elem.get_attribute("title").strip()
+                            year_elem = card.find_element(By.CSS_SELECTOR, ".module-item-caption span")
+                            card_year = year_elem.text.strip()
 
-                        logging.debug(f"卡片提取的标题: {card_title}, 年份: {card_year}")
+                            logging.debug(f"卡片提取的标题: {card_title}, 年份: {card_year}")
 
-                        # 检查标题和年份是否与搜索匹配
-                        if item['标题'] == card_title and str(item['年份']) == card_year:
-                            logging.info(f"找到匹配的电影卡片: {card_title} ({card_year})")
-                            found_match = True  # 找到匹配的卡片
+                            # 检查标题和年份是否与搜索匹配
+                            if item['标题'] == card_title and str(item['年份']) == card_year:
+                                logging.info(f"找到匹配的电影卡片: {card_title} ({card_year})")
+                                found_match = True  # 找到匹配的卡片
+                                page_found_match = True
 
-                            # 点击进入详情页
-                            detail_link = title_elem.get_attribute("href")
-                            self.driver.execute_script("window.open(arguments[0]);", detail_link)
-                            WebDriverWait(self.driver, 15).until(
-                                lambda d: len(d.window_handles) > 1
-                            )
-                            self.driver.switch_to.window(self.driver.window_handles[-1])
-                            logging.debug("切换到新标签页")
-
-                            # 等待影片详细信息页面加载完成
-                            try:
+                                # 点击进入详情页
+                                detail_link = title_elem.get_attribute("href")
+                                self.driver.execute_script("window.open(arguments[0]);", detail_link)
                                 WebDriverWait(self.driver, 15).until(
-                                    EC.presence_of_element_located((By.ID, "download-list"))
+                                    lambda d: len(d.window_handles) > 1
                                 )
-                                logging.info("成功进入影片详细信息页面")
-                            except TimeoutException:
-                                logging.error("影片详细信息页面加载超时")
-                                self.driver.close()  # 关闭新标签页
-                                self.driver.switch_to.window(self.driver.window_handles[0])  # 切回原标签页
-                                continue
+                                self.driver.switch_to.window(self.driver.window_handles[-1])
+                                logging.debug("切换到新标签页")
 
-                            # 检查资源类型标签
-                            try:
-                                category_element = self.driver.find_element(By.CSS_SELECTOR, ".video-tag-icon")
-                                category_text = category_element.text.strip()
-                                if category_text != "Movie":
-                                    logging.info(f"资源类型不匹配，跳过采集: {category_text}")
-                                    self.driver.close()
-                                    self.driver.switch_to.window(self.driver.window_handles[0])
+                                # 等待影片详细信息页面加载完成
+                                try:
+                                    WebDriverWait(self.driver, 15).until(
+                                        EC.presence_of_element_located((By.ID, "download-list"))
+                                    )
+                                    logging.info("成功进入影片详细信息页面")
+                                except TimeoutException:
+                                    logging.error("影片详细信息页面加载超时")
+                                    self.driver.close()  # 关闭新标签页
+                                    self.driver.switch_to.window(self.driver.window_handles[0])  # 切回原标签页
                                     continue
-                            except Exception as e:
-                                logging.warning("无法找到资源类型标签，默认继续采集")
 
-                            # 新版资源采集逻辑
-                            categorized_results = {
-                                "首选分辨率": [],
-                                "备选分辨率": [],
-                                "其他分辨率": []
-                            }
-                            preferred_resolution = self.config.get('preferred_resolution', "未知分辨率")
-                            fallback_resolution = self.config.get('fallback_resolution', "未知分辨率")
-                            exclude_keywords = self.config.get("resources_exclude_keywords", "").split(',')
+                                # 检查资源类型标签
+                                try:
+                                    category_element = self.driver.find_element(By.CSS_SELECTOR, ".video-tag-icon")
+                                    category_text = category_element.text.strip()
+                                    if category_text != "Movie":
+                                        logging.info(f"资源类型不匹配，跳过采集: {category_text}")
+                                        self.driver.close()
+                                        self.driver.switch_to.window(self.driver.window_handles[0])
+                                        continue
+                                except Exception as e:
+                                    logging.warning("无法找到资源类型标签，默认继续采集")
 
-                            # 获取所有分辨率tab，排除“夸克网盘”
-                            tab_items = self.driver.find_elements(By.CSS_SELECTOR, ".module-tab-item.downtab-item")
-                            valid_tab_indices = []
-                            for idx, tab in enumerate(tab_items):
-                                label = tab.find_element(By.TAG_NAME, "span").get_attribute("data-dropdown-value")
-                                if label and "夸克网盘" not in label:
-                                    valid_tab_indices.append(idx)
+                                # 新版资源采集逻辑
+                                categorized_results = {
+                                    "首选分辨率": [],
+                                    "备选分辨率": [],
+                                    "其他分辨率": []
+                                }
+                                preferred_resolution = self.config.get('preferred_resolution', "未知分辨率")
+                                fallback_resolution = self.config.get('fallback_resolution', "未知分辨率")
+                                exclude_keywords = self.config.get("resources_exclude_keywords", "").split(',')
 
-                            all_resources = []
-                            for idx in valid_tab_indices:
-                                # 切换到对应分辨率tab
+                                # 获取所有分辨率tab，排除“网盘”
                                 tab_items = self.driver.find_elements(By.CSS_SELECTOR, ".module-tab-item.downtab-item")
-                                self.driver.execute_script("arguments[0].click();", tab_items[idx])
-                                WebDriverWait(self.driver, 5).until(
-                                    lambda d: d.find_elements(By.CSS_SELECTOR, ".module-list.module-downlist.selected .module-row-info")
-                                )
-                                # 获取当前tab下所有资源项
-                                resource_infos = self.driver.find_elements(By.CSS_SELECTOR, ".module-list.module-downlist.selected .module-row-info")
-                                for info in resource_infos:
-                                    try:
-                                        a_tag = info.find_element(By.CSS_SELECTOR, "a.module-row-text.copy")
-                                        resource_title = a_tag.get_attribute("title")
-                                        resource_link = a_tag.get_attribute("href")
-                                        # 检查是否包含排除关键词
-                                        if any(keyword.strip() in resource_title for keyword in exclude_keywords):
-                                            logging.debug(f"跳过包含排除关键词的资源: {resource_title}")
-                                            continue
-                                        all_resources.append({
-                                            "title": resource_title,
-                                            "link": resource_link
+                                valid_tab_indices = []
+                                for idx, tab in enumerate(tab_items):
+                                    label = tab.find_element(By.TAG_NAME, "span").get_attribute("data-dropdown-value")
+                                    if label and "网盘" not in label:
+                                        valid_tab_indices.append(idx)
+
+                                all_resources = []
+                                for idx in valid_tab_indices:
+                                    # 切换到对应分辨率tab
+                                    tab_items = self.driver.find_elements(By.CSS_SELECTOR, ".module-tab-item.downtab-item")
+                                    self.driver.execute_script("arguments[0].click();", tab_items[idx])
+                                    WebDriverWait(self.driver, 5).until(
+                                        lambda d: d.find_elements(By.CSS_SELECTOR, ".module-list.module-downlist.selected .module-row-info")
+                                    )
+                                    # 获取当前tab下所有资源项
+                                    resource_infos = self.driver.find_elements(By.CSS_SELECTOR, ".module-list.module-downlist.selected .module-row-info")
+                                    for info in resource_infos:
+                                        try:
+                                            a_tag = info.find_element(By.CSS_SELECTOR, "a.module-row-text.copy")
+                                            # 优先从 h4 标签获取标题，如果失败则回退到原来的 title 属性
+                                            try:
+                                                h4_tag = info.find_element(By.CSS_SELECTOR, "h4")
+                                                resource_title = h4_tag.text.strip()
+                                            except:
+                                                resource_title = a_tag.get_attribute("title")
+                                            resource_link = a_tag.get_attribute("href")
+                                            # 检查是否包含排除关键词
+                                            if any(keyword.strip() in resource_title for keyword in exclude_keywords):
+                                                logging.debug(f"跳过包含排除关键词的资源: {resource_title}")
+                                                continue
+                                            all_resources.append({
+                                                "title": resource_title,
+                                                "link": resource_link
+                                            })
+                                        except Exception as e:
+                                            logging.warning(f"解析资源项时出错: {e}")
+
+                                logging.info(f"过滤后剩余 {len(all_resources)} 个资源项")
+
+                                # 分类资源
+                                for res in all_resources:
+                                    details = self.extract_details_movie(res["title"])
+                                    resolution = details["resolution"]
+                                    if resolution == preferred_resolution:
+                                        categorized_results["首选分辨率"].append({
+                                            "title": res["title"],
+                                            "link": res["link"],
+                                            "resolution": resolution,
+                                            "audio_tracks": details["audio_tracks"],
+                                            "subtitles": details["subtitles"]
                                         })
-                                    except Exception as e:
-                                        logging.warning(f"解析资源项时出错: {e}")
+                                    elif resolution == fallback_resolution:
+                                        categorized_results["备选分辨率"].append({
+                                            "title": res["title"],
+                                            "link": res["link"],
+                                            "resolution": resolution,
+                                            "audio_tracks": details["audio_tracks"],
+                                            "subtitles": details["subtitles"]
+                                        })
+                                    else:
+                                        categorized_results["其他分辨率"].append({
+                                            "title": res["title"],
+                                            "link": res["link"],
+                                            "resolution": resolution,
+                                            "audio_tracks": details["audio_tracks"],
+                                            "subtitles": details["subtitles"]
+                                        })
 
-                            logging.info(f"过滤后剩余 {len(all_resources)} 个资源项")
+                                # 保存结果到 JSON 文件
+                                logging.debug(f"分类结果: {categorized_results}")
+                                self.save_results_to_json(
+                                    title=item['标题'],
+                                    year=item['年份'],
+                                    categorized_results=categorized_results
+                                )
 
-                            # 分类资源
-                            for res in all_resources:
-                                details = self.extract_details_movie(res["title"])
-                                resolution = details["resolution"]
-                                if resolution == preferred_resolution:
-                                    categorized_results["首选分辨率"].append({
-                                        "title": res["title"],
-                                        "link": res["link"],
-                                        "resolution": resolution,
-                                        "audio_tracks": details["audio_tracks"],
-                                        "subtitles": details["subtitles"]
-                                    })
-                                elif resolution == fallback_resolution:
-                                    categorized_results["备选分辨率"].append({
-                                        "title": res["title"],
-                                        "link": res["link"],
-                                        "resolution": resolution,
-                                        "audio_tracks": details["audio_tracks"],
-                                        "subtitles": details["subtitles"]
-                                    })
-                                else:
-                                    categorized_results["其他分辨率"].append({
-                                        "title": res["title"],
-                                        "link": res["link"],
-                                        "resolution": resolution,
-                                        "audio_tracks": details["audio_tracks"],
-                                        "subtitles": details["subtitles"]
-                                    })
-
-                            # 保存结果到 JSON 文件
-                            logging.debug(f"分类结果: {categorized_results}")
-                            self.save_results_to_json(
-                                title=item['标题'],
-                                year=item['年份'],
-                                categorized_results=categorized_results
-                            )
-
-                            # 关闭新标签页并切回原标签页
-                            self.driver.close()
-                            self.driver.switch_to.window(self.driver.window_handles[0])
-                            break  # 找到匹配的卡片后退出循环
-                    except Exception as e:
-                        logging.warning(f"解析影片信息时出错: {e}")
-                if not found_match:
-                    logging.info(f"未找到匹配的电影卡片: {item['标题']} ({item['年份']})")
-            except TimeoutException:
-                logging.error("搜索结果为空或加载超时")
+                                # 关闭新标签页并切回原标签页
+                                self.driver.close()
+                                self.driver.switch_to.window(self.driver.window_handles[0])
+                                break  # 找到匹配的卡片后退出循环
+                        except Exception as e:
+                            logging.warning(f"解析影片信息时出错: {e}")
+                    
+                    # 如果当前页没找到匹配项，尝试翻页
+                    if not found_match and not page_found_match:
+                        try:
+                            next_page_elem = self.driver.find_element(By.CSS_SELECTOR, "#page a.page-next")
+                            next_page_url = next_page_elem.get_attribute("href")
+                            logging.info("当前页未找到匹配项，尝试下一页")
+                            self.driver.get(next_page_url)
+                        except:
+                            logging.info(f"未找到下一页或所有页面均未找到匹配的电影卡片: {item['标题']} ({item['年份']})")
+                            break  # 没有下一页或出现异常，退出循环
+                            
             except Exception as e:
                 logging.error(f"搜索过程中出错: {e}")
 
@@ -365,185 +379,199 @@ class MediaIndexer:
                 self.driver.close()
             self.driver.switch_to.window(self.driver.window_handles[0])
             logging.debug("关闭多余的标签页，只保留当前标签页")
+        
         for item in all_tv_info:
             logging.info(f"开始搜索电视节目: {item['剧集']} 年份: {item['年份']} 季: {item['季']}")
             search_query = quote(item['剧集'])
             full_search_url = f"{search_url}{search_query}"
+            page_found_match = False  # 标记是否在任何页面找到匹配
+            
             try:
                 self.driver.get(full_search_url)
                 logging.debug(f"访问搜索URL: {full_search_url}")
-            except Exception as e:
-                logging.error(f"无法访问搜索页面: {full_search_url}，错误: {e}")
-                logging.info("跳过当前搜索项，继续执行下一个媒体搜索")
-                continue
-            try:
-                # 等待搜索结果加载
-                WebDriverWait(self.driver, 15).until(
-                    EC.presence_of_element_located((By.CLASS_NAME, "module-items"))
-                )
-                video_cards = self.driver.find_elements(By.CLASS_NAME, "module-item")
-                logging.debug(f"找到 {len(video_cards)} 个视频卡片")
-                found_match = False  # 标记是否找到匹配的卡片
-                for card in video_cards:
-                    try:
-                        # 直接提取标题和年份
-                        title_elem = card.find_element(By.CSS_SELECTOR, ".module-item-titlebox .module-item-title")
-                        card_title = title_elem.get_attribute("title").strip()
-                        year_elem = card.find_element(By.CSS_SELECTOR, ".module-item-caption span")
-                        card_year = year_elem.text.strip()
+                
+                while not page_found_match:
+                    # 等待搜索结果加载
+                    WebDriverWait(self.driver, 15).until(
+                        EC.presence_of_element_located((By.CLASS_NAME, "module-items"))
+                    )
+                    video_cards = self.driver.find_elements(By.CLASS_NAME, "module-item")
+                    logging.debug(f"找到 {len(video_cards)} 个视频卡片")
+                    
+                    found_match = False  # 标记是否找到匹配的卡片
+                    for card in video_cards:
+                        try:
+                            # 直接提取标题和年份
+                            title_elem = card.find_element(By.CSS_SELECTOR, ".module-item-titlebox .module-item-title")
+                            card_title = title_elem.get_attribute("title").strip()
+                            year_elem = card.find_element(By.CSS_SELECTOR, ".module-item-caption span")
+                            card_year = year_elem.text.strip()
 
-                        logging.debug(f"卡片提取的标题: {card_title}, 年份: {card_year}")
+                            logging.debug(f"卡片提取的标题: {card_title}, 年份: {card_year}")
 
-                        # 检查标题和年份是否与搜索匹配
-                        if item['剧集'] == card_title and str(item['年份']) == card_year:
-                            logging.info(f"找到匹配的电视节目卡片: {card_title} ({card_year})")
-                            found_match = True  # 找到匹配的卡片
+                            # 检查标题和年份是否与搜索匹配
+                            if item['剧集'] == card_title and str(item['年份']) == card_year:
+                                logging.info(f"找到匹配的电视节目卡片: {card_title} ({card_year})")
+                                found_match = True  # 找到匹配的卡片
+                                page_found_match = True
 
-                            # 点击进入详情页
-                            detail_link = title_elem.get_attribute("href")
-                            self.driver.execute_script("window.open(arguments[0]);", detail_link)
-                            WebDriverWait(self.driver, 15).until(
-                                lambda d: len(d.window_handles) > 1
-                            )
-                            self.driver.switch_to.window(self.driver.window_handles[-1])
-                            logging.debug("切换到新标签页")
-
-                            # 等待节目详细信息页面加载完成
-                            try:
+                                # 点击进入详情页
+                                detail_link = title_elem.get_attribute("href")
+                                self.driver.execute_script("window.open(arguments[0]);", detail_link)
                                 WebDriverWait(self.driver, 15).until(
-                                    EC.presence_of_element_located((By.ID, "download-list"))
+                                    lambda d: len(d.window_handles) > 1
                                 )
-                                logging.info("成功进入节目详细信息页面")
-                            except TimeoutException:
-                                logging.error("节目详细信息页面加载超时")
-                                self.driver.close()  # 关闭新标签页
-                                self.driver.switch_to.window(self.driver.window_handles[0])  # 切回原标签页
-                                continue
+                                self.driver.switch_to.window(self.driver.window_handles[-1])
+                                logging.debug("切换到新标签页")
 
-                            # 检查资源类型标签
-                            try:
-                                category_element = self.driver.find_element(By.CSS_SELECTOR, ".video-tag-icon")
-                                category_text = category_element.text.strip()
-                                if category_text != "TV":
-                                    logging.info(f"资源类型不匹配，跳过采集: {category_text}")
-                                    self.driver.close()
-                                    self.driver.switch_to.window(self.driver.window_handles[0])
+                                # 等待节目详细信息页面加载完成
+                                try:
+                                    WebDriverWait(self.driver, 15).until(
+                                        EC.presence_of_element_located((By.ID, "download-list"))
+                                    )
+                                    logging.info("成功进入节目详细信息页面")
+                                except TimeoutException:
+                                    logging.error("节目详细信息页面加载超时")
+                                    self.driver.close()  # 关闭新标签页
+                                    self.driver.switch_to.window(self.driver.window_handles[0])  # 切回原标签页
                                     continue
-                            except Exception as e:
-                                logging.warning("无法找到资源类型标签，默认继续采集")
 
-                            categorized_results = {
-                                "首选分辨率": {
-                                    "单集": [],
-                                    "集数范围": [],
-                                    "全集": []
-                                },
-                                "备选分辨率": {
-                                    "单集": [],
-                                    "集数范围": [],
-                                    "全集": []
-                                },
-                                "其他分辨率": {
-                                    "单集": [],
-                                    "集数范围": [],
-                                    "全集": []
+                                # 检查资源类型标签
+                                try:
+                                    category_element = self.driver.find_element(By.CSS_SELECTOR, ".video-tag-icon")
+                                    category_text = category_element.text.strip()
+                                    if category_text != "TV":
+                                        logging.info(f"资源类型不匹配，跳过采集: {category_text}")
+                                        self.driver.close()
+                                        self.driver.switch_to.window(self.driver.window_handles[0])
+                                        continue
+                                except Exception as e:
+                                    logging.warning("无法找到资源类型标签，默认继续采集")
+
+                                categorized_results = {
+                                    "首选分辨率": {
+                                        "单集": [],
+                                        "集数范围": [],
+                                        "全集": []
+                                    },
+                                    "备选分辨率": {
+                                        "单集": [],
+                                        "集数范围": [],
+                                        "全集": []
+                                    },
+                                    "其他分辨率": {
+                                        "单集": [],
+                                        "集数范围": [],
+                                        "全集": []
+                                    }
                                 }
-                            }
-                            preferred_resolution = self.config.get('preferred_resolution', "未知分辨率")
-                            fallback_resolution = self.config.get('fallback_resolution', "未知分辨率")
-                            exclude_keywords = self.config.get("resources_exclude_keywords", "").split(',')
+                                preferred_resolution = self.config.get('preferred_resolution', "未知分辨率")
+                                fallback_resolution = self.config.get('fallback_resolution', "未知分辨率")
+                                exclude_keywords = self.config.get("resources_exclude_keywords", "").split(',')
 
-                            # 获取所有分辨率tab，排除“夸克网盘”
-                            tab_items = self.driver.find_elements(By.CSS_SELECTOR, ".module-tab-item.downtab-item")
-                            valid_tab_indices = []
-                            for idx, tab in enumerate(tab_items):
-                                label = tab.find_element(By.TAG_NAME, "span").get_attribute("data-dropdown-value")
-                                if label and "夸克网盘" not in label:
-                                    valid_tab_indices.append(idx)
-
-                            all_resources = []
-                            for idx in valid_tab_indices:
-                                # 切换到对应分辨率tab
+                                # 获取所有分辨率tab，排除“网盘”
                                 tab_items = self.driver.find_elements(By.CSS_SELECTOR, ".module-tab-item.downtab-item")
-                                self.driver.execute_script("arguments[0].click();", tab_items[idx])
-                                WebDriverWait(self.driver, 5).until(
-                                    lambda d: d.find_elements(By.CSS_SELECTOR, ".module-list.module-downlist.selected .module-row-info")
-                                )
-                                # 获取当前tab下所有资源项
-                                resource_infos = self.driver.find_elements(By.CSS_SELECTOR, ".module-list.module-downlist.selected .module-row-info")
-                                for info in resource_infos:
-                                    try:
-                                        a_tag = info.find_element(By.CSS_SELECTOR, "a.module-row-text.copy")
-                                        resource_title = a_tag.get_attribute("title")
-                                        resource_link = a_tag.get_attribute("href")
-                                        # 检查是否包含排除关键词
-                                        if any(keyword.strip() in resource_title for keyword in exclude_keywords):
-                                            logging.debug(f"跳过包含排除关键词的资源: {resource_title}")
-                                            continue
-                                        all_resources.append({
-                                            "title": resource_title,
-                                            "link": resource_link
+                                valid_tab_indices = []
+                                for idx, tab in enumerate(tab_items):
+                                    label = tab.find_element(By.TAG_NAME, "span").get_attribute("data-dropdown-value")
+                                    if label and "网盘" not in label:
+                                        valid_tab_indices.append(idx)
+
+                                all_resources = []
+                                for idx in valid_tab_indices:
+                                    # 切换到对应分辨率tab
+                                    tab_items = self.driver.find_elements(By.CSS_SELECTOR, ".module-tab-item.downtab-item")
+                                    self.driver.execute_script("arguments[0].click();", tab_items[idx])
+                                    WebDriverWait(self.driver, 5).until(
+                                        lambda d: d.find_elements(By.CSS_SELECTOR, ".module-list.module-downlist.selected .module-row-info")
+                                    )
+                                    # 获取当前tab下所有资源项
+                                    resource_infos = self.driver.find_elements(By.CSS_SELECTOR, ".module-list.module-downlist.selected .module-row-info")
+                                    for info in resource_infos:
+                                        try:
+                                            a_tag = info.find_element(By.CSS_SELECTOR, "a.module-row-text.copy")
+                                            # 优先从 h4 标签获取标题，如果失败则回退到原来的 title 属性
+                                            try:
+                                                h4_tag = info.find_element(By.CSS_SELECTOR, "h4")
+                                                resource_title = h4_tag.text.strip()
+                                            except:
+                                                resource_title = a_tag.get_attribute("title")
+                                            resource_link = a_tag.get_attribute("href")
+                                            # 检查是否包含排除关键词
+                                            if any(keyword.strip() in resource_title for keyword in exclude_keywords):
+                                                logging.debug(f"跳过包含排除关键词的资源: {resource_title}")
+                                                continue
+                                            all_resources.append({
+                                                "title": resource_title,
+                                                "link": resource_link
+                                            })
+                                        except Exception as e:
+                                            logging.warning(f"解析资源项时出错: {e}")
+
+                                logging.info(f"过滤后剩余 {len(all_resources)} 个资源项")
+
+                                # 分类资源
+                                for res in all_resources:
+                                    details = self.extract_details_tvshow(res["title"])
+                                    resolution = details["resolution"]
+                                    episode_type = details["episode_type"]
+                                    if episode_type == "未知集数":
+                                        logging.debug(f"跳过未知集数的资源: {res['title']}")
+                                        continue
+                                    if resolution == preferred_resolution:
+                                        categorized_results["首选分辨率"][episode_type].append({
+                                            "title": res["title"],
+                                            "link": res["link"],
+                                            "resolution": resolution,
+                                            "start_episode": details["start_episode"],
+                                            "end_episode": details["end_episode"]
                                         })
-                                    except Exception as e:
-                                        logging.warning(f"解析资源项时出错: {e}")
+                                    elif resolution == fallback_resolution:
+                                        categorized_results["备选分辨率"][episode_type].append({
+                                            "title": res["title"],
+                                            "link": res["link"],
+                                            "resolution": resolution,
+                                            "start_episode": details["start_episode"],
+                                            "end_episode": details["end_episode"]
+                                        })
+                                    else:
+                                        categorized_results["其他分辨率"][episode_type].append({
+                                            "title": res["title"],
+                                            "link": res["link"],
+                                            "resolution": resolution,
+                                            "start_episode": details["start_episode"],
+                                            "end_episode": details["end_episode"]
+                                        })
 
-                            logging.info(f"过滤后剩余 {len(all_resources)} 个资源项")
+                                # 保存结果到 JSON 文件
+                                logging.debug(f"分类结果: {categorized_results}")
+                                self.save_results_to_json(
+                                    title=item['剧集'],
+                                    year=item['年份'],
+                                    categorized_results=categorized_results,
+                                    season=item['季']
+                                )
 
-                            # 分类资源
-                            for res in all_resources:
-                                details = self.extract_details_tvshow(res["title"])
-                                resolution = details["resolution"]
-                                episode_type = details["episode_type"]
-                                if episode_type == "未知集数":
-                                    logging.warning(f"跳过未知集数的资源: {res['title']}")
-                                    continue
-                                if resolution == preferred_resolution:
-                                    categorized_results["首选分辨率"][episode_type].append({
-                                        "title": res["title"],
-                                        "link": res["link"],
-                                        "resolution": resolution,
-                                        "start_episode": details["start_episode"],
-                                        "end_episode": details["end_episode"]
-                                    })
-                                elif resolution == fallback_resolution:
-                                    categorized_results["备选分辨率"][episode_type].append({
-                                        "title": res["title"],
-                                        "link": res["link"],
-                                        "resolution": resolution,
-                                        "start_episode": details["start_episode"],
-                                        "end_episode": details["end_episode"]
-                                    })
-                                else:
-                                    categorized_results["其他分辨率"][episode_type].append({
-                                        "title": res["title"],
-                                        "link": res["link"],
-                                        "resolution": resolution,
-                                        "start_episode": details["start_episode"],
-                                        "end_episode": details["end_episode"]
-                                    })
-
-                            # 保存结果到 JSON 文件
-                            logging.debug(f"分类结果: {categorized_results}")
-                            self.save_results_to_json(
-                                title=item['剧集'],
-                                year=item['年份'],
-                                categorized_results=categorized_results,
-                                season=item['季']
-                            )
-
-                            # 关闭新标签页并切回原标签页
-                            self.driver.close()
-                            self.driver.switch_to.window(self.driver.window_handles[0])
-                            break  # 找到匹配的卡片后退出循环
-                    except Exception as e:
-                        logging.warning(f"解析节目信息时出错: {e}")
-                if not found_match:
-                    logging.info(f"未找到匹配的电视节目卡片: {item['剧集']} ({item['年份']})")
-            except TimeoutException:
-                logging.error("搜索结果为空或加载超时")
+                                # 关闭新标签页并切回原标签页
+                                self.driver.close()
+                                self.driver.switch_to.window(self.driver.window_handles[0])
+                                break  # 找到匹配的卡片后退出循环
+                        except Exception as e:
+                            logging.warning(f"解析节目信息时出错: {e}")
+                    
+                    # 如果当前页没找到匹配项，尝试翻页
+                    if not found_match and not page_found_match:
+                        try:
+                            next_page_elem = self.driver.find_element(By.CSS_SELECTOR, "#page a.page-next")
+                            next_page_url = next_page_elem.get_attribute("href")
+                            logging.info("当前页未找到匹配项，尝试下一页")
+                            self.driver.get(next_page_url)
+                        except:
+                            logging.info(f"未找到下一页或所有页面均未找到匹配的电视节目卡片: {item['剧集']} ({item['年份']})")
+                            break  # 没有下一页或出现异常，退出循环
+                            
             except Exception as e:
                 logging.error(f"搜索过程中出错: {e}")
-
     def save_results_to_json(self, title, year, categorized_results, season=None):
         """将结果保存到 JSON 文件"""
         # 根据是否有季信息来决定文件名格式
