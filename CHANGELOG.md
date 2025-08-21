@@ -9,7 +9,7 @@
 #### TMDB密钥集成
 - 内置TMDB API密钥，用于获取TMDB资源信息
   - 全新部署时程序初始化自动配置
-  - 非全新部署时，请自行配置TMDB API密钥[d3485673d99d293743c74df52fd70e28]
+  - 非全新部署时，请自行配置TMDB API密钥`d3485673d99d293743c74df52fd70e28`
 
 #### 全新资源搜索
 - 全新的手动资源搜索功能，简便易用
@@ -388,3 +388,4 @@
 [2.3.12]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.3.12
 [2.4.0]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.4.0
 [2.4.1]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.4.1
+[2.4.2]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.4.2
