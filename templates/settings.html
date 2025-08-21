@@ -46,9 +46,11 @@
                             
                             <!-- 添加提示信息 -->
                             {% if key == 'tmdb_api_key' %}
-                            <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">TMDB密钥用于获取媒体详细信息、文件转移、热门推荐，请自行登录TMDB官网申请。</small>
+                            <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">TMDB密钥用于获取媒体详细信息、文件转移、热门推荐；系统已内置API密钥，您也可以使用自己的API密钥。</small>
                             {% elif key == 'preferred_resolution' %}
                             <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">首选、备选分辨率支持：720p、1080p、2160p等。以"p"（逐行扫描）为单位。</small>
+                            {% elif key == 'resources_prefer_keywords' %}
+                            <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">资源下载偏好关键词与资源搜索排除关键词是相反冲突的，相同关键词不应该同时出现在两个设置项中。如无需求可不填写。</small>
                             {% elif key == 'douban_api_key' %}
                             <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">豆瓣密钥用于获取媒体详细信息、演职人员中文汉化等，保持系统默认即可。</small>
                             {% elif key == 'run_interval_hours' %}

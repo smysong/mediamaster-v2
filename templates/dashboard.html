@@ -603,7 +603,9 @@ $(document).ready(function() {
 
                 processes.forEach(function(proc) {
                     // 过滤进程，只保留 name 为 python、chromedriver 或包含 chrome 的进程
-                    if (proc.name === 'python' || proc.name === 'chromedriver' || proc.name.toLowerCase().includes('chrome')) {
+                    // 同时过滤掉 report_versions.py 进程
+                    if ((proc.name === 'python' || proc.name === 'chromedriver' || proc.name.toLowerCase().includes('chrome')) 
+                        && !(proc.name === 'python' && proc.file_name === 'report_versions.py')) {
                         var row = $('<tr>');
                         var fileName = proc.file_name || 'N/A';
                         var friendlyName = friendlyNames[fileName] || friendlyNames[proc.name] || fileName;

@@ -223,8 +223,10 @@ def change_password():
     nickname = session.get('nickname')
     if request.method == 'POST':
         old_password = request.form['old_password']
-        new_password = request.form['new_password']
-        logger.info(f"用户 {nickname} 尝试修改密码")
+        new_password = request.form.get('new_password')
+        new_username = request.form.get('new_username')
+        
+        logger.info(f"用户 {nickname} 尝试修改密码和/或用户名")
 
         db = get_db()
         user = db.execute('SELECT * FROM USERS WHERE ID = ?', (user_id,)).fetchone()
@@ -233,17 +235,36 @@ def change_password():
         if not isinstance(hashed_password, str):
             hashed_password = hashed_password.decode('utf-8')
 
+        # 验证旧密码
         if user and bcrypt.checkpw(old_password.encode('utf-8'), hashed_password.encode('utf-8')):
-            new_hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
-            db.execute('UPDATE USERS SET PASSWORD = ? WHERE ID = ?', (new_hashed_password, user_id))
+            # 更新登录用户名（如果提供了新用户名）
+            if new_username and new_username != user['USERNAME']:
+                db.execute('UPDATE USERS SET USERNAME = ? WHERE ID = ?', (new_username, user_id))
+                logger.info(f"用户 {nickname} 登录用户名已更新为: {new_username}")
+            
+            # 更新密码（如果提供了新密码）
+            if new_password:
+                new_hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
+                db.execute('UPDATE USERS SET PASSWORD = ? WHERE ID = ?', (new_hashed_password, user_id))
+                logger.info(f"用户 {new_username or nickname} 密码修改成功")
+            
             db.commit()
-            logger.info(f"用户 {nickname} 密码修改成功")
-            return jsonify(success=True, message='您的密码已成功更新。', redirect_url=url_for('dashboard'))
+            logger.info(f"用户信息更新成功")
+            return jsonify(success=True, message='您的信息已成功更新。', redirect_url=url_for('dashboard'))
 
-        logger.warning(f"用户 {nickname} 密码修改失败: 旧密码错误")
+        logger.warning(f"用户 {nickname} 信息更新失败: 旧密码错误")
         return jsonify(success=False, message='旧密码错误。', redirect_url=url_for('change_password'))
 
-    return render_template('change_password.html', nickname=session.get('nickname'), avatar_url=session.get('avatar_url'), version=APP_VERSION)
+    # 获取当前用户的用户名（登录名）
+    db = get_db()
+    user = db.execute('SELECT USERNAME FROM USERS WHERE ID = ?', (user_id,)).fetchone()
+    current_username = user['USERNAME'] if user else ''
+    
+    return render_template('change_password.html', 
+                          nickname=session.get('nickname'), 
+                          avatar_url=session.get('avatar_url'), 
+                          version=APP_VERSION,
+                          current_username=current_username)
 
 @app.errorhandler(InternalServerError)
 def handle_500(error):
@@ -939,14 +960,20 @@ def stop_realtime_log(service):
 def manual_search():
     nickname = session.get('nickname')
     avatar_url = session.get('avatar_url')
+    db = get_db()
+    # 从数据库中读取 tmdb_api_key
+    tmdb_api_key = db.execute('SELECT VALUE FROM CONFIG WHERE OPTION = ?', ('tmdb_api_key',)).fetchone()
+    tmdb_api_key = tmdb_api_key['VALUE'] if tmdb_api_key else None
     logger.info(f"用户 {nickname} 访问手动搜索页面")
-    return render_template('manual_search.html', nickname=nickname, avatar_url=avatar_url, version=APP_VERSION)
+    return render_template('manual_search.html', nickname=nickname, avatar_url=avatar_url, version=APP_VERSION, tmdb_api_key=tmdb_api_key)
 
-def search_media(media_type, title, year):
+def search_media(media_type, title, year, season=None):
     """
     统一资源搜索方法，根据媒体类型和标题调用不同的脚本进行搜索。
     搜索结果将按照站点分类保存到 /tmp/index/ 目录中。
+    如果存在30分钟内的结果文件，则直接使用这些结果，无需重新搜索。
     """
+    # 基础搜索脚本配置
     search_scripts = [
         {
             "script": "python movie_bthd.py --manual --title \"{title}\" --year {year}",
@@ -975,18 +1002,137 @@ def search_media(media_type, title, year):
         }
     ]
 
+    # 为电视剧脚本添加season参数（仅当season存在时）
+    for script_info in search_scripts:
+        if (script_info["type"] == "tv" or script_info["type"] == "both") and media_type == "tv" and season is not None:
+            script_info["script"] += " --season {season}"
+
     results_dir = "/tmp/index/"
     os.makedirs(results_dir, exist_ok=True)
 
     all_results = {}
+    
+    # 检查是否存在30分钟内的结果文件
+    current_time = time.time()
+    time_threshold = 30 * 60  # 30分钟 = 1800秒
+    
+    # 根据媒体类型使用不同的文件匹配模式
+    if media_type == "tv":
+        # 电视剧文件命名格式: 标题-S*-年份-站点.json (例如: 长安的荔枝-S1-2025-GY.json)
+        if season:
+            result_pattern = os.path.join(results_dir, f"{title}-S{season}*{year}*.json")
+        else:
+            result_pattern = os.path.join(results_dir, f"{title}-S*{year}*.json")
+    else:
+        # 电影文件命名格式: 标题-年份-站点.json (例如: 超人2-1980-GY.json)
+        # 需要排除电视剧格式的文件（即包含-S*的文件）
+        result_pattern = os.path.join(results_dir, f"{title}-*{year}*.json")
+    
+    existing_result_files = glob.glob(result_pattern)
+    
+    # 对于电影，需要过滤掉电视剧文件
+    if media_type == "movie":
+        filtered_files = []
+        for file in existing_result_files:
+            filename = os.path.basename(file)
+            # 排除电视剧格式（包含-S数字的文件）
+            if not re.search(rf"{re.escape(title)}-S\d+.*{year}", filename):
+                filtered_files.append(file)
+        existing_result_files = filtered_files
+    
+    # 对于电视剧，如果有指定season，则进一步过滤
+    if media_type == "tv" and season:
+        filtered_files = []
+        for file in existing_result_files:
+            filename = os.path.basename(file)
+            # 只保留指定season的文件
+            if re.search(rf"{re.escape(title)}-S{season}.*{year}", filename):
+                filtered_files.append(file)
+        existing_result_files = filtered_files
+    
+    valid_results = []
+    for result_file in existing_result_files:
+        try:
+            # 检查文件修改时间
+            file_mtime = os.path.getmtime(result_file)
+            if current_time - file_mtime <= time_threshold:
+                valid_results.append(result_file)
+        except OSError:
+            # 如果无法获取文件信息，跳过该文件
+            continue
+    
+    # 如果存在有效结果文件，直接读取并返回
+    if valid_results:
+        logger.info(f"发现 {len(valid_results)} 个有效缓存结果文件，跳过重新搜索")
+        for result_file in valid_results:
+            try:
+                # 从文件名中提取站点信息
+                filename = os.path.basename(result_file)
+                site = None
+                for script_info in search_scripts:
+                    if script_info["site"] in filename:
+                        site = script_info["site"]
+                        break
+                
+                if not site:
+                    continue
+                
+                with open(result_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    logger.info(f"成功读取缓存搜索结果: {result_file}")
 
+                    # 按站点分类结果
+                    if site not in all_results:
+                        all_results[site] = []
+
+                    # 提取需要的字段
+                    for resolution_key in ["首选分辨率", "备选分辨率", "其他分辨率"]:
+                        if resolution_key in data:
+                            if media_type == "tv":
+                                # 针对 电视节目 数据
+                                for category_key in ["单集", "集数范围", "全集"]:
+                                    if category_key in data[resolution_key]:
+                                        for item in data[resolution_key][category_key]:
+                                            all_results[site].append({
+                                                "title": item.get("title"),
+                                                "link": item.get("link"),
+                                                "resolution": item.get("resolution")
+                                            })
+                            else:
+                                # 针对 电影 数据
+                                for item in data[resolution_key]:
+                                    all_results[site].append({
+                                        "title": item.get("title"),
+                                        "link": item.get("link"),
+                                        "resolution": item.get("resolution")
+                                    })
+            except Exception as e:
+                logger.error(f"读取缓存搜索结果失败: {result_file}, 错误: {e}")
+        
+        # 如果成功从缓存读取到结果，则直接返回
+        if all_results:
+            return all_results
+
+    # 如果没有有效缓存结果，则执行搜索脚本
+    logger.info("未找到有效的缓存结果，开始执行搜索脚本")
+    
     for script_info in search_scripts:
         if script_info["type"] == "both" or script_info["type"] == media_type:
-            script_command = script_info["script"].format(
-                type=media_type,
-                title=title,
-                year=year
-            )
+            # 格式化脚本命令
+            if media_type == "tv" and season is not None:
+                script_command = script_info["script"].format(
+                    type=media_type,
+                    title=title,
+                    year=year,
+                    season=season
+                )
+            else:
+                script_command = script_info["script"].format(
+                    type=media_type,
+                    title=title,
+                    year=year
+                )
+            
             try:
                 # 执行搜索脚本
                 subprocess.run(script_command, shell=True, check=True)
@@ -996,8 +1142,37 @@ def search_media(media_type, title, year):
                 continue
 
             # 使用通配符匹配结果文件
-            result_pattern = os.path.join(results_dir, f"{title}*{script_info['site']}*.json")
+            if media_type == "tv":
+                # 电视剧结果文件命名格式
+                if season:
+                    result_pattern = os.path.join(results_dir, f"{title}-S{season}*{year}*{script_info['site']}*.json")
+                else:
+                    result_pattern = os.path.join(results_dir, f"{title}-S*{year}*{script_info['site']}*.json")
+            else:
+                # 电影结果文件命名格式
+                result_pattern = os.path.join(results_dir, f"{title}-*{year}*{script_info['site']}*.json")
+            
             result_files = glob.glob(result_pattern)
+
+            # 对于电影，需要过滤掉电视剧文件
+            if media_type == "movie":
+                filtered_files = []
+                for file in result_files:
+                    filename = os.path.basename(file)
+                    # 排除电视剧格式（包含-S数字的文件）
+                    if not re.search(rf"{re.escape(title)}-S\d+.*{year}.*{script_info['site']}", filename):
+                        filtered_files.append(file)
+                result_files = filtered_files
+
+            # 对于电视剧，如果有指定season，则进一步过滤
+            if media_type == "tv" and season:
+                filtered_files = []
+                for file in result_files:
+                    filename = os.path.basename(file)
+                    # 只保留指定season的文件
+                    if re.search(rf"{re.escape(title)}-S{season}.*{year}.*{script_info['site']}", filename):
+                        filtered_files.append(file)
+                result_files = filtered_files
 
             if not result_files:
                 logger.warning(f"未找到匹配的结果文件: {result_pattern}")
@@ -1050,16 +1225,17 @@ def api_search_media():
     media_type = data.get('type')  # 'movie' 或 'tv'
     title = data.get('title')
     year = data.get('year')
+    season = data.get('season')  # 获取季数参数
     nickname = session.get('nickname')
 
     if not media_type or not title or not year:
         logger.warning(f"用户 {nickname} 搜索资源失败: 缺少参数")
         return jsonify({'error': '缺少参数'}), 400
 
-    logger.info(f"用户 {nickname} 搜索资源: 类型={media_type}, 标题={title}, 年份={year}")
+    logger.info(f"用户 {nickname} 搜索资源: 类型={media_type}, 标题={title}, 年份={year}" + (f", 季数={season}" if season else ""))
     try:
-        search_results = search_media(media_type, title, year)
-        logger.info(f"用户 {nickname} 搜索资源成功: 类型={media_type}, 标题={title}, 年份={year}")
+        search_results = search_media(media_type, title, year, season)
+        logger.info(f"用户 {nickname} 搜索资源成功: 类型={media_type}, 标题={title}, 年份={year}" + (f", 季数={season}" if season else ""))
         return jsonify({'success': True, 'results': search_results})
     except Exception as e:
         logger.error(f"用户 {nickname} 搜索资源失败: {e}")
@@ -1134,7 +1310,8 @@ GROUP_MAPPING = {
         "download_excluded_filenames": {"type": "text", "label": "下载转移排除的文件名"},
         "preferred_resolution": {"type": "text", "label": "资源下载首选分辨率"},
         "fallback_resolution": {"type": "text", "label": "资源下载备选分辨率"},
-        "resources_exclude_keywords": {"type": "text", "label": "资源搜索排除关键词"}
+        "resources_exclude_keywords": {"type": "text", "label": "资源搜索排除关键词"},
+        "resources_prefer_keywords": {"type": "text", "label": "资源下载偏好关键词"}
     },
     "豆瓣设置": {
         "douban_api_key": {"type": "password", "label": "豆瓣API密钥"},

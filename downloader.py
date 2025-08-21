@@ -366,7 +366,8 @@ class MediaDownloader:
             password_input.send_keys(password)
             # 勾选自动登录选项
             auto_login_checkbox = self.driver.find_element(By.NAME, 'cookietime')
-            auto_login_checkbox.click()
+            if not auto_login_checkbox.is_selected():
+                auto_login_checkbox.click()
             submit_button = WebDriverWait(self.driver, 10).until(
                 EC.element_to_be_clickable((By.NAME, 'button'))
             )
@@ -788,6 +789,10 @@ class MediaDownloader:
 
         # 定义来源优先级
         sources_priority = ["BTHD", "BT0", "BTYS", "GY"]
+        
+        # 获取优先关键词配置
+        prefer_keywords = self.config.get("resources_prefer_keywords", "")
+        prefer_keywords_list = [kw.strip() for kw in prefer_keywords.split(",") if kw.strip()]
 
         # 遍历每部电影信息
         for movie in all_movie_info:
@@ -823,6 +828,18 @@ class MediaDownloader:
                     all_download_results.extend([(result, "备选分辨率") for result in index_data["备选分辨率"]])
                 if index_data.get("其他分辨率"):
                     all_download_results.extend([(result, "其他分辨率") for result in index_data["其他分辨率"]])
+
+                # 根据优先关键词对下载结果进行排序
+                if prefer_keywords_list:
+                    def keyword_priority(result_tuple):
+                        result, _ = result_tuple
+                        title_text = result.get("title", "").lower()
+                        # 计算匹配的优先关键词数量，匹配越多优先级越高
+                        match_count = sum(1 for kw in prefer_keywords_list if kw.lower() in title_text)
+                        # 返回负值，因为匹配越多优先级越高，而sort是升序排列
+                        return -match_count
+                    
+                    all_download_results.sort(key=keyword_priority)
 
                 # 遍历所有可能的下载结果
                 for download_result, resolution_type in all_download_results:
@@ -880,7 +897,7 @@ class MediaDownloader:
             
             if not download_success:
                 logging.error(f"所有来源都尝试失败，未能下载电影: {title} ({year})")
-    
+
     def process_tvshow_downloads(self):
         """处理电视节目下载任务"""
         # 读取订阅的电视节目信息
@@ -888,6 +905,10 @@ class MediaDownloader:
 
         # 定义来源优先级
         sources_priority = ["HDTV", "BT0", "BTYS", "GY"]
+        
+        # 获取优先关键词配置
+        prefer_keywords = self.config.get("resources_prefer_keywords", "")
+        prefer_keywords_list = [kw.strip() for kw in prefer_keywords.split(",") if kw.strip()]
 
         # 遍历每个电视节目信息
         for tvshow in all_tv_info:
@@ -964,11 +985,28 @@ class MediaDownloader:
                             if item.get("start_episode") is not None and int(item["start_episode"]) == episode:
                                 all_download_options.append((item, source, resolution_priority, "单集"))
 
-                    # 按照类型优先级、分辨率优先级对下载选项进行排序
-                    all_download_options.sort(key=lambda x: (
-                        item_type_priority.get(x[3], 99),  # x[3] 是 item_type
-                        resolution_priorities.index(x[2])  # x[2] 是 resolution_priority
-                    ))
+                    # 根据优先关键词对下载选项进行排序
+                    if prefer_keywords_list:
+                        def keyword_priority(option_tuple):
+                            item, _, _, _ = option_tuple
+                            title_text = item.get("title", "").lower()
+                            # 计算匹配的优先关键词数量，匹配越多优先级越高
+                            match_count = sum(1 for kw in prefer_keywords_list if kw.lower() in title_text)
+                            # 返回负值，因为匹配越多优先级越高，而sort是升序排列
+                            return -match_count
+                        
+                        # 先按类型和分辨率排序，再按关键词优先级排序
+                        all_download_options.sort(key=lambda x: (
+                            item_type_priority.get(x[3], 99),  # x[3] 是 item_type
+                            resolution_priorities.index(x[2]),  # x[2] 是 resolution_priority
+                            keyword_priority(x)  # 关键词优先级
+                        ))
+                    else:
+                        # 按照类型优先级、分辨率优先级对下载选项进行排序
+                        all_download_options.sort(key=lambda x: (
+                            item_type_priority.get(x[3], 99),  # x[3] 是 item_type
+                            resolution_priorities.index(x[2])  # x[2] 是 resolution_priority
+                        ))
                     
                     # 遍历所有可能的下载选项（已按优先级排序）
                     for download_result, result_source, resolution_priority, item_type in all_download_options:

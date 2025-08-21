@@ -407,10 +407,12 @@ class MediaIndexer:
                             year_elem = card.find_element(By.CSS_SELECTOR, ".module-item-caption span")
                             card_year = year_elem.text.strip()
 
-                            logging.debug(f"卡片提取的标题: {card_title}, 年份: {card_year}")
+                            # 清理电视节目标题，移除季相关字样
+                            cleaned_card_title = self._clean_tv_title(card_title)
+                            logging.debug(f"原始标题: {card_title}, 清理后标题: {cleaned_card_title}, 年份: {card_year}")
 
                             # 检查标题和年份是否与搜索匹配
-                            if item['剧集'] == card_title and str(item['年份']) == card_year:
+                            if item['剧集'] == cleaned_card_title and str(item['年份']) == card_year:
                                 logging.info(f"找到匹配的电视节目卡片: {card_title} ({card_year})")
                                 found_match = True  # 找到匹配的卡片
                                 page_found_match = True
@@ -469,7 +471,7 @@ class MediaIndexer:
                                 fallback_resolution = self.config.get('fallback_resolution', "未知分辨率")
                                 exclude_keywords = self.config.get("resources_exclude_keywords", "").split(',')
 
-                                # 获取所有分辨率tab，排除“网盘”
+                                # 获取所有分辨率tab，排除"网盘"
                                 tab_items = self.driver.find_elements(By.CSS_SELECTOR, ".module-tab-item.downtab-item")
                                 valid_tab_indices = []
                                 for idx, tab in enumerate(tab_items):
@@ -572,6 +574,28 @@ class MediaIndexer:
                             
             except Exception as e:
                 logging.error(f"搜索过程中出错: {e}")
+
+    def _clean_tv_title(self, title):
+        """
+        清理电视节目标题，移除季相关字样
+        """
+        # 移除"第X季"格式的字样（包括中文数字和阿拉伯数字）
+        title = re.sub(r'第[一二三四五六七八九十\d]+季', '', title)
+        
+        # 移除"季X"格式的字样
+        title = re.sub(r'季[一二三四五六七八九十\d]+', '', title)
+        
+        # 移除"第X部"格式的字样（有时也会出现在标题中）
+        title = re.sub(r'第[一二三四五六七八九十\d]+部', '', title)
+        
+        # 移除" Season X"或" S\d+"格式的字样（英文季标识）
+        title = re.sub(r'\s*(Season\s*\d+|S\d+)', '', title, flags=re.IGNORECASE)
+        
+        # 移除可能产生的多余空格
+        title = re.sub(r'\s+', ' ', title).strip()
+        
+        return title
+
     def save_results_to_json(self, title, year, categorized_results, season=None):
         """将结果保存到 JSON 文件"""
         # 根据是否有季信息来决定文件名格式

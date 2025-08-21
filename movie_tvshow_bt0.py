@@ -242,6 +242,14 @@ class MediaIndexer:
                         actions.move_to_element(card).perform()
                         logging.debug("鼠标悬停在视频卡片上，激活 hover 效果")
 
+                        # 判断视频卡片类型
+                        is_tv = self._is_tv_card(card)
+                        
+                        # 如果是TV类型卡片，则跳过电影搜索
+                        if is_tv:
+                            logging.debug(f"检测到TV类型卡片，跳过电影搜索: {card.find_element(By.CLASS_NAME, 'card-title').text}")
+                            continue
+
                         # 从悬停卡片中提取标题和年份信息
                         hover_overlay = card.find_element(By.CLASS_NAME, "card-hover-overlay")
                         hover_title = hover_overlay.find_element(By.CLASS_NAME, "overlay-title").text
@@ -440,15 +448,26 @@ class MediaIndexer:
                         actions.move_to_element(card).perform()
                         logging.debug("鼠标悬停在视频卡片上，激活 hover 效果")
 
+                        # 判断视频卡片类型
+                        is_tv = self._is_tv_card(card)
+                        
+                        # 如果不是TV类型卡片，则跳过电视节目搜索
+                        if not is_tv:
+                            logging.debug(f"检测到电影类型卡片，跳过电视节目搜索: {card.find_element(By.CLASS_NAME, 'card-title').text}")
+                            continue
+
+                        # 替换原有的提取标题和年份信息部分
                         # 从悬停卡片中提取标题和年份信息
                         hover_overlay = card.find_element(By.CLASS_NAME, "card-hover-overlay")
                         hover_title = hover_overlay.find_element(By.CLASS_NAME, "overlay-title").text
                         hover_year = hover_overlay.find_element(By.CLASS_NAME, "overlay-meta span").text
 
-                        logging.debug(f"悬停提取的标题: {hover_title}, 年份: {hover_year}")
+                        # 清理电视节目标题，移除季相关字样
+                        cleaned_hover_title = self._clean_tv_title(hover_title)
+                        logging.debug(f"原始标题: {hover_title}, 清理后标题: {cleaned_hover_title}, 年份: {hover_year}")
 
                         # 检查标题和年份是否与搜索匹配
-                        if item['剧集'] == hover_title and str(item['年份']) == hover_year:
+                        if item['剧集'] == cleaned_hover_title and str(item['年份']) == hover_year:
                             logging.info(f"找到匹配的电视节目卡片: {hover_title} ({hover_year})")
                             found_match = True  # 找到匹配的卡片
 
@@ -621,6 +640,45 @@ class MediaIndexer:
                 logging.error("搜索结果为空或加载超时")
             except Exception as e:
                 logging.error(f"搜索过程中出错: {e}")
+
+    def _is_tv_card(self, card):
+        """
+        判断视频卡片是否为TV类型
+        通过检查卡片左上角的标签来判断
+        """
+        try:
+            # 查找卡片左上角的标签来判断是否为TV类型
+            corner_tag = card.find_element(By.CSS_SELECTOR, ".corner-tag-left")
+            corner_text = corner_tag.text
+            if "全集" in corner_text or "更新至" in corner_text or "更至" in corner_text:
+                logging.debug(f"检测到TV类型标签: {corner_text}")
+                return True
+        except Exception as e:
+            # 未找到左上角标签或标签不包含TV类型标识
+            pass
+        
+        return False
+
+    def _clean_tv_title(self, title):
+        """
+        清理电视节目标题，移除季相关字样
+        """
+        # 移除"第X季"格式的字样（包括中文数字和阿拉伯数字）
+        title = re.sub(r'第[一二三四五六七八九十\d]+季', '', title)
+        
+        # 移除"季X"格式的字样
+        title = re.sub(r'季[一二三四五六七八九十\d]+', '', title)
+        
+        # 移除"第X部"格式的字样（有时也会出现在标题中）
+        title = re.sub(r'第[一二三四五六七八九十\d]+部', '', title)
+        
+        # 移除" Season X"或" S\d+"格式的字样（英文季标识）
+        title = re.sub(r'\s*(Season\s*\d+|S\d+)', '', title, flags=re.IGNORECASE)
+        
+        # 移除可能产生的多余空格
+        title = re.sub(r'\s+', ' ', title).strip()
+        
+        return title
 
     def _get_resource_items_with_retry(self, max_retries=3):
         """
