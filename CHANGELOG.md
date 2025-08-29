@@ -432,3 +432,4 @@
 [2.4.0]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.4.0
 [2.4.1]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.4.1
 [2.4.2]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.4.2
+[2.4.3]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.4.3
