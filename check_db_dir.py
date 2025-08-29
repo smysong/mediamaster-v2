@@ -3,6 +3,8 @@ import logging
 import subprocess
 import sys
 import shutil
+import time
+from datetime import datetime, timedelta
 
 # 定义日志保存目录和处理记录保存目录
 log_dir = "/tmp/log"  # 日志保存目录
@@ -62,6 +64,59 @@ def clear_chrome_cache():
     except Exception as e:
         logging.error(f"清空Chrome缓存目录失败: {e}")
 
+def clear_old_logs(log_directory, days=3):
+    """清理超过指定天数的日志文件"""
+    if not os.path.exists(log_directory):
+        logging.info(f"日志目录不存在: {log_directory}")
+        return
+    
+    try:
+        # 计算过期时间点
+        cutoff_time = time.time() - (days * 24 * 60 * 60)
+        cleared_files = 0
+        
+        # 遍历日志目录中的所有文件
+        for filename in os.listdir(log_directory):
+            file_path = os.path.join(log_directory, filename)
+            
+            # 检查是否为文件（而非目录）
+            if os.path.isfile(file_path):
+                # 获取文件最后修改时间
+                file_modified_time = os.path.getmtime(file_path)
+                
+                # 如果文件修改时间早于过期时间，则删除文件
+                if file_modified_time < cutoff_time:
+                    os.remove(file_path)
+                    cleared_files += 1
+                    logging.info(f"已删除过期日志文件: {file_path}")
+        
+        logging.info(f"清理完成，共删除 {cleared_files} 个过期日志文件")
+    except Exception as e:
+        logging.error(f"清理过期日志文件失败: {e}")
+
+def clear_torrent_directory():
+    """检查torrent目录是否为空，如果不为空则清空torrent目录"""
+    if not os.path.exists(torrent_dir):
+        logging.info(f"Torrent目录不存在: {torrent_dir}")
+        return
+    
+    try:
+        # 检查目录是否为空
+        if os.listdir(torrent_dir):
+            logging.info(f"正在清理Torrent目录: {torrent_dir}")
+            # 清空目录中的所有内容
+            for filename in os.listdir(torrent_dir):
+                file_path = os.path.join(torrent_dir, filename)
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            logging.info(f"Torrent目录已清空: {torrent_dir}")
+        else:
+            logging.info(f"Torrent目录为空: {torrent_dir}")
+    except Exception as e:
+        logging.error(f"清空Torrent目录失败: {e}")
+
 def get_status_code_from_log(log_file):
     """从日志文件中提取状态码"""
     try:
@@ -113,7 +168,15 @@ if __name__ == "__main__":
     ensure_directory_exists(movie_dir)
     ensure_directory_exists(episodes_dir)
     logging.info("所有目录检查完成。")
+    
+    # 清理过期日志文件（超过3天）
+    clear_old_logs(log_dir, days=3)
+    
+    # 清理 torrent 目录
+    clear_torrent_directory()
+    
     # 清理 Chrome 缓存目录
     clear_chrome_cache()
+    
     # 执行数据库检查
     check_database()

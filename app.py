@@ -14,6 +14,10 @@ from werkzeug.utils import secure_filename
 from flask import stream_with_context
 from transmission_rpc import Client as TransmissionClient
 from qbittorrentapi import Client as QbittorrentClient
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from flask import Response, stream_with_context
+import json
+import threading
 import os
 import time
 import logging
@@ -411,6 +415,44 @@ def recommendations():
     tmdb_api_key = tmdb_api_key['VALUE'] if tmdb_api_key else None
     return render_template('recommendations.html', nickname=nickname, avatar_url=avatar_url, tmdb_api_key=tmdb_api_key, version=APP_VERSION)
 
+@app.route('/search', methods=['GET'])
+@login_required
+def search():
+    db = get_db()
+    query = request.args.get('q', '').strip()
+    results = []
+
+    if query:
+        # 查询电影并按年份排序
+        movies = db.execute('SELECT * FROM LIB_MOVIES WHERE title LIKE ? ORDER BY year ASC', ('%' + query + '%',)).fetchall()
+        
+        # 查询电视剧并获取其季信息
+        tvs = db.execute('SELECT * FROM LIB_TVS WHERE title LIKE ? ORDER BY title ASC', ('%' + query + '%',)).fetchall()
+
+        # 合并结果
+        for movie in movies:
+            results.append({
+                'type': 'movie',
+                'id': movie['id'],
+                'title': movie['title'],
+                'year': movie['year']
+            })
+
+        for tv in tvs:
+            # 获取该电视剧的所有季信息，并按季数排序
+            seasons = db.execute('SELECT season, episodes FROM LIB_TV_SEASONS WHERE tv_id = ? ORDER BY season ASC', (tv['id'],)).fetchall()
+            tv_data = {
+                'type': 'tv',
+                'id': tv['id'],
+                'title': tv['title'],
+                'seasons': seasons
+            }
+            results.append(tv_data)
+    # 从会话中获取用户昵称和头像
+    nickname = session.get('nickname')
+    avatar_url = session.get('avatar_url')
+    return render_template('search_results.html', query=query, results=results, nickname=nickname, avatar_url=avatar_url, version=APP_VERSION)
+
 @app.route('/library')
 @login_required
 def library():
@@ -505,11 +547,21 @@ def subscriptions():
     db = get_db()
     miss_movies = db.execute('SELECT * FROM MISS_MOVIES').fetchall()
     miss_tvs = db.execute('SELECT * FROM MISS_TVS').fetchall()
+    # 从数据库中读取 tmdb_api_key
+    tmdb_api_key = db.execute('SELECT VALUE FROM CONFIG WHERE OPTION = ?', ('tmdb_api_key',)).fetchone()
+    tmdb_api_key = tmdb_api_key['VALUE'] if tmdb_api_key else None
     # 从会话中获取用户昵称和头像
     nickname = session.get('nickname')
     avatar_url = session.get('avatar_url')
-    return render_template('subscriptions.html', miss_movies=miss_movies, miss_tvs=miss_tvs, nickname=nickname, avatar_url=avatar_url, version=APP_VERSION)
+    return render_template('subscriptions.html', 
+                         miss_movies=miss_movies, 
+                         miss_tvs=miss_tvs, 
+                         tmdb_api_key=tmdb_api_key,
+                         nickname=nickname, 
+                         avatar_url=avatar_url, 
+                         version=APP_VERSION)
 
+# 手动添加订阅
 @app.route('/add_subscription', methods=['POST'])
 @login_required
 def add_subscription():
@@ -609,17 +661,70 @@ def add_subscription():
         logger.error(f"添加订阅失败: {e}")
         return jsonify({"success": False, "message": "添加订阅失败，请稍后再试"}), 500
 
-@app.route('/douban_subscriptions')
+# 取消热门推荐中的订阅
+@app.route('/cancel_subscription', methods=['POST'])
 @login_required
-def douban_subscriptions():
-    db = get_db()
-    rss_movies = db.execute('SELECT * FROM RSS_MOVIES').fetchall()
-    rss_tvs = db.execute('SELECT * FROM RSS_TVS').fetchall()
-    # 从会话中获取用户昵称和头像
-    nickname = session.get('nickname')
-    avatar_url = session.get('avatar_url')
-    return render_template('douban_subscriptions.html', rss_movies=rss_movies, rss_tvs=rss_tvs, nickname=nickname, avatar_url=avatar_url, version=APP_VERSION)
+def cancel_subscription():
+    try:
+        # 获取请求数据
+        data = request.json
+        title = data.get('title')
+        year = data.get('year')
+        season = data.get('season')
+        media_type = data.get('mediaType')
 
+        # 检查必要字段
+        if not title or not year or not media_type:
+            return jsonify({"success": False, "message": "缺少必要的参数"}), 400
+
+        db = get_db()
+
+        if media_type == 'tv':  # 电视剧取消订阅
+            # 检查是否存在该订阅
+            existing_tv = db.execute(
+                'SELECT * FROM MISS_TVS WHERE title = ? AND year = ? AND season = ?',
+                (title, year, season)
+            ).fetchone()
+
+            if not existing_tv:
+                return jsonify({"success": False, "message": "未找到该电视剧订阅"}), 404
+
+            # 删除订阅
+            db.execute(
+                'DELETE FROM MISS_TVS WHERE title = ? AND year = ? AND season = ?',
+                (title, year, season)
+            )
+            db.commit()
+            logger.info(f"用户取消电视剧订阅: {title} ({year}) 季{season}")
+            return jsonify({"success": True, "message": "电视剧订阅已取消"})
+
+        elif media_type == 'movie':  # 电影取消订阅
+            # 检查是否存在该订阅
+            existing_movie = db.execute(
+                'SELECT * FROM MISS_MOVIES WHERE title = ? AND year = ?',
+                (title, year)
+            ).fetchone()
+
+            if not existing_movie:
+                return jsonify({"success": False, "message": "未找到该电影订阅"}), 404
+
+            # 删除订阅
+            db.execute(
+                'DELETE FROM MISS_MOVIES WHERE title = ? AND year = ?',
+                (title, year)
+            )
+            db.commit()
+            logger.info(f"用户取消电影订阅: {title} ({year})")
+            return jsonify({"success": True, "message": "电影订阅已取消"})
+
+        else:
+            return jsonify({"success": False, "message": "无效的媒体类型"}), 400
+
+    except Exception as e:
+        logger.error(f"取消订阅失败: {e}")
+        return jsonify({"success": False, "message": "取消订阅失败，请稍后再试"}), 500
+
+# 从热门推荐中添加订阅
 @app.route('/tmdb_subscriptions', methods=['POST'])
 @login_required
 def tmdb_subscriptions():
@@ -641,7 +746,7 @@ def tmdb_subscriptions():
             # 生成缺失的集数字符串，例如 "1,2,3,...,episodes"
             missing_episodes = ','.join(map(str, range(1, episodes + 1)))
 
-            # 检查是否已存在相同的订阅
+            # 检查是否已存在相同的订阅（标题、年份和季数的组合）
             existing_tv = db.execute(
                 'SELECT * FROM MISS_TVS WHERE title = ? AND year = ? AND season = ?',
                 (title, year, season)
@@ -680,6 +785,7 @@ def tmdb_subscriptions():
         logger.error(f"订阅处理失败: {e}")
         return jsonify({"success": False, "message": "订阅失败，请稍后再试"}), 500
 
+# 检查热门推荐中的订阅状态（是否已订阅或已入库）
 @app.route('/check_subscriptions', methods=['POST'])
 @login_required
 def check_subscriptions():
@@ -692,7 +798,7 @@ def check_subscriptions():
         db = get_db()
 
         # 检查是否已订阅
-        if season:  # 检查电视剧订阅
+        if season:  # 检查电视剧订阅（特定季）
             existing_tv = db.execute(
                 'SELECT * FROM MISS_TVS WHERE title = ? AND year = ? AND season = ?',
                 (title, year, season)
@@ -700,7 +806,7 @@ def check_subscriptions():
             if existing_tv:
                 return jsonify({"subscribed": True, "status": "subscribed"})
 
-            # 检查是否已入库
+            # 检查是否已入库（特定季）
             existing_tv_in_library = db.execute(
                 '''
                 SELECT t1.id FROM LIB_TVS AS t1
@@ -711,7 +817,8 @@ def check_subscriptions():
             ).fetchone()
             if existing_tv_in_library:
                 return jsonify({"subscribed": True, "status": "in_library"})
-        else:  # 检查电影订阅
+        else:  # 检查电影订阅或电视剧整体订阅
+            # 检查电影订阅
             existing_movie = db.execute(
                 'SELECT * FROM MISS_MOVIES WHERE title = ? AND year = ?',
                 (title, year)
@@ -719,7 +826,7 @@ def check_subscriptions():
             if existing_movie:
                 return jsonify({"subscribed": True, "status": "subscribed"})
 
-            # 检查是否已入库
+            # 检查是否已入库（电影）
             existing_movie_in_library = db.execute(
                 'SELECT id FROM LIB_MOVIES WHERE title = ? AND year = ?',
                 (title, year)
@@ -731,44 +838,6 @@ def check_subscriptions():
     except Exception as e:
         logger.error(f"检查订阅状态失败: {e}")
         return jsonify({"subscribed": False, "error": "检查失败"}), 500
-
-@app.route('/search', methods=['GET'])
-@login_required
-def search():
-    db = get_db()
-    query = request.args.get('q', '').strip()
-    results = []
-
-    if query:
-        # 查询电影并按年份排序
-        movies = db.execute('SELECT * FROM LIB_MOVIES WHERE title LIKE ? ORDER BY year ASC', ('%' + query + '%',)).fetchall()
-        
-        # 查询电视剧并获取其季信息
-        tvs = db.execute('SELECT * FROM LIB_TVS WHERE title LIKE ? ORDER BY title ASC', ('%' + query + '%',)).fetchall()
-
-        # 合并结果
-        for movie in movies:
-            results.append({
-                'type': 'movie',
-                'id': movie['id'],
-                'title': movie['title'],
-                'year': movie['year']
-            })
-
-        for tv in tvs:
-            # 获取该电视剧的所有季信息，并按季数排序
-            seasons = db.execute('SELECT season, episodes FROM LIB_TV_SEASONS WHERE tv_id = ? ORDER BY season ASC', (tv['id'],)).fetchall()
-            tv_data = {
-                'type': 'tv',
-                'id': tv['id'],
-                'title': tv['title'],
-                'seasons': seasons
-            }
-            results.append(tv_data)
-    # 从会话中获取用户昵称和头像
-    nickname = session.get('nickname')
-    avatar_url = session.get('avatar_url')
-    return render_template('search_results.html', query=query, results=results, nickname=nickname, avatar_url=avatar_url, version=APP_VERSION)
 
 @app.route('/edit_subscription/<type>/<int:id>', methods=['GET', 'POST'])
 @login_required
@@ -811,78 +880,117 @@ def delete_subscription(type, id):
     db.commit()
     return redirect(url_for('subscriptions'))
 
-@app.route('/tv_alias')
+# 豆瓣想看
+@app.route('/douban_subscriptions')
 @login_required
-def tv_alias_list():
+def douban_subscriptions():
+    db = get_db()
+    rss_movies = db.execute('SELECT * FROM RSS_MOVIES').fetchall()
+    rss_tvs = db.execute('SELECT * FROM RSS_TVS').fetchall()
+    # 从会话中获取用户昵称和头像
+    nickname = session.get('nickname')
+    avatar_url = session.get('avatar_url')
+    return render_template('douban_subscriptions.html', rss_movies=rss_movies, rss_tvs=rss_tvs, nickname=nickname, avatar_url=avatar_url, version=APP_VERSION)
+
+# 获取剧集关联列表的JSON接口
+@app.route('/tv_alias_list_json')
+@login_required
+def tv_alias_list_json():
     try:
         db = get_db()
         alias_list = db.execute('SELECT * FROM LIB_TV_ALIAS ORDER BY id DESC').fetchall()
-        nickname = session.get('nickname')
-        avatar_url = session.get('avatar_url')
-        return render_template('tv_alias_list.html', alias_list=alias_list, nickname=nickname, avatar_url=avatar_url, version=APP_VERSION)
+        # 将Row对象转换为字典列表
+        alias_list_dict = [dict(row) for row in alias_list]
+        return jsonify({"alias_list": alias_list_dict})
     except Exception as e:
-        logger.error(f"访问tv_alias_list出错: {e}")
-        flash('加载剧集关联时发生错误，请检查日志。', 'error')
-        return render_template('tv_alias_list.html', alias_list=[], nickname=session.get('nickname'), avatar_url=session.get('avatar_url'), version=APP_VERSION)
+        logger.error(f"获取剧集关联列表失败: {e}")
+        return jsonify({"error": "获取剧集关联列表失败"}), 500
 
-@app.route('/tv_alias/add', methods=['GET', 'POST'])
+# 获取单个剧集关联信息的JSON接口
+@app.route('/tv_alias_edit_json/<int:alias_id>')
 @login_required
-def tv_alias_add():
-    db = get_db()
-    if request.method == 'POST':
-        alias = request.form.get('alias', '').strip()
-        target_title = request.form.get('target_title', '').strip()
-        target_season = request.form.get('target_season', '').strip() or None
+def tv_alias_edit_json(alias_id):
+    try:
+        db = get_db()
+        alias = db.execute('SELECT * FROM LIB_TV_ALIAS WHERE id = ?', (alias_id,)).fetchone()
+        if alias:
+            return jsonify({"alias": dict(alias)})
+        else:
+            return jsonify({"error": "未找到该关联"}), 404
+    except Exception as e:
+        logger.error(f"获取剧集关联信息失败: {e}")
+        return jsonify({"error": "获取剧集关联信息失败"}), 500
+
+# 添加剧集关联的API接口
+@app.route('/tv_alias_add', methods=['POST'])
+@login_required
+def tv_alias_add_api():
+    try:
+        data = request.json
+        alias = data.get('alias', '').strip()
+        target_title = data.get('target_title', '').strip()
+        target_season = data.get('target_season', None)
+        
         if not alias or not target_title:
-            flash('别名和目标名称不能为空', 'error')
-            return redirect(url_for('tv_alias_add'))
+            return jsonify({"success": False, "message": "别名和目标名称不能为空"}), 400
+            
+        db = get_db()
         try:
-            db.execute('INSERT INTO LIB_TV_ALIAS (ALIAS, TARGET_TITLE, TARGET_SEASON) VALUES (?, ?, ?)', (alias, target_title, target_season))
+            db.execute('INSERT INTO LIB_TV_ALIAS (ALIAS, TARGET_TITLE, TARGET_SEASON) VALUES (?, ?, ?)', 
+                      (alias, target_title, target_season))
             db.commit()
-            flash('添加成功', 'success')
-            return redirect(url_for('tv_alias_list'))
+            return jsonify({"success": True, "message": "添加成功"})
         except sqlite3.IntegrityError:
-            flash('该别名已存在', 'error')
-            return redirect(url_for('tv_alias_add'))
-    nickname = session.get('nickname')
-    avatar_url = session.get('avatar_url')
-    return render_template('tv_alias_edit.html', alias=None, nickname=nickname, avatar_url=avatar_url, version=APP_VERSION)
+            return jsonify({"success": False, "message": "该别名已存在"}), 400
+    except Exception as e:
+        logger.error(f"添加剧集关联失败: {e}")
+        return jsonify({"success": False, "message": "添加失败，请稍后再试"}), 500
 
-@app.route('/tv_alias/edit/<int:alias_id>', methods=['GET', 'POST'])
+# 编辑剧集关联的API接口
+@app.route('/tv_alias_edit/<int:alias_id>', methods=['POST'])
 @login_required
-def tv_alias_edit(alias_id):
-    db = get_db()
-    alias = db.execute('SELECT * FROM LIB_TV_ALIAS WHERE id = ?', (alias_id,)).fetchone()
-    if not alias:
-        flash('未找到该映射', 'error')
-        return redirect(url_for('tv_alias_list'))
-    if request.method == 'POST':
-        new_alias = request.form.get('alias', '').strip()
-        target_title = request.form.get('target_title', '').strip()
-        target_season = request.form.get('target_season', '').strip() or None
-        if not new_alias or not target_title:
-            flash('别名和目标名称不能为空', 'error')
-            return redirect(url_for('tv_alias_edit', alias_id=alias_id))
+def tv_alias_edit_api(alias_id):
+    try:
+        data = request.json
+        alias = data.get('alias', '').strip()
+        target_title = data.get('target_title', '').strip()
+        target_season = data.get('target_season', None)
+        
+        if not alias or not target_title:
+            return jsonify({"success": False, "message": "别名和目标名称不能为空"}), 400
+            
+        db = get_db()
+        existing_alias = db.execute('SELECT * FROM LIB_TV_ALIAS WHERE id = ?', (alias_id,)).fetchone()
+        if not existing_alias:
+            return jsonify({"success": False, "message": "未找到该关联"}), 404
+            
         try:
-            db.execute('UPDATE LIB_TV_ALIAS SET ALIAS = ?, TARGET_TITLE = ?, TARGET_SEASON = ? WHERE id = ?', (new_alias, target_title, target_season, alias_id))
+            db.execute('UPDATE LIB_TV_ALIAS SET ALIAS = ?, TARGET_TITLE = ?, TARGET_SEASON = ? WHERE id = ?', 
+                      (alias, target_title, target_season, alias_id))
             db.commit()
-            flash('修改成功', 'success')
-            return redirect(url_for('tv_alias_list'))
+            return jsonify({"success": True, "message": "更新成功"})
         except sqlite3.IntegrityError:
-            flash('该别名已存在', 'error')
-            return redirect(url_for('tv_alias_edit', alias_id=alias_id))
-    nickname = session.get('nickname')
-    avatar_url = session.get('avatar_url')
-    return render_template('tv_alias_edit.html', alias=alias, nickname=nickname, avatar_url=avatar_url, version=APP_VERSION)
+            return jsonify({"success": False, "message": "该别名已存在"}), 400
+    except Exception as e:
+        logger.error(f"更新剧集关联失败: {e}")
+        return jsonify({"success": False, "message": "更新失败，请稍后再试"}), 500
 
-@app.route('/tv_alias/delete/<int:alias_id>', methods=['POST'])
+# 删除剧集关联的API接口
+@app.route('/tv_alias_delete/<int:alias_id>', methods=['POST'])
 @login_required
-def tv_alias_delete(alias_id):
-    db = get_db()
-    db.execute('DELETE FROM LIB_TV_ALIAS WHERE id = ?', (alias_id,))
-    db.commit()
-    flash('删除成功', 'success')
-    return redirect(url_for('tv_alias_list'))
+def tv_alias_delete_api(alias_id):
+    try:
+        db = get_db()
+        existing_alias = db.execute('SELECT * FROM LIB_TV_ALIAS WHERE id = ?', (alias_id,)).fetchone()
+        if not existing_alias:
+            return jsonify({"success": False, "message": "未找到该关联"}), 404
+            
+        db.execute('DELETE FROM LIB_TV_ALIAS WHERE id = ?', (alias_id,))
+        db.commit()
+        return jsonify({"success": True, "message": "删除成功"})
+    except Exception as e:
+        logger.error(f"删除剧集关联失败: {e}")
+        return jsonify({"success": False, "message": "删除失败，请稍后再试"}), 500
 
 @app.route('/service_control')
 @login_required
@@ -967,254 +1075,6 @@ def manual_search():
     logger.info(f"用户 {nickname} 访问手动搜索页面")
     return render_template('manual_search.html', nickname=nickname, avatar_url=avatar_url, version=APP_VERSION, tmdb_api_key=tmdb_api_key)
 
-def search_media(media_type, title, year, season=None):
-    """
-    统一资源搜索方法，根据媒体类型和标题调用不同的脚本进行搜索。
-    搜索结果将按照站点分类保存到 /tmp/index/ 目录中。
-    如果存在30分钟内的结果文件，则直接使用这些结果，无需重新搜索。
-    """
-    # 基础搜索脚本配置
-    search_scripts = [
-        {
-            "script": "python movie_bthd.py --manual --title \"{title}\" --year {year}",
-            "type": "movie",
-            "site": "BTHD"
-        },
-        {
-            "script": "python tvshow_hdtv.py --manual --title \"{title}\" --year {year}",
-            "type": "tv",
-            "site": "HDTV"
-        },
-        {
-            "script": "python movie_tvshow_btys.py --manual --type {type} --title \"{title}\" --year {year}",
-            "type": "both",
-            "site": "BTYS"
-        },
-        {
-            "script": "python movie_tvshow_bt0.py --manual --type {type} --title \"{title}\" --year {year}",
-            "type": "both",
-            "site": "BT0"
-        },
-        {
-            "script": "python movie_tvshow_gy.py --manual --type {type} --title \"{title}\" --year {year}",
-            "type": "both",
-            "site": "GY"
-        }
-    ]
-
-    # 为电视剧脚本添加season参数（仅当season存在时）
-    for script_info in search_scripts:
-        if (script_info["type"] == "tv" or script_info["type"] == "both") and media_type == "tv" and season is not None:
-            script_info["script"] += " --season {season}"
-
-    results_dir = "/tmp/index/"
-    os.makedirs(results_dir, exist_ok=True)
-
-    all_results = {}
-    
-    # 检查是否存在30分钟内的结果文件
-    current_time = time.time()
-    time_threshold = 30 * 60  # 30分钟 = 1800秒
-    
-    # 根据媒体类型使用不同的文件匹配模式
-    if media_type == "tv":
-        # 电视剧文件命名格式: 标题-S*-年份-站点.json (例如: 长安的荔枝-S1-2025-GY.json)
-        if season:
-            result_pattern = os.path.join(results_dir, f"{title}-S{season}*{year}*.json")
-        else:
-            result_pattern = os.path.join(results_dir, f"{title}-S*{year}*.json")
-    else:
-        # 电影文件命名格式: 标题-年份-站点.json (例如: 超人2-1980-GY.json)
-        # 需要排除电视剧格式的文件（即包含-S*的文件）
-        result_pattern = os.path.join(results_dir, f"{title}-*{year}*.json")
-    
-    existing_result_files = glob.glob(result_pattern)
-    
-    # 对于电影，需要过滤掉电视剧文件
-    if media_type == "movie":
-        filtered_files = []
-        for file in existing_result_files:
-            filename = os.path.basename(file)
-            # 排除电视剧格式（包含-S数字的文件）
-            if not re.search(rf"{re.escape(title)}-S\d+.*{year}", filename):
-                filtered_files.append(file)
-        existing_result_files = filtered_files
-    
-    # 对于电视剧，如果有指定season，则进一步过滤
-    if media_type == "tv" and season:
-        filtered_files = []
-        for file in existing_result_files:
-            filename = os.path.basename(file)
-            # 只保留指定season的文件
-            if re.search(rf"{re.escape(title)}-S{season}.*{year}", filename):
-                filtered_files.append(file)
-        existing_result_files = filtered_files
-    
-    valid_results = []
-    for result_file in existing_result_files:
-        try:
-            # 检查文件修改时间
-            file_mtime = os.path.getmtime(result_file)
-            if current_time - file_mtime <= time_threshold:
-                valid_results.append(result_file)
-        except OSError:
-            # 如果无法获取文件信息，跳过该文件
-            continue
-    
-    # 如果存在有效结果文件，直接读取并返回
-    if valid_results:
-        logger.info(f"发现 {len(valid_results)} 个有效缓存结果文件，跳过重新搜索")
-        for result_file in valid_results:
-            try:
-                # 从文件名中提取站点信息
-                filename = os.path.basename(result_file)
-                site = None
-                for script_info in search_scripts:
-                    if script_info["site"] in filename:
-                        site = script_info["site"]
-                        break
-                
-                if not site:
-                    continue
-                
-                with open(result_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    logger.info(f"成功读取缓存搜索结果: {result_file}")
-
-                    # 按站点分类结果
-                    if site not in all_results:
-                        all_results[site] = []
-
-                    # 提取需要的字段
-                    for resolution_key in ["首选分辨率", "备选分辨率", "其他分辨率"]:
-                        if resolution_key in data:
-                            if media_type == "tv":
-                                # 针对 电视节目 数据
-                                for category_key in ["单集", "集数范围", "全集"]:
-                                    if category_key in data[resolution_key]:
-                                        for item in data[resolution_key][category_key]:
-                                            all_results[site].append({
-                                                "title": item.get("title"),
-                                                "link": item.get("link"),
-                                                "resolution": item.get("resolution")
-                                            })
-                            else:
-                                # 针对 电影 数据
-                                for item in data[resolution_key]:
-                                    all_results[site].append({
-                                        "title": item.get("title"),
-                                        "link": item.get("link"),
-                                        "resolution": item.get("resolution")
-                                    })
-            except Exception as e:
-                logger.error(f"读取缓存搜索结果失败: {result_file}, 错误: {e}")
-        
-        # 如果成功从缓存读取到结果，则直接返回
-        if all_results:
-            return all_results
-
-    # 如果没有有效缓存结果，则执行搜索脚本
-    logger.info("未找到有效的缓存结果，开始执行搜索脚本")
-    
-    for script_info in search_scripts:
-        if script_info["type"] == "both" or script_info["type"] == media_type:
-            # 格式化脚本命令
-            if media_type == "tv" and season is not None:
-                script_command = script_info["script"].format(
-                    type=media_type,
-                    title=title,
-                    year=year,
-                    season=season
-                )
-            else:
-                script_command = script_info["script"].format(
-                    type=media_type,
-                    title=title,
-                    year=year
-                )
-            
-            try:
-                # 执行搜索脚本
-                subprocess.run(script_command, shell=True, check=True)
-                logger.info(f"成功执行脚本: {script_command}")
-            except subprocess.CalledProcessError as e:
-                logger.error(f"执行脚本失败: {script_command}, 错误: {e}")
-                continue
-
-            # 使用通配符匹配结果文件
-            if media_type == "tv":
-                # 电视剧结果文件命名格式
-                if season:
-                    result_pattern = os.path.join(results_dir, f"{title}-S{season}*{year}*{script_info['site']}*.json")
-                else:
-                    result_pattern = os.path.join(results_dir, f"{title}-S*{year}*{script_info['site']}*.json")
-            else:
-                # 电影结果文件命名格式
-                result_pattern = os.path.join(results_dir, f"{title}-*{year}*{script_info['site']}*.json")
-            
-            result_files = glob.glob(result_pattern)
-
-            # 对于电影，需要过滤掉电视剧文件
-            if media_type == "movie":
-                filtered_files = []
-                for file in result_files:
-                    filename = os.path.basename(file)
-                    # 排除电视剧格式（包含-S数字的文件）
-                    if not re.search(rf"{re.escape(title)}-S\d+.*{year}.*{script_info['site']}", filename):
-                        filtered_files.append(file)
-                result_files = filtered_files
-
-            # 对于电视剧，如果有指定season，则进一步过滤
-            if media_type == "tv" and season:
-                filtered_files = []
-                for file in result_files:
-                    filename = os.path.basename(file)
-                    # 只保留指定season的文件
-                    if re.search(rf"{re.escape(title)}-S{season}.*{year}.*{script_info['site']}", filename):
-                        filtered_files.append(file)
-                result_files = filtered_files
-
-            if not result_files:
-                logger.warning(f"未找到匹配的结果文件: {result_pattern}")
-                continue
-
-            for result_file in result_files:
-                try:
-                    with open(result_file, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                        logger.info(f"成功读取搜索结果: {result_file}")
-
-                        # 按站点分类结果
-                        site = script_info["site"]
-                        if site not in all_results:
-                            all_results[site] = []
-
-                        # 提取需要的字段
-                        for resolution_key in ["首选分辨率", "备选分辨率", "其他分辨率"]:
-                            if resolution_key in data:
-                                if media_type == "tv":
-                                    # 针对 电视节目 数据
-                                    for category_key in ["单集", "集数范围", "全集"]:
-                                        if category_key in data[resolution_key]:
-                                            for item in data[resolution_key][category_key]:
-                                                all_results[site].append({
-                                                    "title": item.get("title"),
-                                                    "link": item.get("link"),
-                                                    "resolution": item.get("resolution")
-                                                })
-                                else:
-                                    # 针对 电影 数据
-                                    for item in data[resolution_key]:
-                                        all_results[site].append({
-                                            "title": item.get("title"),
-                                            "link": item.get("link"),
-                                            "resolution": item.get("resolution")
-                                        })
-                except Exception as e:
-                    logger.error(f"读取搜索结果失败: {result_file}, 错误: {e}")
-
-    return all_results
-
 @app.route('/api/search_media', methods=['POST'])
 @login_required
 def api_search_media():
@@ -1226,20 +1086,308 @@ def api_search_media():
     title = data.get('title')
     year = data.get('year')
     season = data.get('season')  # 获取季数参数
+    force_refresh = data.get('force_refresh', False)  # 是否强制刷新
     nickname = session.get('nickname')
 
     if not media_type or not title or not year:
         logger.warning(f"用户 {nickname} 搜索资源失败: 缺少参数")
         return jsonify({'error': '缺少参数'}), 400
 
-    logger.info(f"用户 {nickname} 搜索资源: 类型={media_type}, 标题={title}, 年份={year}" + (f", 季数={season}" if season else ""))
-    try:
-        search_results = search_media(media_type, title, year, season)
-        logger.info(f"用户 {nickname} 搜索资源成功: 类型={media_type}, 标题={title}, 年份={year}" + (f", 季数={season}" if season else ""))
-        return jsonify({'success': True, 'results': search_results})
-    except Exception as e:
-        logger.error(f"用户 {nickname} 搜索资源失败: {e}")
-        return jsonify({'error': '搜索失败，请稍后再试。'}), 500
+    logger.info(f"用户 {nickname} 搜索资源: 类型={media_type}, 标题={title}, 年份={year}" + (f", 季数={season}" if season else "") + (f", 强制刷新={force_refresh}" if force_refresh else ""))
+    
+    def generate():
+        try:
+            # 开始搜索
+            yield f"data: {json.dumps({'status': 'start', 'message': '开始搜索资源'})}\n\n"
+            
+            # 检查缓存结果（除非强制刷新）
+            results_dir = "/tmp/index/"
+            current_time = time.time()
+            time_threshold = 30 * 60  # 30分钟 = 1800秒
+            
+            if not force_refresh:
+                # 根据媒体类型使用不同的文件匹配模式
+                if media_type == "tv":
+                    # 电视剧文件命名格式
+                    if season:
+                        result_pattern = os.path.join(results_dir, f"{title}-S{season}*{year}*.json")
+                    else:
+                        result_pattern = os.path.join(results_dir, f"{title}-S*{year}*.json")
+                else:
+                    # 电影文件命名格式
+                    result_pattern = os.path.join(results_dir, f"{title}-*{year}*.json")
+                
+                existing_result_files = glob.glob(result_pattern)
+                
+                # 过滤文件
+                filtered_files = []
+                for file in existing_result_files:
+                    filename = os.path.basename(file)
+                    if media_type == "movie":
+                        # 排除电视剧格式（包含-S数字的文件）
+                        if not re.search(rf"{re.escape(title)}-S\d+.*{year}", filename):
+                            filtered_files.append(file)
+                    elif media_type == "tv" and season:
+                        # 只保留指定season的文件
+                        if re.search(rf"{re.escape(title)}-S{season}.*{year}", filename):
+                            filtered_files.append(file)
+                    else:
+                        filtered_files.append(file)
+                
+                valid_results = []
+                for result_file in filtered_files:
+                    try:
+                        # 检查文件修改时间
+                        file_mtime = os.path.getmtime(result_file)
+                        if current_time - file_mtime <= time_threshold:
+                            valid_results.append(result_file)
+                    except OSError:
+                        # 如果无法获取文件信息，跳过该文件
+                        continue
+                
+                # 如果存在有效结果文件，直接读取并返回
+                if valid_results:
+                    yield f"data: {json.dumps({'status': 'cache_found', 'message': f'发现 {len(valid_results)} 个缓存结果'})}\n\n"
+                    
+                    all_results = {}
+                    for i, result_file in enumerate(valid_results):
+                        try:
+                            filename = os.path.basename(result_file)
+                            site = None
+                            
+                            # 基础搜索脚本配置（用于提取站点信息）
+                            search_scripts = [
+                                {"site": "BTHD"},
+                                {"site": "HDTV"},
+                                {"site": "BTYS"},
+                                {"site": "BT0"},
+                                {"site": "GY"}
+                            ]
+                            
+                            for script_info in search_scripts:
+                                if script_info["site"] in filename:
+                                    site = script_info["site"]
+                                    break
+                            
+                            if not site:
+                                continue
+                            
+                            with open(result_file, "r", encoding="utf-8") as f:
+                                data = json.load(f)
+                                
+                                # 按站点分类结果
+                                if site not in all_results:
+                                    all_results[site] = []
+
+                                # 提取需要的字段
+                                for resolution_key in ["首选分辨率", "备选分辨率", "其他分辨率"]:
+                                    if resolution_key in data:
+                                        if media_type == "tv":
+                                            # 针对 电视节目 数据
+                                            for category_key in ["单集", "集数范围", "全集"]:
+                                                if category_key in data[resolution_key]:
+                                                    for item in data[resolution_key][category_key]:
+                                                        all_results[site].append({
+                                                            "title": item.get("title"),
+                                                            "link": item.get("link"),
+                                                            "resolution": item.get("resolution")
+                                                        })
+                                        else:
+                                            # 针对 电影 数据
+                                            for item in data[resolution_key]:
+                                                all_results[site].append({
+                                                    "title": item.get("title"),
+                                                    "link": item.get("link"),
+                                                    "resolution": item.get("resolution")
+                                                })
+                            
+                            # 发送单个站点的结果
+                            yield f"data: {json.dumps({'status': 'result', 'site': site, 'data': all_results[site]})}\n\n"
+                            
+                        except Exception as e:
+                            logger.error(f"读取缓存搜索结果失败: {result_file}, 错误: {e}")
+                    
+                    yield f"data: {json.dumps({'status': 'complete', 'message': '缓存结果加载完成'})}\n\n"
+                    return
+            
+            # 没有缓存结果或强制刷新，执行实时搜索
+            if force_refresh:
+                yield f"data: {json.dumps({'status': 'no_cache', 'message': '强制刷新，开始实时搜索'})}\n\n"
+            else:
+                yield f"data: {json.dumps({'status': 'no_cache', 'message': '未找到缓存结果，开始实时搜索'})}\n\n"
+            
+            # 基础搜索脚本配置
+            search_scripts = [
+                {
+                    "script": "python movie_bthd.py --manual --title \"{title}\" --year {year}",
+                    "type": "movie",
+                    "site": "BTHD"
+                },
+                {
+                    "script": "python tvshow_hdtv.py --manual --title \"{title}\" --year {year}",
+                    "type": "tv",
+                    "site": "HDTV"
+                },
+                {
+                    "script": "python movie_tvshow_btys.py --manual --type {type} --title \"{title}\" --year {year}",
+                    "type": "both",
+                    "site": "BTYS"
+                },
+                {
+                    "script": "python movie_tvshow_bt0.py --manual --type {type} --title \"{title}\" --year {year}",
+                    "type": "both",
+                    "site": "BT0"
+                },
+                {
+                    "script": "python movie_tvshow_gy.py --manual --type {type} --title \"{title}\" --year {year}",
+                    "type": "both",
+                    "site": "GY"
+                }
+            ]
+
+            # 为电视剧脚本添加season参数（仅当season存在时）
+            for script_info in search_scripts:
+                if (script_info["type"] == "tv" or script_info["type"] == "both") and media_type == "tv" and season is not None:
+                    script_info["script"] += " --season {season}"
+
+            all_results = {}
+            
+            # 定义执行单个脚本的函数
+            def execute_script(script_info, instance_id):
+                # 格式化脚本命令
+                if media_type == "tv" and season is not None:
+                    script_command = script_info["script"].format(
+                        type=media_type,
+                        title=title,
+                        year=year,
+                        season=season
+                    )
+                else:
+                    script_command = script_info["script"].format(
+                        type=media_type,
+                        title=title,
+                        year=year
+                    )
+                
+                # 添加instance_id参数
+                script_command += f" --instance-id {instance_id}"
+                
+                try:
+                    # 执行搜索脚本
+                    subprocess.run(script_command, shell=True, check=True)
+                    logger.info(f"成功执行脚本: {script_command}")
+                    return script_info, True
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"执行脚本失败: {script_command}, 错误: {e}")
+                    return script_info, False
+            
+            # 使用线程池并行执行脚本
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                # 提交所有符合条件的脚本任务
+                future_to_script = {}
+                for i, script_info in enumerate(search_scripts):
+                    if script_info["type"] == "both" or script_info["type"] == media_type:
+                        # 为每个脚本生成固定的instance_id
+                        instance_id = f"manual_{script_info['site']}_{i}"
+                        future = executor.submit(execute_script, script_info, instance_id)
+                        future_to_script[future] = script_info
+                
+                # 等待所有任务完成并处理结果
+                completed_count = 0
+                total_scripts = len(future_to_script)
+                
+                for future in as_completed(future_to_script):
+                    script_info, success = future.result()
+                    completed_count += 1
+                    
+                    if not success:
+                        message = f'站点 {script_info["site"]} 搜索失败 ({completed_count}/{total_scripts})'
+                        yield f"data: {json.dumps({'status': 'progress', 'message': message})}\n\n"
+                        continue
+                    
+                    # 使用通配符匹配结果文件
+                    if media_type == "tv":
+                        # 电视剧结果文件命名格式
+                        if season:
+                            result_pattern = os.path.join(results_dir, f"{title}-S{season}*{year}*{script_info['site']}*.json")
+                        else:
+                            result_pattern = os.path.join(results_dir, f"{title}-S*{year}*{script_info['site']}*.json")
+                    else:
+                        # 电影结果文件命名格式
+                        result_pattern = os.path.join(results_dir, f"{title}-*{year}*{script_info['site']}*.json")
+                    
+                    result_files = glob.glob(result_pattern)
+
+                    # 过滤文件
+                    filtered_files = []
+                    for file in result_files:
+                        filename = os.path.basename(file)
+                        if media_type == "movie":
+                            # 排除电视剧格式（包含-S数字的文件）
+                            if not re.search(rf"{re.escape(title)}-S\d+.*{year}.*{script_info['site']}", filename):
+                                filtered_files.append(file)
+                        elif media_type == "tv" and season:
+                            # 只保留指定season的文件
+                            if re.search(rf"{re.escape(title)}-S{season}.*{year}.*{script_info['site']}", filename):
+                                filtered_files.append(file)
+                        else:
+                            filtered_files.append(file)
+                    
+                    result_files = filtered_files
+
+                    if not result_files:
+                        message = f'站点 {script_info["site"]} 未找到结果 ({completed_count}/{total_scripts})'
+                        yield f"data: {json.dumps({'status': 'progress', 'message': message})}\n\n"
+                        continue
+
+                    for result_file in result_files:
+                        try:
+                            with open(result_file, "r", encoding="utf-8") as f:
+                                data = json.load(f)
+                                
+                                # 按站点分类结果
+                                site = script_info["site"]
+                                if site not in all_results:
+                                    all_results[site] = []
+
+                                # 提取需要的字段
+                                for resolution_key in ["首选分辨率", "备选分辨率", "其他分辨率"]:
+                                    if resolution_key in data:
+                                        if media_type == "tv":
+                                            # 针对 电视节目 数据
+                                            for category_key in ["单集", "集数范围", "全集"]:
+                                                if category_key in data[resolution_key]:
+                                                    for item in data[resolution_key][category_key]:
+                                                        all_results[site].append({
+                                                            "title": item.get("title"),
+                                                            "link": item.get("link"),
+                                                            "resolution": item.get("resolution")
+                                                        })
+                                        else:
+                                            # 针对 电影 数据
+                                            for item in data[resolution_key]:
+                                                all_results[site].append({
+                                                    "title": item.get("title"),
+                                                    "link": item.get("link"),
+                                                    "resolution": item.get("resolution")
+                                                })
+                                
+                                # 发送单个站点的结果
+                                yield f"data: {json.dumps({'status': 'result', 'site': site, 'data': all_results[site]})}\n\n"
+                                
+                        except Exception as e:
+                            logger.error(f"读取搜索结果失败: {result_file}, 错误: {e}")
+                    
+                    message = f'完成站点 {script_info["site"]} 搜索 ({completed_count}/{total_scripts})'
+                    yield f"data: {json.dumps({'status': 'progress', 'message': message})}\n\n"
+            
+            yield f"data: {json.dumps({'status': 'complete', 'message': '所有搜索完成'})}\n\n"
+            
+        except Exception as e:
+            logger.error(f"用户 {nickname} 搜索资源失败: {e}")
+            yield f"data: {json.dumps({'status': 'error', 'message': '搜索过程中发生错误'})}\n\n"
+
+    return Response(stream_with_context(generate()), mimetype='text/plain')
 
 @app.route('/api/download_resource', methods=['POST'])
 @login_required
@@ -1652,46 +1800,47 @@ def get_magnet_links():
         logger.error(f"获取磁力链接失败: {e}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/check_update', methods=['GET'])
+@app.route('/test_downloader_connection', methods=['POST'])
 @login_required
-def check_update():
+def test_downloader_connection():
+    """
+    测试下载器连接
+    """
     try:
-        # 当前版本号
-        current_version = APP_VERSION
-
-        # GitHub API 地址和代理地址
-        repo_url = "https://api.github.com/repos/smysong/mediamaster-v2/releases/latest"
-        proxy_url = "https://gh.llkk.cc/https://api.github.com/repos/smysong/mediamaster-v2/releases/latest"
-
-        # 优先尝试直连
-        try:
-            response = requests.get(repo_url, timeout=5)
-            if response.status_code != 200:
-                raise Exception(f"主地址返回异常: {response.text}")
-        except Exception as e:
-            logger.warning(f"主地址连接失败，尝试代理: {e}")
-            response = requests.get(proxy_url, timeout=8)
-
-        if response.status_code != 200:
-            logger.error(f"无法获取 GitHub 版本信息: {response.text}")
-            return jsonify({"error": "无法连接到 GitHub，请稍后再试。"}), 500
-
-        latest_release = response.json()
-        latest_version = latest_release.get("tag_name", "").lstrip("v")  # 去掉可能的 'v' 前缀
-        release_notes = latest_release.get("body", "无更新说明")
-
-        # 比较版本号
-        is_update_available = compare_versions(current_version, latest_version)
-
-        return jsonify({
-            "current_version": current_version,
-            "latest_version": latest_version,
-            "is_update_available": is_update_available,
-            "release_notes": release_notes
-        })
+        data = request.json
+        downloader = data.get('downloader')
+        host = data.get('host')
+        port = data.get('port')
+        username = data.get('username')
+        password = data.get('password')
+        
+        if downloader == 'transmission':
+            client = TransmissionClient(
+                host=host,
+                port=port,
+                username=username,
+                password=password
+            )
+            # 尝试获取会话信息来测试连接
+            client.get_session()
+            return jsonify({"success": True, "message": "Transmission连接成功"})
+            
+        elif downloader == 'qbittorrent':
+            client = QbittorrentClient(
+                host=f"http://{host}:{port}",
+                username=username,
+                password=password
+            )
+            # 尝试获取应用版本来测试连接
+            client.app_version()
+            return jsonify({"success": True, "message": "qBittorrent连接成功"})
+            
+        else:
+            return jsonify({"success": False, "message": "不支持的下载器类型"}), 400
+            
     except Exception as e:
-        logger.error(f"检查更新失败: {e}")
-        return jsonify({"error": "检查更新失败，请稍后再试。"}), 500
+        logger.error(f"下载器连接测试失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 200
 
 def compare_versions(current, latest):
     """比较版本号，返回是否需要更新"""
@@ -1727,19 +1876,118 @@ def get_fastest_proxy(original_url):
     logger.info(f"最快的代理地址是: {fastest_proxy}，响应时间: {response_times[fastest_proxy]:.2f} 秒")
     return fastest_proxy
 
+@app.route('/health_check', methods=['GET'])
+def health_check():
+    return jsonify({"status": "ok"}), 200
+
+@app.route('/check_update', methods=['GET'])
+@login_required
+def check_update():
+    try:
+        # 当前版本号
+        current_version = APP_VERSION
+
+        # GitHub API 地址和代理地址
+        repo_url = "https://api.github.com/repos/smysong/mediamaster-v2/releases"
+        latest_release_url = "https://api.github.com/repos/smysong/mediamaster-v2/releases/latest"
+        proxy_url = "https://gh.llkk.cc/https://api.github.com/repos/smysong/mediamaster-v2/releases"
+        proxy_latest_url = "https://gh.llkk.cc/https://api.github.com/repos/smysong/mediamaster-v2/releases/latest"
+
+        # 获取所有发布版本
+        try:
+            response = requests.get(repo_url, timeout=5)
+            if response.status_code != 200:
+                raise Exception(f"主地址返回异常: {response.text}")
+        except Exception as e:
+            logger.warning(f"主地址连接失败，尝试代理: {e}")
+            response = requests.get(proxy_url, timeout=8)
+
+        if response.status_code != 200:
+            logger.error(f"无法获取 GitHub 版本信息: {response.text}")
+            return jsonify({"error": "无法连接到 GitHub，请稍后再试。"}), 500
+
+        releases = response.json()
+        
+        # 获取GitHub标记的最新稳定版本
+        latest_stable_release = None
+        try:
+            latest_response = requests.get(latest_release_url, timeout=5)
+            if latest_response.status_code == 200:
+                latest_stable_release = latest_response.json()
+        except Exception as e:
+            logger.warning(f"获取latest release失败，尝试代理: {e}")
+            try:
+                latest_response = requests.get(proxy_latest_url, timeout=8)
+                if latest_response.status_code == 200:
+                    latest_stable_release = latest_response.json()
+            except Exception as e2:
+                logger.warning(f"代理获取latest release也失败: {e2}")
+
+        # 如果无法获取GitHub标记的latest release，则查找第一个非预发布版本
+        if not latest_stable_release:
+            for release in releases:
+                if not release.get("prerelease"):
+                    latest_stable_release = release
+                    break
+        
+        # 获取最新的预发布版本
+        latest_prerelease_release = None
+        for release in releases:
+            if release.get("prerelease"):
+                latest_prerelease_release = release
+                break
+
+        # 构建返回数据
+        result = {
+            "current_version": current_version,
+        }
+        
+        # 处理稳定版信息
+        if latest_stable_release:
+            stable_version = latest_stable_release.get("tag_name", "").lstrip("v")
+            result["latest_stable_version"] = stable_version
+            result["stable_release_notes"] = latest_stable_release.get("body", "无更新说明")
+            result["stable_update_available"] = compare_versions(current_version, stable_version)
+        else:
+            result["latest_stable_version"] = None
+            result["stable_release_notes"] = None
+            result["stable_update_available"] = False
+            
+        # 处理预发布版信息
+        if latest_prerelease_release:
+            prerelease_version = latest_prerelease_release.get("tag_name", "").lstrip("v")
+            result["latest_prerelease_version"] = prerelease_version
+            result["prerelease_release_notes"] = latest_prerelease_release.get("body", "无更新说明")
+            result["prerelease_update_available"] = compare_versions(current_version, prerelease_version)
+        else:
+            result["latest_prerelease_version"] = None
+            result["prerelease_release_notes"] = None
+            result["prerelease_update_available"] = False
+            
+        # 总体更新可用性（任一版本有更新即为可用）
+        result["is_update_available"] = result["stable_update_available"] or result["prerelease_update_available"]
+
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"检查更新失败: {e}")
+        return jsonify({"error": "检查更新失败，请稍后再试。"}), 500
+
 @app.route('/perform_update', methods=['POST'])
 @login_required
 def perform_update():
     try:
         # 获取当前版本号
         current_version = APP_VERSION
+        
+        # 获取更新类型参数（latest 或 prerelease）
+        update_type = request.json.get('type', 'latest')  # 默认更新到最新稳定版
 
         # 检查是否有更新权限
         if not session.get('user_id'):
             logger.warning("未授权用户尝试执行更新")
             return jsonify({"error": "未授权的操作"}), 403
 
-        logger.info("开始执行更新操作...")
+        logger.info(f"开始执行更新操作，更新类型: {update_type}")
 
         # 步骤1: 设置 Git 代理加速地址
         original_url = "https://github.com/smysong/mediamaster-v2.git"
@@ -1752,21 +2000,161 @@ def perform_update():
             cwd='/app'
         )
 
-        # 步骤2: 拉取最新代码
-        logger.info("正在从 Git 仓库拉取最新代码...")
-        result = subprocess.run(
-            ['git', 'pull'],
-            capture_output=True,
-            text=True,
-            cwd='/app'
-        )
-
-        if result.returncode != 0:
-            error_message = f"Git 拉取失败: {result.stderr}"
-            logger.error(error_message)
-            return jsonify({"error": error_message}), 500
-
-        logger.info(f"Git 拉取成功: {result.stdout}")
+        # 步骤2: 根据更新类型执行不同的更新操作
+        if update_type == 'prerelease':
+            # 更新到最新的预发布版本
+            logger.info("正在获取最新的预发布版本标签...")
+            
+            # 先获取所有发布版本信息
+            repo_url = "https://api.github.com/repos/smysong/mediamaster-v2/releases"
+            proxy_url = "https://gh.llkk.cc/https://api.github.com/repos/smysong/mediamaster-v2/releases"
+            
+            try:
+                response = requests.get(repo_url, timeout=5)
+            except Exception as e:
+                logger.warning(f"主地址连接失败，尝试代理: {e}")
+                response = requests.get(proxy_url, timeout=8)
+            
+            if response.status_code != 200:
+                error_message = f"无法获取 GitHub 版本信息: {response.text}"
+                logger.error(error_message)
+                return jsonify({"error": error_message}), 500
+            
+            releases = response.json()
+            
+            # 查找最新的预发布版本
+            latest_prerelease_release = None
+            for release in releases:
+                if release.get("prerelease"):
+                    latest_prerelease_release = release
+                    break
+            
+            if not latest_prerelease_release:
+                error_message = "未找到任何预发布版本"
+                logger.error(error_message)
+                return jsonify({"error": error_message}), 500
+            
+            prerelease_version_tag = latest_prerelease_release.get("tag_name")
+            logger.info(f"最新的预发布版本标签: {prerelease_version_tag}")
+            
+            # 拉取指定标签的代码
+            logger.info("正在从 Git 仓库拉取最新预发布版本代码...")
+            fetch_result = subprocess.run(
+                ['git', 'fetch', '--all'],
+                capture_output=True,
+                text=True,
+                cwd='/app'
+            )
+            
+            if fetch_result.returncode != 0:
+                error_message = f"Git fetch 失败: {fetch_result.stderr}"
+                logger.error(error_message)
+                return jsonify({"error": error_message}), 500
+            
+            # 检出预发布版本
+            checkout_result = subprocess.run(
+                ['git', 'checkout', prerelease_version_tag],
+                capture_output=True,
+                text=True,
+                cwd='/app'
+            )
+            
+            if checkout_result.returncode != 0:
+                error_message = f"Git checkout 失败: {checkout_result.stderr}"
+                logger.error(error_message)
+                return jsonify({"error": error_message}), 500
+            
+            # 拉取最新代码
+            pull_result = subprocess.run(
+                ['git', 'pull', 'origin', prerelease_version_tag],
+                capture_output=True,
+                text=True,
+                cwd='/app'
+            )
+            
+            if pull_result.returncode != 0:
+                error_message = f"Git pull 失败: {pull_result.stderr}"
+                logger.error(error_message)
+                return jsonify({"error": error_message}), 500
+            
+            logger.info(f"Git 拉取预发布版本成功: {pull_result.stdout}")
+        else:
+            # 更新到最新稳定版本（默认行为）
+            logger.info("正在获取最新的稳定版本标签...")
+            
+            # 先获取所有发布版本信息
+            repo_url = "https://api.github.com/repos/smysong/mediamaster-v2/releases"
+            proxy_url = "https://gh.llkk.cc/https://api.github.com/repos/smysong/mediamaster-v2/releases"
+            
+            try:
+                response = requests.get(repo_url, timeout=5)
+            except Exception as e:
+                logger.warning(f"主地址连接失败，尝试代理: {e}")
+                response = requests.get(proxy_url, timeout=8)
+            
+            if response.status_code != 200:
+                error_message = f"无法获取 GitHub 版本信息: {response.text}"
+                logger.error(error_message)
+                return jsonify({"error": error_message}), 500
+            
+            releases = response.json()
+            
+            # 查找最新的稳定版本
+            latest_stable_release = None
+            for release in releases:
+                if not release.get("prerelease"):
+                    latest_stable_release = release
+                    break
+            
+            if not latest_stable_release:
+                error_message = "未找到任何稳定版本"
+                logger.error(error_message)
+                return jsonify({"error": error_message}), 500
+            
+            stable_version_tag = latest_stable_release.get("tag_name")
+            logger.info(f"最新的稳定版本标签: {stable_version_tag}")
+            
+            # 拉取指定标签的代码
+            logger.info("正在从 Git 仓库拉取最新稳定版本代码...")
+            fetch_result = subprocess.run(
+                ['git', 'fetch', '--all'],
+                capture_output=True,
+                text=True,
+                cwd='/app'
+            )
+            
+            if fetch_result.returncode != 0:
+                error_message = f"Git fetch 失败: {fetch_result.stderr}"
+                logger.error(error_message)
+                return jsonify({"error": error_message}), 500
+            
+            # 检出稳定版本
+            checkout_result = subprocess.run(
+                ['git', 'checkout', stable_version_tag],
+                capture_output=True,
+                text=True,
+                cwd='/app'
+            )
+            
+            if checkout_result.returncode != 0:
+                error_message = f"Git checkout 失败: {checkout_result.stderr}"
+                logger.error(error_message)
+                return jsonify({"error": error_message}), 500
+            
+            # 拉取最新代码
+            pull_result = subprocess.run(
+                ['git', 'pull', 'origin', stable_version_tag],
+                capture_output=True,
+                text=True,
+                cwd='/app'
+            )
+            
+            if pull_result.returncode != 0:
+                error_message = f"Git pull 失败: {pull_result.stderr}"
+                logger.error(error_message)
+                return jsonify({"error": error_message}), 500
+            
+            logger.info(f"Git 拉取稳定版本成功: {pull_result.stdout}")
 
         # 步骤3: 安装依赖（如果有新的依赖）
         logger.info("正在安装新依赖...")
@@ -1822,10 +2210,6 @@ def perform_update():
     except Exception as e:
         logger.error(f"执行更新失败: {e}")
         return jsonify({"error": "更新失败，请稍后再试。"}), 500
-
-@app.route('/health_check', methods=['GET'])
-def health_check():
-    return jsonify({"status": "ok"}), 200
 
 if __name__ == '__main__':
     logger.info("程序已启动")

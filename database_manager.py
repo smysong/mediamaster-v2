@@ -155,7 +155,7 @@ def create_tables():
             SEASON INTEGER,
             MISSING_EPISODES TEXT,
             DOUBAN_ID INTEGER,
-            UNIQUE(TITLE, YEAR)
+            UNIQUE(TITLE, YEAR, SEASON)
         )
     ''')
 
@@ -246,6 +246,87 @@ def create_tables():
     conn.close()
     logging.info("数据库表结构及默认数据已创建。")
 
+def migrate_miss_tvs_table():
+    """
+    迁移 MISS_TVS 表以兼容新的唯一性约束（包含 SEASON 字段）
+    """
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # 检查当前表结构是否包含 SEASON 字段
+    cursor.execute("PRAGMA table_info(MISS_TVS)")
+    columns = cursor.fetchall()
+    season_column_exists = any(column[1] == 'SEASON' for column in columns)
+    
+    # 如果没有 SEASON 字段，需要迁移表结构
+    if not season_column_exists:
+        logging.info("正在迁移 MISS_TVS 表以添加 SEASON 字段和更新唯一性约束...")
+        
+        # 1. 重命名原表
+        cursor.execute("ALTER TABLE MISS_TVS RENAME TO MISS_TVS_old")
+        
+        # 2. 创建新表（包含 SEASON 字段和新的唯一性约束）
+        cursor.execute('''
+            CREATE TABLE MISS_TVS (
+                ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                TITLE TEXT NOT NULL,
+                YEAR INTEGER,
+                SEASON INTEGER,
+                MISSING_EPISODES TEXT,
+                DOUBAN_ID INTEGER,
+                UNIQUE(TITLE, YEAR, SEASON)
+            )
+        ''')
+        
+        # 3. 迁移数据（为原有的记录设置 SEASON 为 NULL 或默认值）
+        cursor.execute('''
+            INSERT INTO MISS_TVS (ID, TITLE, YEAR, SEASON, MISSING_EPISODES, DOUBAN_ID)
+            SELECT ID, TITLE, YEAR, NULL as SEASON, MISSING_EPISODES, DOUBAN_ID
+            FROM MISS_TVS_old
+        ''')
+        
+        # 4. 删除旧表
+        cursor.execute("DROP TABLE MISS_TVS_old")
+        
+        logging.info("MISS_TVS 表迁移完成")
+    
+    # 检查是否需要更新唯一性约束
+    cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='MISS_TVS'")
+    table_sql = cursor.fetchone()
+    if table_sql and 'UNIQUE(TITLE, YEAR, SEASON)' not in table_sql[0]:
+        logging.info("正在更新 MISS_TVS 表的唯一性约束...")
+        
+        # 重命名原表
+        cursor.execute("ALTER TABLE MISS_TVS RENAME TO MISS_TVS_old")
+        
+        # 创建新表（包含新的唯一性约束）
+        cursor.execute('''
+            CREATE TABLE MISS_TVS (
+                ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                TITLE TEXT NOT NULL,
+                YEAR INTEGER,
+                SEASON INTEGER,
+                MISSING_EPISODES TEXT,
+                DOUBAN_ID INTEGER,
+                UNIQUE(TITLE, YEAR, SEASON)
+            )
+        ''')
+        
+        # 迁移数据
+        cursor.execute('''
+            INSERT INTO MISS_TVS (ID, TITLE, YEAR, SEASON, MISSING_EPISODES, DOUBAN_ID)
+            SELECT ID, TITLE, YEAR, SEASON, MISSING_EPISODES, DOUBAN_ID
+            FROM MISS_TVS_old
+        ''')
+        
+        # 删除旧表
+        cursor.execute("DROP TABLE MISS_TVS_old")
+        
+        logging.info("MISS_TVS 表唯一性约束更新完成")
+    
+    conn.commit()
+    conn.close()
+
 def check_and_update_tables():
     """
     检查表是否存在，如果不存在则创建。
@@ -265,6 +346,9 @@ def check_and_update_tables():
             logging.info(f"表 {table} 不存在，正在创建...")
             create_tables()
             break
+
+    # 检查并迁移 MISS_TVS 表以确保兼容性
+    migrate_miss_tvs_table()
 
     conn.close()
 

@@ -34,7 +34,7 @@ class XunleiDownloader:
         self.driver = None
         self.config = {}
 
-    def setup_webdriver(self):
+    def setup_webdriver(self, instance_id=11):
         if hasattr(self, 'driver') and self.driver is not None:
             logging.info("WebDriver已经初始化，无需重复初始化")
             return
@@ -51,16 +51,18 @@ class XunleiDownloader:
         options.add_argument('--lang=zh-CN')  # 设置浏览器语言为简体中文
         options.add_argument('--disable-gpu')  # 禁用GPU加速
         options.add_argument('--disable-extensions')  # 禁用扩展插件
-        # 设置用户配置文件缓存目录
-        user_data_dir = '/app/ChromeCache/user-data-dir'
+        # 设置用户配置文件缓存目录，使用固定instance-id 11作为该程序特有的id
+        user_data_dir = f'/app/ChromeCache/user-data-dir-{instance_id}'
         options.add_argument(f'--user-data-dir={user_data_dir}')
-        # 设置磁盘缓存目录
-        disk_cache_dir = "/app/ChromeCache/disk-cache-dir"
+        # 设置磁盘缓存目录，使用instance-id区分
+        disk_cache_dir = f"/app/ChromeCache/disk-cache-dir-{instance_id}"
         options.add_argument(f"--disk-cache-dir={disk_cache_dir}")
         
-        # 设置默认下载目录
+        # 设置默认下载目录，使用instance-id区分
+        download_dir = f"/Torrent"
+        os.makedirs(download_dir, exist_ok=True)  # 确保下载目录存在
         prefs = {
-            "download.default_directory": "/Torrent",
+            "download.default_directory": download_dir,
             "download.prompt_for_download": False,
             "download.directory_upgrade": True,
             "safebrowsing.enabled": True,
@@ -74,7 +76,7 @@ class XunleiDownloader:
         
         try:
             self.driver = webdriver.Chrome(service=service, options=options)
-            logging.info("WebDriver初始化完成")
+            logging.info(f"WebDriver初始化完成 (Instance ID: {instance_id})")
         except Exception as e:
             logging.error(f"WebDriver初始化失败: {e}")
             raise

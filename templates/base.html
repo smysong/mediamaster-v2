@@ -149,7 +149,9 @@
         }
         #release-notes h1,
         #release-notes h2,
-        #release-notes h3 {
+        #release-notes h3,
+        #release-notes h4,
+        #release-notes h5 {
             font-size: clamp(10px, 1.2vw, 16px);
             line-height: 1.6;
             color: #333;
@@ -760,12 +762,6 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link {% if request.path == url_for('tv_alias_list') %}active{% endif %}" href="{{ url_for('tv_alias_list') }}">
-                                <i class="bi bi-view-list"></i>
-                                剧集关联
-                            </a>
-                        </li>
-                        <li class="nav-item">
                             <a class="nav-link {% if request.path == url_for('manual_search') %}active{% endif %}" href="{{ url_for('manual_search') }}">
                                 <i class="bi bi-search"></i>
                                 资源搜索
@@ -821,11 +817,11 @@
                 <div class="modal-body">
                     <form id="userProfileForm">
                         <div class="mb-3">
-                            <label for="username" class="form-label">用户名</label>
+                            <label for="username" class="form-label">用户昵称</label>
                             <input type="text" class="form-control" id="username" value="{{ nickname }}">
                         </div>
                         <div class="mb-3">
-                            <label for="avatar" class="form-label">头像</label>
+                            <label for="avatar" class="form-label">用户头像</label>
                             <input type="file" class="form-control" id="avatar">
                         </div>
                         <button type="submit" class="btn btn-sm btn-primary">保存更改</button>
@@ -848,11 +844,20 @@
                     <div id="version-info">
                         <p>使用帮助：<a href="http://wiki.songmy.top:8080/" target="_blank" rel="noopener noreferrer" style="color: #007bff; text-decoration: none;">配置文档及问题反馈</a></p>
                         <p>当前版本：<span id="current-version">{{ version }}</span></p>
-                        <p>最新版本：<span id="latest-version">检查中...</span></p>
+                        <p>最新稳定版：<span id="latest-version">检查中...</span></p>
+                        <p>预发布测试版：<span id="prerelease-version">检查中...</span></p>
+                        <p id="prerelease-warning" style="display: none; color: #ff7800;">
+                            <i class="bi bi-exclamation-triangle"></i>预发布测试版本，可能存在不稳定因素，请谨慎选择更新。
+                        </p>
                         <p id="update-notes" style="display: none;">更新说明：<br><div id="release-notes"></div></p>
                     </div>
-                    <div id="update-actions">
-                        <button id="perform-update-btn" class="btn btn-success" style="display: none;">立即更新</button>
+                    <div class="d-flex justify-content-end mb-3">
+                        <div class="ml-auto">
+                            <div id="update-actions">
+                                <button id="perform-latest-update-btn" class="btn btn-sm btn-success" style="display: none;">更新稳定版</button>
+                                <button id="perform-prerelease-update-btn" class="btn btn-sm btn-primary" style="display: none; margin-left: 10px;">更新测试版</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -964,11 +969,14 @@
     // 监听模态框显示事件（仅绑定一次）
     document.getElementById('versionUpdateModal').addEventListener('show.bs.modal', async () => {
         try {
-            // 提示检查中
+            // 重置模态框状态
             document.getElementById('latest-version').textContent = '检查中...';
+            document.getElementById('prerelease-version').textContent = '检查中...';
             document.getElementById('release-notes').innerHTML = '';
             document.getElementById('update-notes').style.display = 'none';
-            document.getElementById('perform-update-btn').style.display = 'none';
+            document.getElementById('perform-latest-update-btn').style.display = 'none';
+            document.getElementById('perform-prerelease-update-btn').style.display = 'none';
+            document.getElementById('prerelease-warning').style.display = 'none';
 
             // 调用检查更新接口
             const response = await fetch('/check_update');
@@ -981,21 +989,48 @@
 
             // 更新模态框中的版本信息
             const currentVersion = data.current_version.trim();
-            const latestVersion = data.latest_version.trim();
             document.getElementById('current-version').textContent = currentVersion;
-            document.getElementById('latest-version').textContent = latestVersion;
+            
+            // 显示稳定版信息
+            if (data.latest_stable_version) {
+                document.getElementById('latest-version').textContent = data.latest_stable_version;
+                if (data.stable_update_available) {
+                    document.getElementById('perform-latest-update-btn').style.display = 'inline-block';
+                }
+            } else {
+                document.getElementById('latest-version').textContent = '无';
+            }
+            
+            // 显示预发布版信息
+            if (data.latest_prerelease_version) {
+                document.getElementById('prerelease-version').textContent = data.latest_prerelease_version;
+                if (data.prerelease_update_available) {
+                    document.getElementById('perform-prerelease-update-btn').style.display = 'inline-block';
+                    document.getElementById('prerelease-warning').style.display = 'block';
+                }
+            } else {
+                document.getElementById('prerelease-version').textContent = '无';
+            }
 
             const updateNotes = document.getElementById('update-notes');
             const releaseNotes = document.getElementById('release-notes');
-            if (data.is_update_available) {
-                // 使用 marked.js 将 Markdown 转换为 HTML
-                releaseNotes.innerHTML = marked.parse(data.release_notes); // 渲染 Markdown
+            
+            // 显示更新说明（根据可用更新的情况显示不同内容）
+            if (data.stable_update_available && data.prerelease_update_available) {
+                // 如果稳定版和预发布版都有更新，显示特殊提示
+                releaseNotes.innerHTML = '存在多版本更新，详细更新说明请查看：<a href="https://github.com/smysong/mediamaster-v2/blob/main/CHANGELOG.md" target="_blank">更新日志</a>';
                 updateNotes.style.display = 'block';
-                document.getElementById('perform-update-btn').style.display = 'inline-block';
+            } else if (data.stable_update_available && data.stable_release_notes) {
+                // 只有稳定版有更新
+                releaseNotes.innerHTML = marked.parse(data.stable_release_notes);
+                updateNotes.style.display = 'block';
+            } else if (data.prerelease_update_available && data.prerelease_release_notes) {
+                // 只有预发布版有更新
+                releaseNotes.innerHTML = marked.parse(data.prerelease_release_notes);
+                updateNotes.style.display = 'block';
             } else {
                 releaseNotes.textContent = "当前暂无可用更新。";
                 updateNotes.style.display = 'block';
-                document.getElementById('perform-update-btn').style.display = 'none';
             }
         } catch (error) {
             console.error('检查更新失败:', error);
@@ -1012,8 +1047,19 @@
     });
 
     // 执行更新按钮点击事件
-    document.getElementById('perform-update-btn').addEventListener('click', async () => {
-        if (!confirm('确定要执行更新吗？更新后系统将自动重启。')) {
+    async function performUpdate(updateType) {
+        let confirmMessage = '确定要执行更新吗？更新后系统将自动重启。';
+        
+        if (updateType === 'prerelease') {
+            if (!confirm('您将要更新到预发布测试版本，可能存在不稳定因素。确定要继续吗？')) {
+                return;
+            }
+            confirmMessage = '确定要更新到预发布测试版本吗？更新后系统将自动重启。';
+        } else {
+            confirmMessage = '确定要更新到最新稳定版本吗？更新后系统将自动重启。';
+        }
+
+        if (!confirm(confirmMessage)) {
             return;
         }
 
@@ -1023,8 +1069,14 @@
         showLoadingIndicator(loadingOverlay, loadingText, '系统更新中...');
 
         try {
-            // 发送更新请求
-            const response = await fetch('/perform_update', { method: 'POST' });
+            // 发送更新请求，包含更新类型
+            const response = await fetch('/perform_update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({type: updateType})
+            });
             const data = await response.json();
 
             if (data.error) {
@@ -1050,6 +1102,15 @@
             // 隐藏加载遮罩层
             hideLoadingIndicator(loadingOverlay);
         }
+    }
+
+    // 绑定更新按钮事件
+    document.getElementById('perform-latest-update-btn').addEventListener('click', function() {
+        performUpdate('latest');
+    });
+
+    document.getElementById('perform-prerelease-update-btn').addEventListener('click', function() {
+        performUpdate('prerelease');
     });
 
     // 显示加载指示器

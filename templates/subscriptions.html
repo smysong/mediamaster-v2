@@ -3,6 +3,17 @@
 {% block content %}
 <main class="container mt-1">
     <div class="row fade-in">
+        <div class="d-flex justify-content-end mb-3">
+            <div class="ml-auto">
+                <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addSubscriptionModal">
+                    <i class="bi bi-plus-lg"></i>添加订阅
+                </button>
+                <button type="button" class="btn btn-sm btn-primary ms-2" data-bs-toggle="modal" data-bs-target="#tvAliasModal">
+                    <i class="bi bi-view-list"></i>剧集关联
+                </button>
+            </div>
+        </div>
+
         <div class="card mb-4">
             <div class="card-header">正在订阅的电影</div>
             <div class="card-body">
@@ -70,18 +81,12 @@
                 {% endif %}
             </div>
         </div>
-        <!-- 添加订阅按钮 -->
-        <div class="card d-flex justify-content-end mb-3">
-            <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addSubscriptionModal">
-                添加订阅
-            </button>
-        </div>
     </div>
 </main>
 
 <!-- 添加订阅模态框 -->
 <div class="modal fade" id="addSubscriptionModal" tabindex="-1" aria-labelledby="addSubscriptionModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="addSubscriptionModalLabel">添加订阅</h5>
@@ -90,36 +95,58 @@
             <div class="modal-body">
                 <form id="addSubscriptionForm">
                     <div class="mb-3">
-                        <label for="subscriptionType" class="form-label">类型</label>
-                        <select class="form-select" id="subscriptionType" required>
-                            <option value="">请选择类型</option>
-                            <option value="movie">电影</option>
-                            <option value="tv">剧集</option>
-                        </select>
+                        <input type="text" class="form-control" id="title" placeholder="请输入标题" required>
                     </div>
-                    <div class="mb-3">
-                        <label for="title" class="form-label">标题</label>
-                        <input type="text" class="form-control" id="title" required>
+                    <div class="d-grid mb-3">
+                        <button type="button" class="btn btn-sm btn-outline-success" id="searchMediaBtn">
+                            <span id="searchBtnText">搜索</span>
+                            <span id="searchSpinner" class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+                        </button>
                     </div>
-                    <div class="mb-3">
-                        <label for="year" class="form-label">年份</label>
-                        <input type="number" class="form-control" id="year" required>
-                    </div>
-                    <div class="mb-3" id="tvFields" style="display: none;">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <label for="season" class="form-label">季</label>
-                                <input type="number" class="form-control" id="season">
+                    
+                    <!-- 媒体信息展示区域 -->
+                    <div id="mediaInfo" style="display: none;">
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <div class="d-flex">
+                                    <img id="mediaPoster" src="/static/img/no-image.png" alt="海报" class="me-3 rounded" style="width: 80px; height: 120px; object-fit: cover;">
+                                    <div>
+                                        <h6 id="mediaTitle"></h6>
+                                        <p id="mediaOverview" class="text-muted small"></p>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div class="row mt-2">
-                            <div class="col-md-6">
-                                <label for="startEpisode" class="form-label">起始集</label>
-                                <input type="number" class="form-control" id="startEpisode">
+                        
+                        <div class="mb-3">
+                            <label for="mediaType" class="form-label">类型</label>
+                            <input type="text" class="form-control" id="mediaType" readonly>
+                            <input type="hidden" id="mediaTypeId">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="year" class="form-label">年份</label>
+                            <input type="number" class="form-control" id="year" readonly>
+                        </div>
+                        
+                        <div class="mb-3" id="tvFields" style="display: none;">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="season" class="form-label">季</label>
+                                    <select class="form-select" id="season">
+                                        <option value="">请选择季</option>
+                                    </select>
+                                </div>
                             </div>
-                            <div class="col-md-6">
-                                <label for="endEpisode" class="form-label">结束集</label>
-                                <input type="number" class="form-control" id="endEpisode">
+                            <div class="row mt-2">
+                                <div class="col-md-6">
+                                    <label for="startEpisode" class="form-label">起始集</label>
+                                    <input type="number" class="form-control" id="startEpisode" value="1">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="endEpisode" class="form-label">结束集</label>
+                                    <input type="number" class="form-control" id="endEpisode" value="1">
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -127,47 +154,735 @@
             </div>
             <div class="modal-footer" style="width: 100%;">
                 <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-sm btn-primary" id="submitSubscription">添加</button>
+                <button type="button" class="btn btn-sm btn-primary" id="submitSubscription" style="display: none;">添加</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 剧集关联模态框 -->
+<div class="modal fade" id="tvAliasModal" tabindex="-1" aria-labelledby="tvAliasModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="tvAliasModalLabel">剧集关联管理</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex justify-content-between mb-3">
+                    <h6>剧集关联列表</h6>
+                    <button type="button" class="btn btn-sm btn-success" id="addAliasBtn">
+                        <i class="bi bi-plus-lg"></i> 新增关联
+                    </button>
+                </div>
+                
+                <div id="aliasListContainer">
+                    <!-- 关联列表将通过 AJAX 加载 -->
+                    <div class="text-center">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">加载中...</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 添加/编辑关联表单 (默认隐藏) -->
+                <div id="aliasFormContainer" style="display: none;">
+                    <form id="tvAliasForm">
+                        <input type="hidden" id="aliasId">
+                        <div class="mb-3">
+                            <label for="aliasName" class="form-label">原始名称</label>
+                            <input type="text" class="form-control" id="aliasName" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="targetTitle" class="form-label">目标名称（入库名称）</label>
+                            <input type="text" class="form-control" id="targetTitle" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="targetSeason" class="form-label">目标季号（可选）</label>
+                            <input type="number" class="form-control" id="targetSeason" min="0">
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <button type="button" class="btn btn-sm btn-secondary" id="cancelAliasForm">取消</button>
+                            <button type="submit" class="btn btn-sm btn-primary">保存</button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
 <script>
-    // 类型选择变化时显示/隐藏剧集相关字段
-    document.getElementById('subscriptionType').addEventListener('change', function() {
-        const tvFields = document.getElementById('tvFields');
-        if (this.value === 'tv') {
-            tvFields.style.display = 'block';
+    // 全局变量用于跟踪事件是否已绑定
+    let isEventBound = false;
+    // 存储电视剧各季的年份信息
+    let tvSeasonYears = {};
+    // 存储所有搜索结果
+    let allSearchResults = [];
+    // 当前页码
+    let currentPage = 1;
+    // 每页显示的结果数
+    const resultsPerPage = 8;
+
+    // 页面加载完成后绑定回车键事件，确保在任何状态下都能使用回车键搜索
+    document.addEventListener('DOMContentLoaded', function() {
+        const titleInput = document.getElementById('title');
+        if (titleInput) {
+            titleInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    document.getElementById('searchMediaBtn').click();
+                }
+            });
+        }
+    });
+
+    // 模态框显示事件
+    document.getElementById('addSubscriptionModal').addEventListener('shown.bs.modal', function () {
+        // 确保事件只绑定一次
+        if (!isEventBound) {
+            // 搜索TMDB按钮点击事件
+            document.getElementById('searchMediaBtn').addEventListener('click', function() {
+                const title = document.getElementById('title').value.trim();
+                
+                if (!title) {
+                    showToast('请输入标题', 'warning');
+                    return;
+                }
+                
+                // 显示加载状态
+                const searchBtnText = document.getElementById('searchBtnText');
+                const searchSpinner = document.getElementById('searchSpinner');
+                searchBtnText.textContent = '搜索中...';
+                searchSpinner.style.display = 'inline-block';
+                this.disabled = true;
+                
+                // 使用TMDB API搜索
+                searchTMDB(title)
+                    .finally(() => {
+                        // 恢复按钮状态
+                        searchBtnText.textContent = '搜索';
+                        searchSpinner.style.display = 'none';
+                        this.disabled = false;
+                    });
+            });
+
+            // 绑定提交事件
+            const submitBtn = document.getElementById('submitSubscription');
+            if (submitBtn) {
+                submitBtn.addEventListener('click', submitSubscription);
+            }
+            
+            // 聚焦到输入框
+            setTimeout(() => {
+                const titleInput = document.getElementById('title');
+                if (titleInput) {
+                    titleInput.focus();
+                }
+            }, 100);
+            
+            isEventBound = true;
         } else {
-            tvFields.style.display = 'none';
+            // 即使事件已绑定，也要确保输入框获得焦点
+            setTimeout(() => {
+                const titleInput = document.getElementById('title');
+                if (titleInput) {
+                    titleInput.focus();
+                }
+            }, 100);
+        }
+    });
+
+    // 监听模态框隐藏事件，重置表单
+    document.getElementById('addSubscriptionModal').addEventListener('hidden.bs.modal', function () {
+        // 重置表单
+        resetModalForm();
+    });
+
+    // 重置模态框表单函数
+    function resetModalForm() {
+        // 重置搜索表单
+        document.getElementById('title').value = '';
+        
+        // 隐藏媒体信息区域
+        const mediaInfo = document.getElementById('mediaInfo');
+        if (mediaInfo) mediaInfo.style.display = 'none';
+        
+        // 隐藏电视剧特定字段
+        const tvFields = document.getElementById('tvFields');
+        if (tvFields) tvFields.style.display = 'none';
+        
+        // 隐藏提交按钮
+        const submitBtn = document.getElementById('submitSubscription');
+        if (submitBtn) submitBtn.style.display = 'none';
+        
+        // 清空媒体信息
+        document.getElementById('mediaTypeId').value = '';
+        document.getElementById('mediaTitle').textContent = '';
+        document.getElementById('mediaType').value = '';
+        document.getElementById('year').value = '';
+        
+        // 重置海报为默认图片
+        const posterImg = document.getElementById('mediaPoster');
+        if (posterImg) {
+            posterImg.src = '/static/img/no-image.png';
+        }
+        
+        // 清空简介
+        const overviewEl = document.getElementById('mediaOverview');
+        if (overviewEl) overviewEl.textContent = '';
+        
+        // 重置电视剧季选择
+        const seasonSelect = document.getElementById('season');
+        if (seasonSelect) {
+            seasonSelect.innerHTML = '<option value="">请选择季</option>';
+        }
+        
+        // 重置集数输入
+        const startEpisode = document.getElementById('startEpisode');
+        const endEpisode = document.getElementById('endEpisode');
+        if (startEpisode) startEpisode.value = '1';
+        if (endEpisode) endEpisode.value = '1';
+        
+        // 清空年份信息
+        tvSeasonYears = {};
+        
+        // 重置分页相关变量
+        allSearchResults = [];
+        currentPage = 1;
+        
+        // 恢复初始搜索界面
+        showSearchForm();
+    }
+
+    // 搜索TMDB函数
+    function searchTMDB(title) {
+        const tmdbApiKey = "{{ tmdb_api_key }}";
+        
+        if (!tmdbApiKey) {
+            showToast('TMDB API密钥未配置，请在系统设置中配置TMDB API密钥', 'danger');
+            return Promise.reject('TMDB API key missing');
+        }
+        
+        // 同时搜索电影和电视剧，使用简体中文
+        const movieUrl = `https://api.tmdb.org/3/search/movie?api_key=${tmdbApiKey}&query=${encodeURIComponent(title)}&language=zh-CN`;
+        const tvUrl = `https://api.tmdb.org/3/search/tv?api_key=${tmdbApiKey}&query=${encodeURIComponent(title)}&language=zh-CN`;
+        
+        return Promise.all([
+            fetch(movieUrl).then(response => response.json()),
+            fetch(tvUrl).then(response => response.json())
+        ])
+        .then(([movieData, tvData]) => {
+            const allResults = [];
+            
+            // 处理电影结果
+            if (movieData.results && movieData.results.length > 0) {
+                movieData.results.forEach(item => {
+                    allResults.push({
+                        ...item,
+                        media_type: 'movie'
+                    });
+                });
+            }
+            
+            // 处理电视剧结果
+            if (tvData.results && tvData.results.length > 0) {
+                tvData.results.forEach(item => {
+                    allResults.push({
+                        ...item,
+                        media_type: 'tv'
+                    });
+                });
+            }
+            
+            if (allResults.length > 0) {
+                // 根据与搜索关键词的匹配度排序
+                allResults.sort((a, b) => {
+                    const titleA = (a.title || a.name || '').toLowerCase();
+                    const titleB = (b.title || b.name || '').toLowerCase();
+                    const searchTerm = title.toLowerCase();
+                    
+                    // 检查标题是否包含搜索词
+                    const aIncludes = titleA.includes(searchTerm);
+                    const bIncludes = titleB.includes(searchTerm);
+                    
+                    // 如果一个包含搜索词而另一个不包含，包含的排在前面
+                    if (aIncludes && !bIncludes) return -1;
+                    if (!aIncludes && bIncludes) return 1;
+                    
+                    // 如果都包含或都不包含搜索词，按受欢迎度排序
+                    return b.popularity - a.popularity;
+                });
+                
+                // 保存所有结果并显示第一页
+                allSearchResults = allResults;
+                currentPage = 1;
+                displaySearchResults(allSearchResults, currentPage);
+            } else {
+                showToast('未找到相关媒体', 'warning');
+            }
+        })
+        .catch(error => {
+            console.error('TMDB搜索错误:', error);
+            showToast('搜索TMDB时发生错误', 'danger');
+        });
+    }
+
+    // 显示搜索结果（带分页）
+    function displaySearchResults(results, page) {
+        // 计算分页信息
+        const totalPages = Math.ceil(results.length / resultsPerPage);
+        const startIndex = (page - 1) * resultsPerPage;
+        const endIndex = Math.min(startIndex + resultsPerPage, results.length);
+        const pageResults = results.slice(startIndex, endIndex);
+        
+        // 创建选择列表
+        let html = '<div class="list-group">';
+        
+        pageResults.forEach(item => {
+            const title = item.title || item.name;
+            const releaseDate = item.release_date || item.first_air_date;
+            const year = releaseDate ? releaseDate.substring(0, 4) : '未知年份';
+            const posterPath = item.poster_path ? `https://image.tmdb.org/t/p/w92${item.poster_path}` : '/static/img/no-image.png';
+            
+            html += `
+                <a href="#" class="list-group-item list-group-item-action media-select-item" 
+                   data-id="${item.id}" 
+                   data-title="${title}" 
+                   data-year="${year}"
+                   data-type="${item.media_type}"
+                   data-overview="${item.overview || ''}"
+                   data-poster="${item.poster_path || ''}">
+                    <div class="d-flex align-items-center">
+                        <img src="/static/img/no-image.png" data-src="${posterPath}" alt="${title}" class="me-3 rounded lazy-poster" style="width: 50px; height: 75px; object-fit: cover;">
+                        <div class="flex-grow-1">
+                            <h6 class="mb-1">${title} (${year})</h6>
+                            <small class="text-muted">
+                                ${item.media_type === 'movie' ? '电影' : '电视剧'}
+                                ${item.overview ? item.overview.substring(0, 60) + '...' : ''}
+                            </small>
+                        </div>
+                    </div>
+                </a>
+            `;
+        });
+        
+        html += '</div>';
+        
+        // 添加分页控件
+        if (totalPages > 1) {
+            html += `
+                <nav aria-label="搜索结果分页">
+                    <ul class="pagination justify-content-center mt-3 mb-0">
+                        <li class="page-item ${page === 1 ? 'disabled' : ''}">
+                            <a class="page-link" href="#" id="prevPage" style="font-size: clamp(10px, 1.2vw, 16px);">上一页</a>
+                        </li>
+            `;
+            
+            // 显示页码
+            for (let i = 1; i <= totalPages; i++) {
+                if (i === page) {
+                    html += `<li class="page-item active"><span class="page-link" style="font-size: clamp(10px, 1.2vw, 16px);">${i}</span></li>`;
+                } else {
+                    html += `<li class="page-item"><a class="page-link page-number" href="#" data-page="${i}" style="font-size: clamp(10px, 1.2vw, 16px);">${i}</a></li>`;
+                }
+            }
+            
+            html += `
+                        <li class="page-item ${page === totalPages ? 'disabled' : ''}">
+                            <a class="page-link" href="#" id="nextPage" style="font-size: clamp(10px, 1.2vw, 16px);">下一页</a>
+                        </li>
+                    </ul>
+                </nav>
+            `;
+        }
+        
+        // 显示在模态框中替换表单
+        const modalBody = document.querySelector('#addSubscriptionModal .modal-body');
+        modalBody.innerHTML = `
+            ${html}
+            <div class="modal-footer" style="width: 100%;">
+                <button type="button" class="btn btn-sm btn-secondary" id="backToSearch">返回搜索</button>
+            </div>
+        `;
+        
+        // 绑定分页事件
+        if (totalPages > 1) {
+            // 上一页
+            const prevBtn = document.getElementById('prevPage');
+            if (prevBtn && page > 1) {
+                prevBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    displaySearchResults(results, page - 1);
+                });
+            }
+            
+            // 下一页
+            const nextBtn = document.getElementById('nextPage');
+            if (nextBtn && page < totalPages) {
+                nextBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    displaySearchResults(results, page + 1);
+                });
+            }
+            
+            // 页码点击
+            document.querySelectorAll('.page-number').forEach(link => {
+                link.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const pageNum = parseInt(this.getAttribute('data-page'));
+                    displaySearchResults(results, pageNum);
+                });
+            });
+        }
+        
+        // 绑定返回按钮事件
+        document.getElementById('backToSearch').addEventListener('click', showSearchForm);
+        
+        // 绑定选择事件
+        document.querySelectorAll('.media-select-item').forEach(item => {
+            item.addEventListener('click', function(e) {
+                e.preventDefault();
+                selectMedia({
+                    id: this.getAttribute('data-id'),
+                    title: this.getAttribute('data-title'),
+                    year: this.getAttribute('data-year'),
+                    type: this.getAttribute('data-type'),
+                    overview: this.getAttribute('data-overview'),
+                    poster: this.getAttribute('data-poster')
+                });
+            });
+        });
+        
+        // 加载海报图片
+        loadPosters();
+    }
+
+    // 加载海报图片
+    function loadPosters() {
+        const lazyPosters = document.querySelectorAll('.lazy-poster');
+        lazyPosters.forEach(img => {
+            const realSrc = img.getAttribute('data-src');
+            if (realSrc && realSrc !== '/static/img/no-image.png') {
+                const newImg = new Image();
+                newImg.onload = function() {
+                    // 只有图片加载成功后才替换默认图片
+                    img.src = realSrc;
+                };
+                newImg.onerror = function() {
+                    // 图片加载失败时保持默认图片
+                    img.src = '/static/img/no-image.png';
+                };
+                newImg.src = realSrc;
+            }
+        });
+    }
+
+    // 返回搜索表单
+    function showSearchForm() {
+        const modalBody = document.querySelector('#addSubscriptionModal .modal-body');
+        modalBody.innerHTML = `
+            <form id="addSubscriptionForm">
+                <div class="mb-3">
+                    <input type="text" class="form-control" id="title" placeholder="请输入标题" required>
+                </div>
+                <div class="d-grid mb-3">
+                    <button type="button" class="btn btn-sm btn-outline-success" id="searchMediaBtn">
+                        <span id="searchBtnText">搜索</span>
+                        <span id="searchSpinner" class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+                    </button>
+                </div>
+                
+                <!-- 媒体信息展示区域 -->
+                <div id="mediaInfo" style="display: none;">
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <div class="d-flex">
+                                <img id="mediaPoster" src="/static/img/no-image.png" alt="海报" class="me-3 rounded" style="width: 80px; height: 120px; object-fit: cover;">
+                                <div>
+                                    <h6 id="mediaTitle"></h6>
+                                    <p id="mediaOverview" class="text-muted small"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="mediaType" class="form-label">类型</label>
+                        <input type="text" class="form-control" id="mediaType" readonly>
+                        <input type="hidden" id="mediaTypeId">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="year" class="form-label">年份</label>
+                        <input type="number" class="form-control" id="year" readonly>
+                    </div>
+                    
+                    <div class="mb-3" id="tvFields" style="display: none;">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="season" class="form-label">季</label>
+                                <select class="form-select" id="season">
+                                    <option value="">请选择季</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-md-6">
+                                <label for="startEpisode" class="form-label">起始集</label>
+                                <input type="number" class="form-control" id="startEpisode" value="1">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="endEpisode" class="form-label">结束集</label>
+                                <input type="number" class="form-control" id="endEpisode" value="1">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        `;
+        
+        // 恢复原来的footer
+        const modalFooter = document.querySelector('#addSubscriptionModal .modal-footer');
+        modalFooter.innerHTML = `
+            <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">取消</button>
+            <button type="button" class="btn btn-sm btn-primary" id="submitSubscription" style="display: none;">添加</button>
+        `;
+        
+        // 重新绑定事件
+        document.getElementById('searchMediaBtn').addEventListener('click', function() {
+            const title = document.getElementById('title').value.trim();
+            
+            if (!title) {
+                showToast('请输入标题', 'warning');
+                return;
+            }
+            
+            const searchBtnText = document.getElementById('searchBtnText');
+            const searchSpinner = document.getElementById('searchSpinner');
+            searchBtnText.textContent = '搜索中...';
+            searchSpinner.style.display = 'inline-block';
+            this.disabled = true;
+            
+            searchTMDB(title)
+                .finally(() => {
+                    searchBtnText.textContent = '搜索';
+                    searchSpinner.style.display = 'none';
+                    this.disabled = false;
+                });
+        });
+        
+        // 绑定提交事件
+        const submitBtn = document.getElementById('submitSubscription');
+        if (submitBtn) {
+            submitBtn.addEventListener('click', submitSubscription);
+        }
+        
+        // 重新绑定回车键事件，确保在任何状态下都能使用回车键搜索
+        const titleInput = document.getElementById('title');
+        if (titleInput) {
+            // 先移除已有的事件监听器，避免重复绑定
+            const newTitleInput = titleInput.cloneNode(true);
+            titleInput.parentNode.replaceChild(newTitleInput, titleInput);
+            
+            // 重新绑定回车键事件
+            newTitleInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    document.getElementById('searchMediaBtn').click();
+                }
+            });
+            
+            // 聚焦到输入框
+            setTimeout(() => {
+                newTitleInput.focus();
+            }, 100);
+        }
+    }
+
+    // 选择媒体后的处理
+    function selectMedia(media) {
+        // 恢复完整表单界面
+        showSearchForm();
+        
+        // 填充媒体信息
+        setTimeout(() => {
+            // 显示媒体信息区域
+            const mediaInfo = document.getElementById('mediaInfo');
+            const submitBtn = document.getElementById('submitSubscription');
+            
+            if (mediaInfo) mediaInfo.style.display = 'block';
+            if (submitBtn) submitBtn.style.display = 'inline-block';
+            
+            // 填充媒体信息
+            document.getElementById('mediaTypeId').value = media.id;
+            document.getElementById('mediaTitle').textContent = media.title;
+            document.getElementById('mediaType').value = media.type === 'movie' ? '电影' : '电视剧';
+            document.getElementById('year').value = media.year;
+            
+            // 显示海报
+            const posterImg = document.getElementById('mediaPoster');
+            if (media.poster && posterImg) {
+                // 始终先显示默认图片
+                posterImg.src = '/static/img/no-image.png';
+                
+                // 异步加载TMDB海报
+                const tmdbPosterSrc = `https://image.tmdb.org/t/p/w185${media.poster}`;
+                const newImg = new Image();
+                newImg.onload = function() {
+                    // 只有图片加载成功后才替换默认图片
+                    posterImg.src = tmdbPosterSrc;
+                };
+                newImg.onerror = function() {
+                    // 图片加载失败时保持默认图片
+                    posterImg.src = '/static/img/no-image.png';
+                };
+                newImg.src = tmdbPosterSrc;
+            }
+            
+            // 显示简介
+            const overviewEl = document.getElementById('mediaOverview');
+            if (overviewEl) {
+                overviewEl.textContent = media.overview.substring(0, 150) + (media.overview.length > 150 ? '...' : '');
+            }
+            
+            // 处理电视剧特有的字段
+            if (media.type === 'tv') {
+                const tvFields = document.getElementById('tvFields');
+                if (tvFields) tvFields.style.display = 'block';
+                // 获取季信息
+                getTVSeasons(media.id);
+            } else {
+                const tvFields = document.getElementById('tvFields');
+                if (tvFields) tvFields.style.display = 'none';
+            }
+        }, 100);
+    }
+
+    // 获取电视剧季信息
+    function getTVSeasons(tvId) {
+        const tmdbApiKey = "{{ tmdb_api_key }}";
+        const seasonSelect = document.getElementById('season');
+        
+        if (!seasonSelect) return;
+        
+        // 清空选项
+        seasonSelect.innerHTML = '<option value="">获取季信息中...</option>';
+        // 清空年份信息
+        tvSeasonYears = {};
+        
+        // 使用简体中文获取电视剧信息
+        fetch(`https://api.tmdb.org/3/tv/${tvId}?api_key=${tmdbApiKey}&language=zh-CN`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.seasons && data.seasons.length > 0) {
+                    // 清空选项
+                    seasonSelect.innerHTML = '<option value="">请选择季</option>';
+                    
+                    // 添加季选项
+                    data.seasons.forEach(season => {
+                        if (season.season_number >= 0) { // 包括第0季(特别篇)
+                            const option = document.createElement('option');
+                            option.value = season.season_number;
+                            option.textContent = season.season_number === 0 ? '特别篇' : `第 ${season.season_number} 季`;
+                            seasonSelect.appendChild(option);
+                            
+                            // 保存该季的年份信息
+                            if (season.air_date) {
+                                tvSeasonYears[season.season_number] = season.air_date.substring(0, 4);
+                            }
+                        }
+                    });
+                    
+                    // 默认选中第一季(非特别篇)
+                    const regularSeason = data.seasons.find(s => s.season_number > 0);
+                    if (regularSeason) {
+                        seasonSelect.value = regularSeason.season_number;
+                        // 更新年份为第一季的年份
+                        if (tvSeasonYears[regularSeason.season_number]) {
+                            document.getElementById('year').value = tvSeasonYears[regularSeason.season_number];
+                        }
+                    }
+                    
+                    // 获取该季的集数信息
+                    if (regularSeason) {
+                        getSeasonEpisodes(tvId, regularSeason.season_number);
+                    }
+                } else {
+                    seasonSelect.innerHTML = '<option value="">无季信息</option>';
+                }
+            })
+            .catch(error => {
+                console.error('获取电视剧季信息错误:', error);
+                if (seasonSelect) {
+                    seasonSelect.innerHTML = '<option value="">获取季信息失败</option>';
+                }
+                showToast('获取电视剧季信息失败', 'danger');
+            });
+    }
+
+    // 获取季的集数信息
+    function getSeasonEpisodes(tvId, seasonNumber) {
+        const tmdbApiKey = "{{ tmdb_api_key }}";
+        
+        // 使用简体中文获取季信息
+        fetch(`https://api.tmdb.org/3/tv/${tvId}/season/${seasonNumber}?api_key=${tmdbApiKey}&language=zh-CN`)
+            .then(response => response.json())
+            .then(data => {
+                const endEpisodeEl = document.getElementById('endEpisode');
+                if (data.episodes && data.episodes.length > 0 && endEpisodeEl) {
+                    // 设置结束集为该季的总集数
+                    endEpisodeEl.value = data.episodes.length;
+                }
+            })
+            .catch(error => {
+                console.error('获取季集数信息错误:', error);
+                showToast('获取季集数信息失败', 'danger');
+            });
+    }
+
+    // 季选择变化事件
+    document.addEventListener('change', function(e) {
+        if (e.target.id === 'season') {
+            const tvId = document.getElementById('mediaTypeId').value;
+            const seasonNumber = e.target.value;
+            
+            if (tvId && seasonNumber !== '') {
+                // 更新年份为当前季的年份
+                if (tvSeasonYears[seasonNumber]) {
+                    document.getElementById('year').value = tvSeasonYears[seasonNumber];
+                }
+                
+                getSeasonEpisodes(tvId, seasonNumber);
+            }
         }
     });
 
     // 提交订阅表单
-    document.getElementById('submitSubscription').addEventListener('click', function() {
-        const type = document.getElementById('subscriptionType').value;
-        const title = document.getElementById('title').value;
+    function submitSubscription() {
+        const mediaTypeId = document.getElementById('mediaTypeId').value;
+        const type = document.getElementById('mediaType').value === '电影' ? 'movie' : 'tv';
+        const title = document.getElementById('mediaTitle').textContent;
         const year = document.getElementById('year').value;
-        const season = document.getElementById('season').value;
+        const season = document.getElementById('season') ? document.getElementById('season').value : '';
         const startEpisode = document.getElementById('startEpisode').value;
         const endEpisode = document.getElementById('endEpisode').value;
 
         // 基本验证
-        if (!type || !title || !year) {
-            alert('请填写所有必填字段');
+        if (!mediaTypeId || !title || !year) {
+            showToast('媒体信息不完整', 'warning');
             return;
         }
 
         // 如果是电视剧，验证季和集数
         if (type === 'tv') {
             if (!season || !startEpisode || !endEpisode) {
-                alert('请填写季、起始集和结束集');
+                showToast('请填写季、起始集和结束集', 'warning');
                 return;
             }
             
             if (parseInt(startEpisode) > parseInt(endEpisode)) {
-                alert('起始集不能大于结束集');
+                showToast('起始集不能大于结束集', 'warning');
                 return;
             }
         }
@@ -190,24 +905,271 @@
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                alert(data.message);
+                showToast(data.message || '订阅添加成功', 'success');
                 // 关闭模态框
                 const modal = bootstrap.Modal.getInstance(document.getElementById('addSubscriptionModal'));
-                modal.hide();
+                if (modal) modal.hide();
                 
                 // 重置表单
                 document.getElementById('addSubscriptionForm').reset();
-                document.getElementById('tvFields').style.display = 'none';
                 
-                // 刷新页面以显示新添加的订阅
-                location.reload();
+                const mediaInfo = document.getElementById('mediaInfo');
+                const tvFields = document.getElementById('tvFields');
+                const submitBtn = document.getElementById('submitSubscription');
+                
+                if (mediaInfo) mediaInfo.style.display = 'none';
+                if (tvFields) tvFields.style.display = 'none';
+                if (submitBtn) submitBtn.style.display = 'none';
+                
+                // 延迟刷新页面以显示新添加的订阅
+                setTimeout(() => {
+                    location.reload();
+                }, 1500);
             } else {
-                alert('添加失败: ' + data.message);
+                // 处理后端返回的错误信息
+                const errorMessage = data.message || '未知错误';
+                showToast(errorMessage, 'danger');
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            alert('添加订阅时发生错误，请查看控制台了解详情');
+            showToast('添加订阅时发生错误', 'danger');
+        });
+    }
+
+    // 显示Toast提示框 - 使用基础模板中已有的Toast
+    function showToast(message, type = 'info') {
+        const toastEl = document.getElementById('toast');
+        const toastMessage = document.getElementById('toastMessage');
+        const toastHeader = toastEl.querySelector('.toast-header strong');
+        
+        // 设置消息内容
+        toastMessage.textContent = message;
+        
+        // 根据类型设置标题文本
+        switch(type) {
+            case 'success':
+                toastHeader.textContent = '成功';
+                break;
+            case 'warning':
+                toastHeader.textContent = '警告';
+                break;
+            case 'danger':
+                toastHeader.textContent = '错误';
+                break;
+            default:
+                toastHeader.textContent = '提示';
+        }
+        
+        // 显示Toast
+        const toast = new bootstrap.Toast(toastEl, { delay: 3000 });
+        toast.show();
+    }
+    
+    // 剧集关联模态框相关功能
+    document.getElementById('tvAliasModal').addEventListener('show.bs.modal', function () {
+        loadAliasList();
+    });
+    
+    // 加载剧集关联列表
+    function loadAliasList() {
+        const container = document.getElementById('aliasListContainer');
+        container.innerHTML = `
+            <div class="text-center">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">加载中...</span>
+                </div>
+            </div>
+        `;
+        
+        fetch('/tv_alias_list_json')
+            .then(response => response.json())
+            .then(data => {
+                if (data.alias_list && data.alias_list.length > 0) {
+                    let html = `
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>原始名称</th>
+                                    <th>目标名称</th>
+                                    <th>目标季号</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    `;
+                    
+                    data.alias_list.forEach(alias => {
+                        html += `
+                            <tr>
+                                <td>${alias.ALIAS || alias.alias}</td>
+                                <td>${alias.TARGET_TITLE || alias.target_title}</td>
+                                <td>${alias.TARGET_SEASON || alias.target_season || '-'}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-warning edit-alias" data-id="${alias.ID || alias.id}">编辑</button>
+                                    <button class="btn btn-sm btn-danger delete-alias" data-id="${alias.ID || alias.id}">删除</button>
+                                </td>
+                            </tr>
+                        `;
+                    });
+                    
+                    html += `
+                            </tbody>
+                        </table>
+                    `;
+                    
+                    container.innerHTML = html;
+                    
+                    // 绑定编辑和删除事件
+                    document.querySelectorAll('.edit-alias').forEach(btn => {
+                        btn.addEventListener('click', function() {
+                            const aliasId = this.getAttribute('data-id');
+                            editAlias(aliasId);
+                        });
+                    });
+                    
+                    document.querySelectorAll('.delete-alias').forEach(btn => {
+                        btn.addEventListener('click', function() {
+                            const aliasId = this.getAttribute('data-id');
+                            deleteAlias(aliasId);
+                        });
+                    });
+                } else {
+                    container.innerHTML = '<p class="text-center">暂无剧集关联。</p>';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                container.innerHTML = '<p class="text-center text-danger">加载剧集关联列表失败</p>';
+            });
+    }
+    
+    // 新增关联按钮事件
+    document.getElementById('addAliasBtn').addEventListener('click', function() {
+        showAliasForm();
+    });
+    
+    // 取消表单按钮事件
+    document.getElementById('cancelAliasForm').addEventListener('click', function() {
+        hideAliasForm();
+    });
+    
+    // 显示关联表单
+    function showAliasForm(alias = null) {
+        const formContainer = document.getElementById('aliasFormContainer');
+        const listContainer = document.getElementById('aliasListContainer');
+        
+        // 填充表单数据（如果是编辑）
+        if (alias) {
+            document.getElementById('aliasId').value = alias.id;
+            document.getElementById('aliasName').value = alias.alias;
+            document.getElementById('targetTitle').value = alias.target_title;
+            document.getElementById('targetSeason').value = alias.target_season || '';
+        } else {
+            // 清空表单（新增）
+            document.getElementById('tvAliasForm').reset(); // 修复：使用正确的表单ID
+            document.getElementById('aliasId').value = '';
+        }
+        
+        // 显示表单，隐藏列表
+        listContainer.style.display = 'none';
+        formContainer.style.display = 'block';
+    }
+    
+    // 隐藏关联表单
+    function hideAliasForm() {
+        const formContainer = document.getElementById('aliasFormContainer');
+        const listContainer = document.getElementById('aliasListContainer');
+        
+        // 显示列表，隐藏表单
+        listContainer.style.display = 'block';
+        formContainer.style.display = 'none';
+    }
+    
+    // 编辑关联
+    function editAlias(aliasId) {
+        fetch(`/tv_alias_edit_json/${aliasId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.alias) {
+                    const aliasData = {
+                        id: data.alias.ID || data.alias.id,
+                        alias: data.alias.ALIAS || data.alias.alias,
+                        target_title: data.alias.TARGET_TITLE || data.alias.target_title,
+                        target_season: data.alias.TARGET_SEASON || data.alias.target_season
+                    };
+                    showAliasForm(aliasData);
+                } else {
+                    showToast('获取关联信息失败', 'danger');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('获取关联信息失败', 'danger');
+            });
+    }
+    
+    // 删除关联
+    function deleteAlias(aliasId) {
+        if (confirm('确定要删除该关联吗？')) {
+            fetch(`/tv_alias_delete/${aliasId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('删除成功', 'success');
+                    loadAliasList(); // 重新加载列表
+                } else {
+                    showToast(data.message || '删除失败', 'danger');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('删除失败', 'danger');
+            });
+        }
+    }
+    
+    // 提交关联表单
+    document.getElementById('tvAliasForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const aliasId = document.getElementById('aliasId').value;
+        const aliasName = document.getElementById('aliasName').value;
+        const targetTitle = document.getElementById('targetTitle').value;
+        const targetSeason = document.getElementById('targetSeason').value;
+        
+        const url = aliasId ? `/tv_alias_edit/${aliasId}` : '/tv_alias_add';
+        const method = aliasId ? 'POST' : 'POST';
+        
+        fetch(url, {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                alias: aliasName,
+                target_title: targetTitle,
+                target_season: targetSeason || null
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showToast(aliasId ? '更新成功' : '添加成功', 'success');
+                hideAliasForm();
+                loadAliasList(); // 重新加载列表
+            } else {
+                showToast(data.message || (aliasId ? '更新失败' : '添加失败'), 'danger');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToast(aliasId ? '更新失败' : '添加失败', 'danger');
         });
     });
 </script>

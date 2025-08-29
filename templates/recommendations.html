@@ -204,7 +204,16 @@
             border: none;
             margin: 5px 0;
             font-size: 0.8em;
-            padding: 0;
+            padding-left: 0;
+            background-color: unset;
+        }
+
+        button.bi.bi-search {
+            color: rgb(25, 135, 84);
+            border: none;
+            margin: 5px 0;
+            font-size: 0.8em;
+            padding-left: 0;
             background-color: unset;
         }
 
@@ -494,7 +503,11 @@
                             <div class="modal-details">
                                 <div class="d-flex align-items-center justify-content-between">
                                     <h3 id="modalTitle" class="me-3"></h3> <!-- 标题 -->
-                                    <button type="button" class="bi bi-bookmark-star-fill" id="subscribeButton">订阅</button> <!-- 订阅按钮 -->
+                                </div>
+                                <!-- 按钮位置调整 -->
+                                <div class="d-flex">
+                                    <button type="button" class="bi bi-bookmark-star-fill me-2" id="subscribeButton">订阅</button>
+                                    <button type="button" class="bi bi-search" id="searchResourceButton">资源搜索</button>
                                 </div>
                                 <p id="modalRating" class="text-muted"></p> <!-- 评分 -->
                                 <p id="modalSeasons" style="display: none;"></p> <!-- 季数 -->
@@ -1051,48 +1064,164 @@
                     tmdbId: tmdbId // 添加tmdbId用于获取季信息
                 };
                 
-                fetch('/check_subscriptions', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(subscriptionData),
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.subscribed) {
-                        if (data.status === 'subscribed') {
-                            // 如果已订阅，设置按钮为已订阅状态
-                            subscribeButton.style.color = '#198754';
-                            subscribeButton.textContent = '已订阅';
-                        } else if (data.status === 'in_library') {
-                            // 如果已入库，设置按钮为已入库状态
-                            subscribeButton.style.color = '#007bff';
-                            subscribeButton.textContent = '已入库';
-                        }
-                        subscribeButton.disabled = true; // 禁用按钮
-                    } else {
-                        // 如果未订阅或未入库，设置按钮为可订阅状态
-                        subscribeButton.style.color = '#495057';
-                        subscribeButton.textContent = '订阅';
-                        subscribeButton.disabled = false;
-                
-                        // 设置订阅按钮的点击事件
-                        subscribeButton.onclick = () => {
-                            // 检查是否为电视剧且有多季
-                            if (mediaType === 'tv' && movieDetails.number_of_seasons > 1) {
-                                // 显示季选择模态框
-                                showSeasonSelectionModal(movieDetails, subscriptionData);
-                            } else {
-                                // 直接订阅（电影或单季电视剧）
-                                subscribeMedia(subscriptionData);
-                            }
+                // 对于多季电视剧，检查所有季的订阅状态
+                if (mediaType === 'tv' && movieDetails.number_of_seasons > 1) {
+                    // 创建一个检查所有季订阅状态的Promise数组
+                    const seasonCheckPromises = [];
+                    for (let i = 1; i <= movieDetails.number_of_seasons; i++) {
+                        // 获取当前季度的信息，包括正确的年份
+                        const seasonSubscriptionData = {
+                            ...subscriptionData,
+                            season: i
                         };
+                        
+                        seasonCheckPromises.push(
+                            // 先获取季度详细信息以获取正确的年份
+                            fetch(`https://api.tmdb.org/3/tv/${tmdbId}/season/${i}?api_key=${tmdbApiKey}&language=zh-CN`)
+                            .then(response => response.json())
+                            .then(seasonData => {
+                                // 更新年份为当前季度的年份
+                                const seasonYear = seasonData.air_date ? new Date(seasonData.air_date).getFullYear() : subscriptionData.year;
+                                return {
+                                    ...seasonSubscriptionData,
+                                    year: seasonYear
+                                };
+                            })
+                            .catch(error => {
+                                // 如果获取季度信息失败，使用原有年份
+                                console.error(`获取第${i}季详细信息时出错:`, error);
+                                return seasonSubscriptionData;
+                            })
+                            .then(data => {
+                                return fetch('/check_subscriptions', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                    },
+                                    body: JSON.stringify(data),
+                                })
+                                .then(response => response.json());
+                            })
+                        );
                     }
-                })
-                .catch(error => {
-                    console.error('检查订阅状态时出错:', error);
-                });
+                    
+                    // 等待所有季的检查结果
+                    Promise.all(seasonCheckPromises)
+                        .then(seasonResults => {
+                            // 检查是否有任何季未订阅
+                            const anyUnsubscribed = seasonResults.some(result => !result.subscribed || result.status !== 'subscribed');
+                            const allInLibrary = seasonResults.every(result => result.status === 'in_library');
+                            
+                            if (allInLibrary) {
+                                // 所有季都在库中
+                                subscribeButton.style.color = '#007bff';
+                                subscribeButton.textContent = '已入库';
+                                subscribeButton.disabled = false;
+                                
+                                subscribeButton.onclick = () => {
+                                    showToast('该内容已在库中，无法取消订阅', false);
+                                };
+                            } else if (!anyUnsubscribed) {
+                                // 所有季都已订阅
+                                subscribeButton.style.color = '#198754';
+                                subscribeButton.textContent = '已订阅';
+                                subscribeButton.disabled = false;
+                                
+                                subscribeButton.onclick = () => {
+                                    showCancelSeasonSelectionModal(subscriptionData, seasonResults);
+                                };
+                            } else {
+                                // 有季未订阅
+                                subscribeButton.style.color = '#495057';
+                                subscribeButton.textContent = '订阅';
+                                subscribeButton.disabled = false;
+                                
+                                subscribeButton.onclick = () => {
+                                    showSeasonSelectionModal(movieDetails, subscriptionData, subscribeButton);
+                                };
+                            }
+                        })
+                        .catch(error => {
+                            console.error('检查订阅状态时出错:', error);
+                        });
+                } else {
+                    // 单季电视剧或电影的原有逻辑
+                    fetch('/check_subscriptions', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(subscriptionData),
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.subscribed) {
+                            if (data.status === 'subscribed') {
+                                subscribeButton.style.color = '#198754';
+                                subscribeButton.textContent = '已订阅';
+                            } else if (data.status === 'in_library') {
+                                subscribeButton.style.color = '#007bff';
+                                subscribeButton.textContent = '已入库';
+                            }
+                            subscribeButton.disabled = false;
+
+                            subscribeButton.onclick = () => {
+                                if (data.status === 'subscribed') {
+                                    cancelSubscription(subscriptionData, subscribeButton);
+                                } else if (data.status === 'in_library') {
+                                    showToast('该内容已在库中，无法取消订阅', false);
+                                }
+                            };
+                        } else {
+                            subscribeButton.style.color = '#495057';
+                            subscribeButton.textContent = '订阅';
+                            subscribeButton.disabled = false;
+
+                            subscribeButton.onclick = () => {
+                                if (mediaType === 'tv' && movieDetails.number_of_seasons > 1) {
+                                    showSeasonSelectionModal(movieDetails, subscriptionData, subscribeButton);
+                                } else {
+                                    subscribeMedia(subscriptionData, subscribeButton);
+                                }
+                            };
+                        }
+                    })
+                    .catch(error => {
+                        console.error('检查订阅状态时出错:', error);
+                    });
+                }
+
+                // 资源搜索函数 - 修改部分
+                const searchResourceButton = document.getElementById('searchResourceButton');
+                searchResourceButton.onclick = () => {
+                    const searchTitle = movieDetails.title || movieDetails.name || '无标题';
+                    const searchYear = mediaType === 'movie' 
+                        ? (movieDetails.release_date ? new Date(movieDetails.release_date).getFullYear() : '') 
+                        : (movieDetails.first_air_date ? new Date(movieDetails.first_air_date).getFullYear() : '');
+                    const searchType = mediaType;
+                    const tmdbId = movieDetails.id;
+                    
+                    // 检查是否为多季电视剧
+                    if (mediaType === 'tv' && movieDetails.number_of_seasons > 1) {
+                        // 显示季选择模态框用于资源搜索
+                        showSeasonSearchSelectionModal(movieDetails, {
+                            title: searchTitle,
+                            year: searchYear,
+                            type: searchType,
+                            tmdbId: tmdbId
+                        });
+                    } else {
+                        // 直接跳转到搜索页面（电影或单季电视剧）
+                        let searchUrl = `/manual_search?title=${encodeURIComponent(searchTitle)}&year=${searchYear}&type=${searchType}&tmdb_id=${tmdbId}`;
+                        
+                        // 如果是电视剧，添加季数信息
+                        if (mediaType === 'tv' && movieDetails.number_of_seasons) {
+                            searchUrl += `&season=${movieDetails.number_of_seasons}`;
+                        }
+                        
+                        window.location.href = searchUrl;
+                    }
+                };
 
                 // 显示模态框
                 const modal = new bootstrap.Modal(document.getElementById('mediaDetailsModal'));
@@ -1103,8 +1232,88 @@
         });
     }
 
+    // 显示季搜索选择模态框
+    function showSeasonSearchSelectionModal(tvDetails, searchParams) {
+        // 创建季选择模态框
+        const modalHtml = `
+            <div class="modal fade" id="seasonSearchSelectionModal" tabindex="-1" aria-labelledby="seasonSearchSelectionModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header d-flex justify-content-between align-items-center">
+                            <h5 class="modal-title" id="seasonSearchSelectionModalLabel">选择搜索季</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p>《${searchParams.title}》共有 ${tvDetails.number_of_seasons} 季，请选择要搜索的季：</p>
+                            <div class="season-selection">
+                                ${generateSeasonOptions(tvDetails.number_of_seasons)}
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-sm btn-primary" id="confirmSeasonSearch">搜索</button>
+                            <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">取消</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // 添加模态框到页面
+        if (!document.getElementById('seasonSearchSelectionModal')) {
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+        }
+        
+        // 显示模态框
+        const seasonSearchModal = new bootstrap.Modal(document.getElementById('seasonSearchSelectionModal'));
+        seasonSearchModal.show();
+        
+        // 绑定确认按钮事件
+        document.getElementById('confirmSeasonSearch').onclick = function() {
+            const selectedSeason = document.querySelector('input[name="seasonChoice"]:checked');
+            if (selectedSeason) {
+                const seasonNumber = parseInt(selectedSeason.value);
+                seasonSearchModal.hide();
+                
+                // 获取该季的详细信息以获取正确的年份
+                fetchSeasonDetailsForSearch(tvDetails.id, seasonNumber, searchParams);
+            } else {
+                showToast('请选择要搜索的季', false);
+            }
+        };
+        
+        // 模态框关闭时清理
+        document.getElementById('seasonSearchSelectionModal').addEventListener('hidden.bs.modal', function () {
+            this.remove();
+        });
+    }
+
+    // 获取季详细信息用于搜索
+    function fetchSeasonDetailsForSearch(tvId, seasonNumber, searchParams) {
+        const url = `https://api.tmdb.org/3/tv/${tvId}/season/${seasonNumber}?api_key=${tmdbApiKey}&language=zh-CN`;
+        
+        fetch(url)
+            .then(response => response.json())
+            .then(seasonData => {
+                // 使用该季的年份而不是整个剧集的年份
+                let seasonYear = '';
+                if (seasonData.air_date) {
+                    seasonYear = new Date(seasonData.air_date).getFullYear();
+                }
+                
+                // 构造跳转URL并传递参数
+                let searchUrl = `/manual_search?title=${encodeURIComponent(searchParams.title)}&year=${seasonYear}&type=${searchParams.type}&tmdb_id=${searchParams.tmdbId}&season=${seasonNumber}`;
+                window.location.href = searchUrl;
+            })
+            .catch(error => {
+                console.error('获取季详细信息时出错:', error);
+                // 如果获取季信息失败，仍然使用原来的年份
+                let searchUrl = `/manual_search?title=${encodeURIComponent(searchParams.title)}&year=${searchParams.year}&type=${searchParams.type}&tmdb_id=${searchParams.tmdbId}&season=${seasonNumber}`;
+                window.location.href = searchUrl;
+            });
+    }
+
     // 显示季选择模态框
-    function showSeasonSelectionModal(movieDetails, subscriptionData) {
+    function showSeasonSelectionModal(movieDetails, subscriptionData, subscribeButton) {
         // 创建季选择模态框
         const modalHtml = `
             <div class="modal fade" id="seasonSelectionModal" tabindex="-1" aria-labelledby="seasonSelectionModalLabel" aria-hidden="true">
@@ -1112,6 +1321,7 @@
                     <div class="modal-content">
                         <div class="modal-header d-flex justify-content-between align-items-center">
                             <h5 class="modal-title" id="seasonSelectionModalLabel">选择订阅季</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                         </div>
                         <div class="modal-body">
                             <p>《${subscriptionData.title}》共有 ${movieDetails.number_of_seasons} 季，请选择要订阅的季：</p>
@@ -1142,13 +1352,122 @@
             const selectedSeason = document.querySelector('input[name="seasonChoice"]:checked');
             if (selectedSeason) {
                 const seasonNumber = parseInt(selectedSeason.value);
-                // 获取该季的集数信息
-                fetchSeasonDetails(movieDetails.id, seasonNumber, subscriptionData);
-                seasonModal.hide();
+                
+                // 检查该季的订阅状态
+                const seasonSubscriptionData = {
+                    ...subscriptionData,
+                    season: seasonNumber
+                };
+                
+                fetch('/check_subscriptions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(seasonSubscriptionData),
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.subscribed && data.status === 'in_library') {
+                        // 该季已入库
+                        showToast('当前季已入库', false);
+                        seasonModal.hide();
+                    } else if (data.subscribed && data.status === 'subscribed') {
+                        // 该季已订阅
+                        showToast(`第 ${seasonNumber} 季已订阅`, false);
+                        seasonModal.hide();
+                    } else {
+                        // 获取该季的集数信息和年份信息
+                        fetchSeasonDetails(movieDetails.id, seasonNumber, subscriptionData, subscribeButton);
+                        seasonModal.hide();
+                    }
+                })
+                .catch(error => {
+                    console.error('检查季订阅状态时出错:', error);
+                    showToast('检查订阅状态失败，请稍后重试。', false);
+                });
             } else {
                 showToast('请选择要订阅的季', false);
             }
         };
+        
+        // 模态框关闭时清理
+        document.getElementById('seasonSelectionModal').addEventListener('hidden.bs.modal', function () {
+            this.remove();
+        });
+    }
+
+    // 显示取消订阅季选择模态框
+    function showCancelSeasonSelectionModal(subscriptionData, seasonResults) {
+        // 生成季选项，只显示已订阅的季
+        let seasonOptions = '';
+        seasonResults.forEach((result, index) => {
+            if (result.status === 'subscribed') {
+                const seasonNumber = index + 1;
+                seasonOptions += `
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="cancelSeasonChoice" id="cancelSeason${seasonNumber}" value="${seasonNumber}">
+                        <label class="form-check-label" for="cancelSeason${seasonNumber}">
+                            第 ${seasonNumber} 季
+                        </label>
+                    </div>
+                `;
+            }
+        });
+
+        // 创建取消订阅季选择模态框
+        const modalHtml = `
+            <div class="modal fade" id="cancelSeasonSelectionModal" tabindex="-1" aria-labelledby="cancelSeasonSelectionModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header d-flex justify-content-between align-items-center">
+                            <h5 class="modal-title" id="cancelSeasonSelectionModalLabel">选择取消订阅的季</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p>《${subscriptionData.title}》请选择要取消订阅的季：</p>
+                            <div class="season-selection">
+                                ${seasonOptions}
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-sm btn-danger" id="confirmCancelSeasonSubscription">取消订阅</button>
+                            <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">关闭</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // 添加模态框到页面
+        if (!document.getElementById('cancelSeasonSelectionModal')) {
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+        }
+        
+        // 显示模态框
+        const cancelSeasonModal = new bootstrap.Modal(document.getElementById('cancelSeasonSelectionModal'));
+        cancelSeasonModal.show();
+        
+        // 绑定确认按钮事件
+        document.getElementById('confirmCancelSeasonSubscription').onclick = function() {
+            const selectedSeasons = document.querySelectorAll('input[name="cancelSeasonChoice"]:checked');
+            if (selectedSeasons.length > 0) {
+                const seasonNumbers = Array.from(selectedSeasons).map(season => parseInt(season.value));
+                
+                // 确认是否取消订阅
+                if (confirm(`确定要取消第 ${seasonNumbers.join(', ')} 季的订阅吗？`)) {
+                    // 执行取消订阅
+                    cancelSelectedSeasonsSubscription(subscriptionData, seasonNumbers, cancelSeasonModal);
+                }
+            } else {
+                showToast('请选择要取消订阅的季', false);
+            }
+        };
+        
+        // 模态框关闭时清理
+        document.getElementById('cancelSeasonSelectionModal').addEventListener('hidden.bs.modal', function () {
+            this.remove();
+        });
     }
 
     // 生成季选项
@@ -1168,21 +1487,31 @@
     }
 
     // 获取季详细信息
-    function fetchSeasonDetails(tmdbId, seasonNumber, subscriptionData) {
+    function fetchSeasonDetails(tmdbId, seasonNumber, subscriptionData, subscribeButton) {
         const url = `https://api.tmdb.org/3/tv/${tmdbId}/season/${seasonNumber}?api_key=${tmdbApiKey}&language=zh-CN`;
         
         fetch(url)
             .then(response => response.json())
             .then(seasonData => {
-                // 更新订阅数据，添加具体季数和集数
+                // 获取该季的年份信息
+                let seasonYear = '';
+                if (seasonData.air_date) {
+                    seasonYear = new Date(seasonData.air_date).getFullYear();
+                } else {
+                    // 如果该季没有播出日期，则使用电视剧整体的初始年份
+                    seasonYear = subscriptionData.year || '';
+                }
+                
+                // 更新订阅数据，添加具体季数、集数和年份
                 const updatedSubscriptionData = {
                     ...subscriptionData,
                     season: seasonNumber,
-                    episodes: seasonData.episodes ? seasonData.episodes.length : 0
+                    episodes: seasonData.episodes ? seasonData.episodes.length : 0,
+                    year: seasonYear // 添加季的年份
                 };
                 
                 // 执行订阅
-                subscribeMedia(updatedSubscriptionData);
+                subscribeMedia(updatedSubscriptionData, subscribeButton);
             })
             .catch(error => {
                 console.error('获取季详细信息时出错:', error);
@@ -1191,7 +1520,7 @@
     }
 
     // 执行订阅的通用函数
-    function subscribeMedia(subscriptionData) {
+    function subscribeMedia(subscriptionData, subscribeButton) {
         fetch('/tmdb_subscriptions', {
             method: 'POST',
             headers: {
@@ -1205,11 +1534,48 @@
                 // 显示成功消息
                 showToast(data.message, true);
 
-                // 修改按钮样式和文字
-                const subscribeButton = document.getElementById('subscribeButton');
+                // 修改按钮样式和文字为已订阅状态
                 subscribeButton.style.color = '#198754';
                 subscribeButton.textContent = '已订阅';
-                subscribeButton.disabled = true;
+                
+                // 更新按钮点击事件为取消订阅
+                subscribeButton.onclick = () => {
+                    cancelSubscription(subscriptionData, subscribeButton);
+                };
+                
+                // 重新检查订阅状态以确保一致性
+                setTimeout(() => {
+                    fetch('/check_subscriptions', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(subscriptionData),
+                    })
+                    .then(response => response.json())
+                    .then(checkData => {
+                        if (!checkData.subscribed) {
+                            // 如果检查发现未订阅，恢复按钮状态
+                            subscribeButton.style.color = '#495057';
+                            subscribeButton.textContent = '订阅';
+                            subscribeButton.onclick = () => {
+                                if (subscriptionData.mediaType === 'tv' && subscriptionData.season && subscriptionData.season > 1) {
+                                    fetchMovieDetails(subscriptionData.tmdbId, subscriptionData.mediaType, tmdbApiKey).then(movieDetails => {
+                                        if (movieDetails) {
+                                            showSeasonSelectionModal(movieDetails, subscriptionData, subscribeButton);
+                                        }
+                                    });
+                                } else {
+                                    subscribeMedia(subscriptionData, subscribeButton);
+                                }
+                            };
+                            showToast('订阅状态异常，请重新尝试订阅', false);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('检查订阅状态出错:', error);
+                    });
+                }, 1000); // 延迟1秒检查，确保后端处理完成
             } else {
                 // 显示失败消息
                 showToast(data.message, false);
@@ -1219,6 +1585,100 @@
             console.error('订阅请求出错:', error);
             showToast('订阅失败，请稍后重试。', false);
         });
+    }
+
+    // 取消订阅的函数
+    function cancelSubscription(subscriptionData, subscribeButton) {
+        // 直接取消订阅，无需确认
+        fetch('/cancel_subscription', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(subscriptionData),
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // 显示成功消息
+                showToast(data.message, true);
+
+                // 修改按钮样式和文字回到可订阅状态
+                subscribeButton.style.color = '#495057';
+                subscribeButton.textContent = '订阅';
+                
+                // 更新按钮点击事件为订阅
+                subscribeButton.onclick = () => {
+                    const mediaType = subscriptionData.mediaType;
+                    // 检查是否为电视剧且有多季
+                    if (mediaType === 'tv' && subscriptionData.season && subscriptionData.season > 1) {
+                        // 重新获取电视剧详情以显示季选择模态框
+                        fetchMovieDetails(subscriptionData.tmdbId, mediaType, tmdbApiKey).then(movieDetails => {
+                            if (movieDetails) {
+                                showSeasonSelectionModal(movieDetails, subscriptionData, subscribeButton);
+                            }
+                        });
+                    } else {
+                        subscribeMedia(subscriptionData, subscribeButton);
+                    }
+                };
+            } else {
+                // 显示失败消息
+                showToast(data.message, false);
+            }
+        })
+        .catch(error => {
+            console.error('取消订阅请求出错:', error);
+            showToast('取消订阅失败，请稍后重试。', false);
+        });
+    }
+
+    // 取消选定季的订阅
+    function cancelSelectedSeasonsSubscription(subscriptionData, seasonNumbers, modal) {
+        // 创建取消订阅的Promise数组
+        const cancelPromises = seasonNumbers.map(seasonNumber => {
+            const seasonData = {
+                ...subscriptionData,
+                season: seasonNumber
+            };
+            
+            return fetch('/cancel_subscription', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(seasonData),
+            }).then(response => response.json());
+        });
+        
+        Promise.all(cancelPromises)
+            .then(results => {
+                const allSuccess = results.every(result => result.success);
+                if (allSuccess) {
+                    showToast(`第 ${seasonNumbers.join(', ')} 季已取消订阅`, true);
+                    modal.hide();
+                    
+                    // 更新主模态框中的订阅按钮状态
+                    const subscribeButton = document.getElementById('subscribeButton');
+                    subscribeButton.style.color = '#495057';
+                    subscribeButton.textContent = '订阅';
+                    
+                    // 重新绑定订阅按钮事件
+                    subscribeButton.onclick = () => {
+                        fetchMovieDetails(subscriptionData.tmdbId, subscriptionData.mediaType, tmdbApiKey).then(movieDetails => {
+                            if (movieDetails) {
+                                showSeasonSelectionModal(movieDetails, subscriptionData, subscribeButton);
+                            }
+                        });
+                    };
+                } else {
+                    showToast('部分订阅取消失败，请稍后重试', false);
+                }
+            })
+            .catch(error => {
+                console.error('取消订阅请求出错:', error);
+                showToast('取消订阅失败，请稍后重试。', false);
+            });
     }
 
     // 关闭模态框时清空内容

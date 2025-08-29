@@ -71,6 +71,11 @@
                             <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">不太灵站点，暂不需要登录，备用选项。保持系统默认即可。</small>
                             {% elif key == 'download_port' %}
                             <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">使用transmission和qbittorrent需要填写IP地址和端口。如不使用则保持系统默认即可。</small>
+                            <!-- 添加测试按钮 -->
+                            <div class="mt-2">
+                                <button type="button" id="testDownloaderBtn" class="btn btn-sm btn-primary">测试连接</button>
+                                <span id="testResult" class="ml-2"></span>
+                            </div>
                             {% elif key == 'xunlei_dir' %}
                             <small class="form-text text-muted" style="font-size: clamp(8px, 1.0vw, 12px);">迅雷远程下载需填写用户名、密码、设备名称、下载目录。<a target="_blank" href="http://wiki.songmy.top:8080/web/#/686311457/102215687">使用帮助</a></small>
                             {% endif %}
@@ -80,7 +85,11 @@
                 </div>
             </div>
             {% endfor %}
-            <button type="submit" class="btn btn-sm btn-primary" style="margin-bottom: 15px;">保存更改</button>
+            <div class="d-flex justify-content-end mb-3">
+                <div class="ml-auto">
+                    <button type="submit" class="btn btn-sm btn-primary">保存更改</button>
+                </div>
+            </div>
         </form>
     </div>
 </main>
@@ -180,6 +189,51 @@
                 {% endfor %}
             {% endif %}
         {% endwith %}
+        
+        // 添加测试下载器连接功能
+        $('#testDownloaderBtn').on('click', function() {
+            var downloader = $('#download_type').val() || $('#download_type').find("option:selected").val();
+            var host = $('#download_host').val();
+            var port = $('#download_port').val();
+            var username = $('#download_username').val();
+            var password = $('#download_password').val();
+            
+            if (downloader !== 'transmission' && downloader !== 'qbittorrent') {
+                $('#testResult').html('<span class="text-warning">仅支持测试Transmission和qBittorrent</span>');
+                return;
+            }
+            
+            if (!host || !port) {
+                $('#testResult').html('<span class="text-danger">请填写下载器地址和端口</span>');
+                return;
+            }
+            
+            $('#testResult').html('<span class="text-info">测试中...</span>');
+            
+            // 发送测试请求到后端
+            $.ajax({
+                url: '/test_downloader_connection',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    downloader: downloader,
+                    host: host,
+                    port: port,
+                    username: username,
+                    password: password
+                }),
+                success: function(response) {
+                    if (response.success) {
+                        $('#testResult').html('<span class="text-success">连接成功！</span>');
+                    } else {
+                        $('#testResult').html('<span class="text-danger">连接失败：' + response.message + '</span>');
+                    }
+                },
+                error: function(xhr, status, error) {
+                    $('#testResult').html('<span class="text-danger">测试请求失败：' + error + '</span>');
+                }
+            });
+        });
     });
 </script>
 {% endblock %}

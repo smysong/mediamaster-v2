@@ -2,7 +2,6 @@ import logging
 import sqlite3
 import os
 import time
-import psutil
 import subprocess
 
 # 配置日志
@@ -30,19 +29,6 @@ def load_config(db_path='/config/data.db'):
         logging.error(f"数据库加载配置错误: {e}")
         exit(0)
 
-def check_chrome_process():
-    """检查是否有 Chrome 浏览器相关进程在运行"""
-    chrome_keywords = ['chrome', 'chromium']
-    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-        try:
-            name = proc.info['name'].lower()
-            if any(kw in name for kw in chrome_keywords):
-                logging.debug(f"检测到 Chrome 进程运行中: {proc.info['name']} (PID: {proc.info['pid']})")
-                return True
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            continue
-    return False
-
 def run_xunlei_script(torrent_file):
     """运行 xunlei.py 处理 .torrent 文件"""
     logging.info(f"发现种子文件：{torrent_file}")
@@ -66,12 +52,6 @@ def monitor_torrent_directory(directory):
 
             if not torrent_files:
                 logging.debug("未发现种子文件，持续监听中...")
-                time.sleep(10)
-                continue
-
-            # 检查是否有 Chrome 进程在运行
-            if check_chrome_process():
-                logging.debug("检测到 Chrome 浏览器正在运行，等待结束...")
                 time.sleep(10)
                 continue
 

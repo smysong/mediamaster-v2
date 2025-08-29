@@ -25,10 +25,22 @@ logging.basicConfig(
 )
 
 class MovieIndexer:
-    def __init__(self, db_path='/config/data.db'):
+    def __init__(self, db_path='/config/data.db', instance_id=None):
         self.db_path = db_path
         self.driver = None
         self.config = {}
+        self.instance_id = instance_id
+        # 如果有实例ID，修改日志文件路径以避免冲突
+        if instance_id:
+            logging.getLogger().handlers.clear()
+            logging.basicConfig(
+                level=logging.INFO,
+                format=f"%(levelname)s - [Instance: {instance_id}] - %(message)s",
+                handlers=[
+                    logging.FileHandler(f"/tmp/log/movie_bthd_{instance_id}.log", mode='w'),
+                    logging.StreamHandler()
+                ]
+            )
 
     def setup_webdriver(self):
         if hasattr(self, 'driver') and self.driver is not None:
@@ -45,11 +57,15 @@ class MovieIndexer:
         options.add_argument('--ignore-certificate-errors')
         options.add_argument('--allow-insecure-localhost')
         options.add_argument('--ignore-ssl-errors')
-        # 设置用户配置文件缓存目录
+        # 设置用户配置文件缓存目录，添加实例ID以避免冲突
         user_data_dir = '/app/ChromeCache/user-data-dir'
+        if self.instance_id:
+            user_data_dir = f'/app/ChromeCache/user-data-dir-{self.instance_id}'
         options.add_argument(f'--user-data-dir={user_data_dir}')
-        # 设置磁盘缓存目录
+        # 设置磁盘缓存目录，添加实例ID以避免冲突
         disk_cache_dir = "/app/ChromeCache/disk-cache-dir"
+        if self.instance_id:
+            disk_cache_dir = f"/app/ChromeCache/disk-cache-dir-{self.instance_id}"
         options.add_argument(f"--disk-cache-dir={disk_cache_dir}")
         
         # 设置默认下载目录
@@ -410,9 +426,10 @@ if __name__ == "__main__":
     parser.add_argument("--manual", action="store_true", help="手动搜索模式")
     parser.add_argument("--title", type=str, help="电影标题")
     parser.add_argument("--year", type=int, help="电影年份（可选）")
+    parser.add_argument("--instance-id", type=str, help="实例唯一标识符")
     args = parser.parse_args()
 
-    indexer = MovieIndexer()
+    indexer = MovieIndexer(instance_id=args.instance_id)
 
     if args.manual:
         # 加载配置文件

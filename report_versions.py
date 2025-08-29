@@ -56,7 +56,7 @@ def send_client_data(client_id, version):
     try:
         response = requests.post(url, json=payload, timeout=5)
         if response.status_code == 200:
-            logging.info("报告程序版本信息")
+            logging.debug("报告程序版本信息")
         else:
             logging.error(f"版本统计数据发送失败，状态码: {response.status_code}, 响应: {response.text}")
     except requests.RequestException as e:
@@ -68,7 +68,7 @@ def send_heartbeat():
     """
     client_id = get_client_id()
     send_client_data(client_id, CURRENT_VERSION)
-    logging.info("发送心跳包以更新在线状态")
+    logging.debug("发送心跳包以更新在线状态")
 
 def run_scheduler():
     """

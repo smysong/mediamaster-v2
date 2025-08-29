@@ -240,6 +240,49 @@
 .site-filter-btn, .resolution-filter-btn {
     display: none;
 }
+
+  /* 进度条样式 */
+  .progress-container {
+      margin: 10px 0;
+  }
+
+  .progress-bar {
+      height: 15px;
+      background-color: #f0f0f0;
+      border-radius: 4px;
+      overflow: hidden;
+      background-image: none;
+  }
+
+  .progress-fill {
+      height: 100%;
+      width: 0%;
+      background-color: #0d6efd;
+      background-image: linear-gradient(
+          45deg, 
+          rgba(255, 255, 255, .15) 25%, 
+          transparent 25%, 
+          transparent 50%, 
+          rgba(255, 255, 255, .15) 50%, 
+          rgba(255, 255, 255, .15) 75%, 
+          transparent 75%, 
+          transparent
+      );
+      background-size: 1rem 1rem;
+      animation: 1s steps(20) infinite barberpole;
+      transition: width 0.3s ease;
+  }
+
+  @keyframes barberpole {
+      from { background-position: 0 0; }
+      to { background-position: 1rem 0; }
+  }
+
+.progress-text {
+    text-align: center;
+    font-size: 14px;
+    margin-top: 5px;
+}
 </style>
 
 <main class="container mt-1">
@@ -286,12 +329,139 @@
 </div>
 
 <script>
+
     // 从模板获取 TMDB API 密钥
     const tmdbApiKey = "{{ tmdb_api_key }}";
-    
+
+    // 在页面加载完成后检查URL参数并自动执行搜索
+    document.addEventListener('DOMContentLoaded', function() {
+        // 检查URL参数并自动执行搜索
+        const urlParams = new URLSearchParams(window.location.search);
+        const title = urlParams.get('title');
+        const year = urlParams.get('year');
+        const type = urlParams.get('type');
+        const tmdbId = urlParams.get('tmdb_id');
+        const season = urlParams.get('season');
+        
+        if (title && year && type && tmdbId) {
+            // 填充搜索表单
+            document.getElementById('keyword').value = title;
+            
+            // 自动执行搜索
+            setTimeout(() => {
+                // 创建模拟的搜索结果项
+                createAndTriggerSearch(title, year, type, tmdbId, season);
+            }, 500);
+        }
+    });
+
+    // 新增函数：创建搜索结果项并触发资源搜索
+    function createAndTriggerSearch(title, year, type, tmdbId, season) {
+        // 显示结果卡片
+        document.getElementById('tmdb-results-card').style.display = 'block';
+        
+        // 创建搜索结果项
+        const resultsList = document.getElementById('tmdb-results-list');
+        resultsList.innerHTML = '';
+        
+        const resultItem = document.createElement('div');
+        resultItem.className = 'tmdb-result-item card mb-3';
+        resultItem.setAttribute('data-tmdb-id', tmdbId);
+        resultItem.setAttribute('data-type', type);
+        
+        // 使用默认图片
+        const defaultPosterPath = '/static/img/no-image.png';
+        
+        resultItem.innerHTML = `
+            <div class="row g-0">
+                <div class="col-md-2 col-3 p-3 d-flex justify-content-center">
+                    <img src="${defaultPosterPath}" class="img-fluid rounded poster-img" alt="${title}">
+                </div>
+                <div class="col-md-8 col-6">
+                    <div class="card-body">
+                        <h5 class="card-title mb-1">${title}</h5>
+                        <p class="card-text mb-1 text-muted">
+                            <small>
+                                ${year ? year + ' | ' : ''}
+                                ${type === 'movie' ? '电影' : '电视剧'}
+                            </small>
+                        </p>
+                        <p class="card-text mb-0 text-muted">
+                            从热门推荐页面跳转的自动搜索
+                        </p>
+                    </div>
+                </div>
+                <div class="col-md-2 col-3 d-flex flex-column align-items-center justify-content-center p-3">
+                    <button class="btn btn-sm btn-primary resource-search-button" 
+                            data-title="${title}" 
+                            data-year="${year}" 
+                            data-type="${type}"
+                            data-tmdb-id="${tmdbId}">
+                        资源检索
+                    </button>
+                </div>
+            </div>
+            <!-- 资源搜索结果将展示在这里 -->
+            <div class="resource-results-wrapper" id="resource-results-wrapper-${tmdbId}"></div>
+        `;
+        
+        resultsList.appendChild(resultItem);
+        
+        // 获取并加载TMDB海报图片
+        loadTmdbPosterForItem(tmdbId, type, resultItem.querySelector('.poster-img'));
+        
+        // 触发资源搜索
+        setTimeout(() => {
+            if (type === 'tv' && season) {
+                // 对于电视剧，直接调用资源搜索接口
+                searchResources(title, year, type, tmdbId, parseInt(season));
+            } else if (type === 'tv') {
+                // 对于电视剧但没有季数信息，获取季信息
+                getTvSeasons(tmdbId, title, year);
+            } else {
+                // 对于电影，直接调用资源搜索接口
+                searchResources(title, year, type, tmdbId);
+            }
+        }, 300);
+    }
+
+    // 为自动搜索项加载TMDB海报
+    function loadTmdbPosterForItem(tmdbId, type, imgElement) {
+        if (!tmdbApiKey) {
+            console.log('TMDB API密钥未配置');
+            return;
+        }
+
+        const tmdbUrl = type === 'movie' 
+            ? `https://api.tmdb.org/3/movie/${tmdbId}?api_key=${tmdbApiKey}&language=zh-CN`
+            : `https://api.tmdb.org/3/tv/${tmdbId}?api_key=${tmdbApiKey}&language=zh-CN`;
+
+        fetch(tmdbUrl)
+            .then(response => response.json())
+            .then(data => {
+                if (data.poster_path) {
+                    const posterUrl = `https://image.tmdb.org/t/p/w500${data.poster_path}`;
+                    const tempImage = new Image();
+                    tempImage.onload = function() {
+                        imgElement.src = posterUrl;
+                    };
+                    tempImage.onerror = function() {
+                        console.log('Failed to load TMDB poster for item');
+                    };
+                    tempImage.src = posterUrl;
+                }
+            })
+            .catch(error => {
+                console.error('Error loading TMDB poster:', error);
+            });
+    }
+
     // 存储当前正在处理的电视剧信息
     let currentTvInfo = null;
-    
+
+    // 存储电视剧的季信息
+    let tvSeasonsCache = {};
+
     document.getElementById('search-form').addEventListener('submit', function(event) {
         event.preventDefault();
 
@@ -390,7 +560,7 @@
                                     </p>
                                 </div>
                             </div>
-                            <div class="col-md-2 col-3 d-flex align-items-center justify-content-center p-3">
+                            <div class="col-md-2 col-3 d-flex flex-column align-items-center justify-content-center p-3">
                                 <button class="btn btn-sm btn-primary resource-search-button" 
                                         data-title="${item.title}" 
                                         data-year="${item.year}" 
@@ -442,6 +612,22 @@
     function getTvSeasons(tmdbId, title, year) {
         showLoader();
         
+        // 如果缓存中已有季信息，直接使用
+        if (tvSeasonsCache[tmdbId]) {
+            hideLoader();
+            const validSeasons = tvSeasonsCache[tmdbId];
+            if (validSeasons.length === 1) {
+                // 只有一季，直接搜索
+                const seasonNumber = validSeasons[0].season_number;
+                const seasonYear = validSeasons[0].air_date ? validSeasons[0].air_date.substring(0, 4) : year;
+                searchResources(title, seasonYear, 'tv', tmdbId, seasonNumber);
+            } else {
+                // 多季情况，显示季选择模态框
+                showSeasonModal(tmdbId, title, year, validSeasons);
+            }
+            return;
+        }
+        
         const seasonsUrl = `https://api.tmdb.org/3/tv/${tmdbId}?api_key=${tmdbApiKey}&language=zh-CN`;
         
         fetch(seasonsUrl)
@@ -456,6 +642,9 @@
                 
                 // 过滤掉没有季号的特殊季（如预告片等）
                 const validSeasons = data.seasons.filter(season => season.season_number >= 0);
+                
+                // 缓存季信息
+                tvSeasonsCache[tmdbId] = validSeasons;
                 
                 if (validSeasons.length === 1) {
                     // 只有一季，直接搜索
@@ -475,7 +664,7 @@
     }
 
     // 显示季选择模态框
-    function showSeasonModal(tmdbId, title, year, seasons) {
+    function showSeasonModal(tmdbId, title, year, seasons, forceRefresh = false) {
         const modal = document.getElementById('seasonModal');
         const modalTitle = document.getElementById('seasonModalTitle');
         const seasonList = document.getElementById('seasonList');
@@ -493,7 +682,7 @@
             listItem.addEventListener('click', () => {
                 const seasonNumber = season.season_number;
                 const seasonYear = season.air_date ? season.air_date.substring(0, 4) : year;
-                searchResources(title, seasonYear, 'tv', tmdbId, seasonNumber);
+                searchResources(title, seasonYear, 'tv', tmdbId, seasonNumber, forceRefresh);
                 modal.style.display = 'none';
             });
             seasonList.appendChild(listItem);
@@ -530,18 +719,53 @@
         }
     }
 
-    // 调用资源搜索接口
-    function searchResources(title, year, type, tmdbId, season = null) {
+    // 调用资源搜索接口（流式版本）
+    function searchResources(title, year, type, tmdbId, season = null, forceRefresh = false) {
         showLoader();
 
         const apiUrl = '/api/search_media';
 
         // 构建请求数据
-        const requestData = { title: title, year: year, type: type };
+        const requestData = { title: title, year: year, type: type, force_refresh: forceRefresh };
         if (season !== null) {
             requestData.season = season;
         }
 
+        // 生成唯一的容器ID
+        const containerId = season !== null ? 
+            `resource-results-${tmdbId}-S${season}` : 
+            `resource-results-${tmdbId}`;
+        
+        // 获取结果包装器
+        const resultsWrapper = document.getElementById(`resource-results-wrapper-${tmdbId}`);
+        
+        // 检查是否已存在相同的结果面板
+        let existingContainer = document.getElementById(containerId);
+        if (existingContainer && !forceRefresh) {
+            // 如果已存在且不是强制刷新，清空内容
+            existingContainer.querySelector('.resource-results-table tbody').innerHTML = '';
+        } else if (forceRefresh) {
+            // 如果是强制刷新，移除所有已存在的结果容器
+            const allContainers = resultsWrapper.querySelectorAll('[id^="resource-results-"]');
+            allContainers.forEach(container => {
+                if (container.id !== containerId) {
+                    container.remove();
+                }
+            });
+            
+            // 如果当前容器存在，清空内容
+            if (existingContainer) {
+                existingContainer.querySelector('.resource-results-table tbody').innerHTML = '';
+            } else {
+                // 创建新的结果容器
+                createResultContainer(resultsWrapper, containerId, season);
+            }
+        } else {
+            // 创建新的结果容器
+            createResultContainer(resultsWrapper, containerId, season);
+        }
+        
+        // 使用 fetch API 处理流式响应
         fetch(apiUrl, {
             method: 'POST',
             headers: {
@@ -549,215 +773,497 @@
             },
             body: JSON.stringify(requestData)
         })
-        .then(response => response.json())
-        .then(data => {
-            // 生成唯一的容器ID
-            const containerId = season !== null ? 
-                `resource-results-${tmdbId}-S${season}` : 
-                `resource-results-${tmdbId}`;
+        .then(response => {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let buffer = '';
             
-            // 获取结果包装器
-            const resultsWrapper = document.getElementById(`resource-results-wrapper-${tmdbId}`);
+            // 存储收集到的结果数据
+            const collectedResults = {};
+            const siteNameMap = {
+                'BT0': '不太灵影视',
+                'GY': '观影',
+                'BTYS': 'BT影视',
+                'BTHD': '高清影视之家',
+                'HDTV': '高清剧集网'
+            };
             
-            // 创建可折叠面板
-            const collapseId = `collapse-${containerId}`;
-            const headerId = `header-${containerId}`;
+            // 标记是否已接收到有效数据
+            let validDataReceived = false;
             
-            // 检查是否已存在相同的结果面板
-            let existingContainer = document.getElementById(containerId);
-            if (existingContainer) {
-                // 如果已存在，直接更新内容
-                updateResultsContent(containerId, data, tmdbId, season);
-                hideLoader();
-                return;
+            // 进度跟踪 - 分为4个阶段
+            let progressStage = 0; // 0-4, 对应 0/4 到 4/4
+            
+            // 跟踪站点搜索状态
+            const siteSearchStatus = {
+                'BT0': false,
+                'GY': false,
+                'BTYS': false,
+                'BTHD': false,
+                'HDTV': false
+            };
+            
+            let completedSites = 0;
+            const totalSites = Object.keys(siteSearchStatus).length;
+            let searchStarted = false;
+            
+            function updateProgressByStage(stage, message) {
+                progressStage = stage;
+                updateProgress(containerId, 100, message); // 保持进度条为100%
             }
             
-            // 创建新的结果容器
-            const resultContainer = document.createElement('div');
-            resultContainer.id = containerId;
-            resultContainer.className = 'resource-results-container';
-            resultContainer.innerHTML = `
-                <div class="collapse-header" id="${headerId}" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="true">
-                    <span>${season !== null ? `第 ${season} 季资源搜索结果` : '资源搜索结果'}</span>
-                    <span class="collapse-icon">▼</span>
-                </div>
-                <div id="${collapseId}" class="collapse show results-container">
-                    <div class="card-body">
-                        <div class="resource-filters mb-3" id="filters-${containerId}"></div>
-                        <div class="resource-results-table">
-                            <table class="table table-sm resource-table">
-                                <thead>
-                                    <tr>
-                                        <th scope="col" style="width: 80%; word-break: break-all;" class="sortable" data-sort="title">
-                                            标题
-                                            <span class="sort-indicator"></span>
-                                        </th>
-                                        <th scope="col" style="width: 20%; word-break: break-all;" class="sortable" data-sort="site">
-                                            操作
-                                            <span class="sort-indicator"></span>
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody id="resource-tbody-${containerId}"></tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            `;
+            function updateSiteProgress(site, isCompleted) {
+                // 如果站点状态发生变化
+                if (siteSearchStatus[site] !== isCompleted) {
+                    siteSearchStatus[site] = isCompleted;
+                    
+                    if (isCompleted) {
+                        completedSites++;
+                    } else {
+                        completedSites = Math.max(0, completedSites - 1);
+                    }
+                    
+                    // 当至少有一个站点开始搜索时，更新到阶段2
+                    if (!searchStarted && (completedSites > 0 || Object.values(siteSearchStatus).some(status => status))) {
+                        searchStarted = true;
+                        updateProgressByStage(2, `正在搜索资源...`);
+                    }
+                    
+                    // 当所有站点都完成时，更新到阶段3
+                    if (completedSites === totalSites) {
+                        updateProgressByStage(3, '搜索完成，正在处理结果...');
+                    }
+                }
+            }
             
-            // 将新容器添加到结果包装器的顶部
-            resultsWrapper.insertBefore(resultContainer, resultsWrapper.firstChild);
+            function readStream() {
+                reader.read().then(({ done, value }) => {
+                    if (done) {
+                        // 搜索完成，隐藏进度条和进度提示
+                        const progressContainer = document.querySelector(`#collapse-${containerId} .progress-container`);
+                        if (progressContainer) {
+                            progressContainer.style.display = 'none';
+                        }
+                        hideLoader();
+                        return;
+                    }
+                    
+                    // 将接收到的数据添加到缓冲区
+                    buffer += decoder.decode(value, { stream: true });
+                    
+                    // 按行处理数据
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // 保留不完整的行
+                    
+                    lines.forEach(line => {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.substring(6));
+                                
+                                if (data.status === 'start') {
+                                    updateProgressByStage(0, '准备搜索...');
+                                } else if (data.status === 'cache_found') {
+                                    updateProgressByStage(1, '发现缓存结果，正在加载...');
+                                } else if (data.status === 'no_cache') {
+                                    updateProgressByStage(1, forceRefresh ? '强制刷新，开始实时搜索' : '开始搜索资源...');
+                                    searchStarted = true;
+                                } else if (data.status === 'progress') {
+                                    // 使用映射后的站点名称
+                                    let message = data.message;
+                                    let siteFound = false;
+                                    for (const [siteKey, siteName] of Object.entries(siteNameMap)) {
+                                        const sitePattern = new RegExp(`站点 ${siteKey}`, 'g');
+                                        if (sitePattern.test(message)) {
+                                            siteFound = true;
+                                            message = message.replace(sitePattern, `站点 ${siteName}`);
+                                            // 当站点开始搜索时更新进度
+                                            updateSiteProgress(siteKey, false);
+                                        }
+                                    }
+                                    updateProgress(containerId, 100, message); // 保持进度条为100%
+                                } else if (data.status === 'result') {
+                                    // 更新站点完成状态（无论是否有结果）
+                                    if (data.site) {
+                                        updateSiteProgress(data.site, true);
+                                    }
+                                    
+                                    // 只有在收到非空数据时才认为是有效数据
+                                    if (data.data && data.data.length > 0) {
+                                        // 收集结果数据
+                                        if (!collectedResults[data.site]) {
+                                            collectedResults[data.site] = [];
+                                        }
+                                        collectedResults[data.site] = collectedResults[data.site].concat(data.data);
+                                        
+                                        // 更新进度和显示结果
+                                        const siteName = siteNameMap[data.site] || data.site;
+                                        displayResults(containerId, collectedResults, tmdbId, season, forceRefresh);
+                                        
+                                        // 接收到有效数据，隐藏加载指示器
+                                        if (!validDataReceived) {
+                                            validDataReceived = true;
+                                            hideLoader();
+                                        }
+                                    }
+                                } else if (data.status === 'complete') {
+                                    updateProgressByStage(4, '搜索完成');
+                                    // 搜索完成，隐藏进度条和进度提示
+                                    const progressContainer = document.querySelector(`#collapse-${containerId} .progress-container`);
+                                    if (progressContainer) {
+                                        progressContainer.style.display = 'none';
+                                    }
+                                    // 如果一直没有收到有效数据，也要隐藏加载指示器
+                                    if (!validDataReceived) {
+                                        validDataReceived = true;
+                                        hideLoader();
+                                        
+                                        // 显示"无结果"提示
+                                        displayResults(containerId, collectedResults, tmdbId, season, forceRefresh);
+                                    }
+                                } else if (data.status === 'error') {
+                                    updateProgress(containerId, 100, data.message); // 保持进度条为100%
+                                    showToast(data.message);
+                                    // 出现错误，隐藏进度条和进度提示
+                                    const progressContainer = document.querySelector(`#collapse-${containerId} .progress-container`);
+                                    if (progressContainer) {
+                                        progressContainer.style.display = 'none';
+                                    }
+                                    // 出现错误时也要隐藏加载指示器
+                                    if (!validDataReceived) {
+                                        validDataReceived = true;
+                                        hideLoader();
+                                        
+                                        // 显示"无结果"提示
+                                        displayResults(containerId, collectedResults, tmdbId, season, forceRefresh);
+                                    }
+                                }
+                            } catch (e) {
+                                console.error('Error parsing JSON:', e);
+                            }
+                        }
+                    });
+                    
+                    // 继续读取流
+                    readStream();
+                }).catch(error => {
+                    console.error('Stream reading error:', error);
+                    updateProgress(containerId, 100, '连接错误'); // 保持进度条为100%
+                    showToast('搜索过程中发生连接错误');
+                    // 出现错误，隐藏进度条和进度提示
+                    const progressContainer = document.querySelector(`#collapse-${containerId} .progress-container`);
+                    if (progressContainer) {
+                        progressContainer.style.display = 'none';
+                    }
+                    // 出现错误时也要隐藏加载指示器
+                    if (!validDataReceived) {
+                        validDataReceived = true;
+                        hideLoader();
+                        
+                        // 显示"无结果"提示
+                        displayResults(containerId, collectedResults, tmdbId, season, forceRefresh);
+                    }
+                });
+            }
             
-            // 填充内容
-            updateResultsContent(containerId, data, tmdbId, season);
-            
-            hideLoader();
+            readStream();
         })
         .catch(error => {
-            console.error('Error:', error);
-            showToast('资源搜索过程中发生错误，请重试。');
-            hideLoader();
+            console.error('Fetch error:', error);
+            updateProgress(containerId, 100, '连接错误'); // 保持进度条为100%
+            showToast('搜索过程中发生连接错误');
+            // 出现错误，隐藏进度条和进度提示
+            const progressContainer = document.querySelector(`#collapse-${containerId} .progress-container`);
+            if (progressContainer) {
+                progressContainer.style.display = 'none';
+            }
+            // 出现错误时也要隐藏加载指示器
+            if (!validDataReceived) {
+                validDataReceived = true;
+                hideLoader();
+                
+                // 显示"无结果"提示
+                displayResults(containerId, {}, tmdbId, season, forceRefresh);
+            }
         });
     }
 
-    // 更新结果内容
-    function updateResultsContent(containerId, data, tmdbId, season) {
+    // 创建结果容器
+    function createResultContainer(resultsWrapper, containerId, season) {
+        const resultContainer = document.createElement('div');
+        resultContainer.id = containerId;
+        resultContainer.className = 'resource-results-container';
+        resultContainer.innerHTML = `
+            <div class="collapse-header" data-bs-toggle="collapse" data-bs-target="#collapse-${containerId}" aria-expanded="true">
+                <span>${season !== null ? `第 ${season} 季资源搜索结果` : '资源搜索结果'}</span>
+                <span class="collapse-icon">▼</span>
+            </div>
+            <div id="collapse-${containerId}" class="collapse show results-container">
+                <div class="card-body">
+                    <div class="progress-container">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-fill-${containerId}" style="width: 100%"></div>
+                        </div>
+                        <div class="progress-text" id="progress-text-${containerId}">准备搜索...</div>
+                    </div>
+                    <div class="resource-filters mb-3" id="filters-${containerId}"></div>
+                    <div class="resource-results-table">
+                        <table class="table table-sm resource-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col" style="width: 80%; word-break: break-all;" class="sortable" data-sort="title">
+                                        标题
+                                        <span class="sort-indicator"></span>
+                                    </th>
+                                    <th scope="col" style="width: 20%; word-break: break-all;" class="sortable" data-sort="site">
+                                        操作
+                                        <span class="sort-indicator"></span>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody id="resource-tbody-${containerId}"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // 将新容器添加到结果包装器的顶部
+        resultsWrapper.insertBefore(resultContainer, resultsWrapper.firstChild);
+    }
+
+    // 更新进度条
+    function updateProgress(containerId, percentage, message) {
+        const progressFill = document.getElementById(`progress-fill-${containerId}`);
+        const progressText = document.getElementById(`progress-text-${containerId}`);
+        
+        // 保持进度条为100%
+        progressFill.style.width = '100%';
+        
+        progressText.textContent = message;
+    }
+
+    // 显示结果
+    function displayResults(containerId, results, tmdbId, season, forceRefresh) {
         const resourceTbody = document.getElementById(`resource-tbody-${containerId}`);
         const filtersContainer = document.getElementById(`filters-${containerId}`);
+        const tableContainer = document.querySelector(`#collapse-${containerId} .resource-results-table`);
         
+        // 清空现有内容
         resourceTbody.innerHTML = '';
         filtersContainer.innerHTML = '';
         
-        if (!data || !data.results || Object.keys(data.results).length === 0) {
-            resourceTbody.innerHTML = '<tr><td colspan="2">没有找到相关结果。</td></tr>';
-        } else {
-            // 收集所有站点和分辨率信息
-            const sites = new Set();
-            const resolutions = new Set();
-            const resourceItems = [];
-            
-            // 遍历数据并收集信息
-            for (const site in data.results) {
-                sites.add(site);
-                data.results[site].forEach(item => {
-                    if (item.resolution) {
-                        resolutions.add(item.resolution);
-                    }
-                    resourceItems.push({
-                        site: site,
-                        ...item
-                    });
-                });
-            }
-            
-            // 创建站点筛选复选框
-            if (sites.size > 0) {
-                const siteFilterDiv = document.createElement('div');
-                siteFilterDiv.className = 'checkbox-filters';
-                siteFilterDiv.innerHTML = '<strong style="width: 100%;">站点筛选:</strong>';
-                
-                // 站点名称映射表
-                const siteNameMap = {
-                    'BT0': '不太灵影视',
-                    'GY': '观影',
-                    'BTYS': 'BT影视',
-                    'BTHD': '高清影视之家',
-                    'HDTV': '高清剧集网'
-                };
-                
-                sites.forEach(site => {
-                    const filterGroup = document.createElement('div');
-                    filterGroup.className = 'checkbox-filter-group';
-                    filterGroup.innerHTML = `
-                        <input class="form-check-input site-filter-checkbox" type="checkbox" 
-                               id="site-${site}-${containerId}" data-site="${site}" 
-                               data-container-id="${containerId}" checked>
-                        <label class="form-check-label" for="site-${site}-${containerId}">
-                            ${siteNameMap[site] || site}
-                        </label>
-                    `;
-                    filterGroup.querySelector('input').addEventListener('change', toggleSiteFilter);
-                    siteFilterDiv.appendChild(filterGroup);
-                });
-                
-                filtersContainer.appendChild(siteFilterDiv);
-            }
-            
-            // 创建分辨率筛选复选框
-            if (resolutions.size > 0) {
-                const resolutionFilterDiv = document.createElement('div');
-                resolutionFilterDiv.className = 'checkbox-filters';
-                resolutionFilterDiv.innerHTML = '<strong style="width: 100%;">质量筛选:</strong>';
-                
-                resolutions.forEach(resolution => {
-                    const filterGroup = document.createElement('div');
-                    filterGroup.className = 'checkbox-filter-group';
-                    filterGroup.innerHTML = `
-                        <input class="form-check-input resolution-filter-checkbox" type="checkbox" 
-                               id="resolution-${resolution}-${containerId}" data-resolution="${resolution}" 
-                               data-container-id="${containerId}" checked>
-                        <label class="form-check-label" for="resolution-${resolution}-${containerId}">
-                            ${resolution}
-                        </label>
-                    `;
-                    filterGroup.querySelector('input').addEventListener('change', toggleResolutionFilter);
-                    resolutionFilterDiv.appendChild(filterGroup);
-                });
-                
-                filtersContainer.appendChild(resolutionFilterDiv);
-            }
-            
-            // 生成资源表格行
-            resourceItems.forEach(item => {
-                const row = document.createElement('tr');
-                row.className = 'resource-item';
-                row.setAttribute('data-site', item.site);
-                row.setAttribute('data-resolution', item.resolution || '');
-                row.setAttribute('data-container-id', containerId);
-                
-                row.innerHTML = `
-                    <td class="search_titles" style="text-align:left;"><a href="${item.link}" target="_blank" style="margin-left:10px;">${item.title}</a></td>
-                    <td><button class="btn btn-sm btn-primary download-button" data-link="${item.link}" data-title="${item.title}" data-site="${item.site}">下载</button></td>
-                `;
-                resourceTbody.appendChild(row);
-            });
-            
-            // 添加下载按钮点击事件监听器
-            resourceTbody.querySelectorAll('.download-button').forEach(button => {
-                button.addEventListener('click', function() {
-                    showLoader();
-    
-                    const link = this.getAttribute('data-link');
-                    const title = this.getAttribute('data-title');
-                    const site = this.getAttribute('data-site');
-    
-                    fetch('/api/download_resource', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ site, title, link })
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.message) {
-                            showToast(data.message); // 显示成功消息
-                        } else if (data.error) {
-                            showToast(data.error); // 显示错误消息
-                        }
-                        hideLoader();
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                        showToast('下载过程中发生错误，请重试。');
-                        hideLoader();
-                    });
+        // 收集所有站点和分辨率信息
+        const sites = new Set();
+        const resolutions = new Set();
+        const resourceItems = [];
+        
+        // 检查是否有任何结果数据
+        let totalResults = 0;
+        for (const site in results) {
+            totalResults += results[site].length;
+        }
+        
+        // 遍历数据并收集信息
+        for (const site in results) {
+            sites.add(site);
+            results[site].forEach(item => {
+                if (item.resolution) {
+                    resolutions.add(item.resolution);
+                }
+                resourceItems.push({
+                    site: site,
+                    ...item
                 });
             });
         }
         
-        // 初始化排序功能，默认按标题倒序排序
-        initSorting(containerId, true);
+        // 如果没有结果，或者所有站点返回空数据，显示提示信息，隐藏表格
+        if (totalResults === 0) {
+            // 隐藏表格容器
+            if (tableContainer) {
+                tableContainer.style.display = 'none';
+            }
+            
+            // 在结果容器中直接显示提示信息
+            const noResultsContainer = document.createElement('div');
+            noResultsContainer.className = 'no-results-message';
+            noResultsContainer.innerHTML = `
+                <div class="alert alert-info mb-0">
+                    未找到相关资源，请尝试其他关键词或稍后再试
+                </div>
+            `;
+            
+            // 插入到过滤器容器之前
+            const container = document.querySelector(`#collapse-${containerId} .card-body`);
+            if (container) {
+                container.insertBefore(noResultsContainer, filtersContainer);
+            }
+            
+            return;
+        }
+        
+        // 如果有结果，确保表格可见
+        if (tableContainer) {
+            tableContainer.style.display = '';
+        }
+        
+        // 创建站点筛选复选框
+        if (sites.size > 0) {
+            const siteFilterDiv = document.createElement('div');
+            siteFilterDiv.className = 'checkbox-filters';
+            siteFilterDiv.innerHTML = '<strong style="width: 100%;">站点筛选:</strong>';
+            
+            // 站点名称映射表
+            const siteNameMap = {
+                'BT0': '不太灵影视',
+                'GY': '观影',
+                'BTYS': 'BT影视',
+                'BTHD': '高清影视之家',
+                'HDTV': '高清剧集网'
+            };
+            
+            sites.forEach(site => {
+                const filterGroup = document.createElement('div');
+                filterGroup.className = 'checkbox-filter-group';
+                const siteName = siteNameMap[site] || site;
+                filterGroup.innerHTML = `
+                    <input class="form-check-input site-filter-checkbox" type="checkbox" 
+                        id="site-${site}-${containerId}" data-site="${site}" 
+                        data-container-id="${containerId}" checked>
+                    <label class="form-check-label" for="site-${site}-${containerId}">
+                        ${siteName}
+                    </label>
+                `;
+                filterGroup.querySelector('input').addEventListener('change', toggleSiteFilter);
+                siteFilterDiv.appendChild(filterGroup);
+            });
+            
+            filtersContainer.appendChild(siteFilterDiv);
+        }
+        
+        // 创建分辨率筛选复选框
+        if (resolutions.size > 0) {
+            const resolutionFilterDiv = document.createElement('div');
+            resolutionFilterDiv.className = 'checkbox-filters';
+            resolutionFilterDiv.innerHTML = '<strong style="width: 100%;">质量筛选:</strong>';
+            
+            resolutions.forEach(resolution => {
+                const filterGroup = document.createElement('div');
+                filterGroup.className = 'checkbox-filter-group';
+                filterGroup.innerHTML = `
+                    <input class="form-check-input resolution-filter-checkbox" type="checkbox" 
+                        id="resolution-${resolution}-${containerId}" data-resolution="${resolution}" 
+                        data-container-id="${containerId}" checked>
+                    <label class="form-check-label" for="resolution-${resolution}-${containerId}">
+                        ${resolution}
+                    </label>
+                `;
+                filterGroup.querySelector('input').addEventListener('change', toggleResolutionFilter);
+                resolutionFilterDiv.appendChild(filterGroup);
+            });
+            
+            filtersContainer.appendChild(resolutionFilterDiv);
+        }
+        
+        // 生成资源表格行
+        resourceItems.forEach(item => {
+            const row = document.createElement('tr');
+            row.className = 'resource-item';
+            row.setAttribute('data-site', item.site);
+            row.setAttribute('data-resolution', item.resolution || '');
+            row.setAttribute('data-container-id', containerId);
+            
+            row.innerHTML = `
+                <td class="search_titles" style="text-align:left;"><a href="${item.link}" target="_blank">${item.title}</a></td>
+                <td><button class="btn btn-sm btn-primary download-button" data-link="${item.link}" data-title="${item.title}" data-site="${item.site}">下载</button></td>
+            `;
+            resourceTbody.appendChild(row);
+        });
+        
+        // 添加下载按钮点击事件监听器
+        resourceTbody.querySelectorAll('.download-button').forEach(button => {
+            button.addEventListener('click', function() {
+                showLoader();
+
+                const link = this.getAttribute('data-link');
+                const title = this.getAttribute('data-title');
+                const site = this.getAttribute('data-site');
+
+                fetch('/api/download_resource', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ site, title, link })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.message) {
+                        showToast(data.message); // 显示成功消息
+                    } else if (data.error) {
+                        showToast(data.error); // 显示错误消息
+                    }
+                    hideLoader();
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showToast('下载过程中发生错误，请重试。');
+                    hideLoader();
+                });
+            });
+        });
+        
+        // 初始化排序功能
+        initSorting(containerId);
+        
+        // 添加重新检索按钮
+        const resourceSearchButton = document.querySelector(`.resource-search-button[data-tmdb-id="${tmdbId}"]`);
+        if (resourceSearchButton) {
+            // 移除已存在的重新检索按钮
+            const existingRefreshButton = document.querySelector(`#refresh-button-${tmdbId}`);
+            if (existingRefreshButton) {
+                existingRefreshButton.remove();
+            }
+            
+            const refreshButton = document.createElement('button');
+            refreshButton.id = `refresh-button-${tmdbId}`;
+            refreshButton.className = 'btn btn-sm btn-outline-success mt-2';
+            refreshButton.innerHTML = '重新检索';
+            refreshButton.addEventListener('click', function() {
+                const title = resourceSearchButton.getAttribute('data-title');
+                const year = resourceSearchButton.getAttribute('data-year');
+                const type = resourceSearchButton.getAttribute('data-type');
+                const tmdbId = resourceSearchButton.getAttribute('data-tmdb-id');
+                
+                // 清空所有已存在的搜索结果
+                const resultsWrapper = document.getElementById(`resource-results-wrapper-${tmdbId}`);
+                if (resultsWrapper) {
+                    resultsWrapper.innerHTML = '';
+                }
+                
+                // 执行重新检索
+                if (type === 'tv' && season !== null) {
+                    // 对于电视剧且已知季数的情况，检查是否有多季缓存
+                    if (tvSeasonsCache[tmdbId] && tvSeasonsCache[tmdbId].length > 1) {
+                        // 有多季信息，显示季选择模态框，并传递forceRefresh参数
+                        showSeasonModal(tmdbId, title, year, tvSeasonsCache[tmdbId], true);
+                    } else {
+                        // 直接重新搜索当前季，强制刷新
+                        searchResources(title, year, type, tmdbId, season, true);
+                    }
+                } else if (type === 'tv') {
+                    // 对于电视剧，需要重新获取季信息
+                    getTvSeasons(tmdbId, title, year);
+                } else {
+                    // 对于电影，强制刷新
+                    searchResources(title, year, type, tmdbId, null, true);
+                }
+            });
+            
+            // 将重新检索按钮插入到资源检索按钮的父容器中（确保在下方显示）
+            const buttonContainer = resourceSearchButton.parentNode;
+            buttonContainer.appendChild(refreshButton);
+        }
     }
 
     // 初始化排序功能
