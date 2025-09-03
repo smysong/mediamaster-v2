@@ -19,7 +19,6 @@ RUN apk add --no-cache \
     bind-tools \
     vim \
     tini \
-    cron \
     musl-locales \
     musl-locales-lang
 
