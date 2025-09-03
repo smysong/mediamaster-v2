@@ -10,6 +10,7 @@ RUN apk add --no-cache \
     curl \
     unzip \
     python3 \
+    python3-dev \
     py3-pip \
     chromium \
     chromium-chromedriver \
@@ -20,7 +21,10 @@ RUN apk add --no-cache \
     vim \
     tini \
     musl-locales \
-    musl-locales-lang
+    musl-locales-lang \
+    gcc \
+    musl-dev \
+    linux-headers
 
 # 设置时区为中国上海
 RUN cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
