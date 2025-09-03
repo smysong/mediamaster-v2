@@ -4,6 +4,7 @@ import os
 import glob
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+import time
 
 # 配置日志
 logging.basicConfig(
@@ -73,6 +74,7 @@ def main():
             instance_id = f"instance_{i}"
             future = executor.submit(run_script, script_name, friendly_name, instance_id)
             future_to_script[future] = (script_name, friendly_name)
+            time.sleep(2)
         
         # 等待所有任务完成并处理结果
         for future in as_completed(future_to_script):
