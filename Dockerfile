@@ -1,4 +1,4 @@
-# 使用 Alpine 最新版本作为基础镜像
+# 使用 Alpine 最新版本作为基础镜像 
 FROM alpine:latest
 
 # 设置工作目录

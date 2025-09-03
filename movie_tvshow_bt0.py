@@ -82,7 +82,7 @@ class MediaIndexer:
         options.add_experimental_option("prefs", prefs)
 
         # 指定 chromedriver 的路径
-        service = Service(executable_path='/usr/local/bin/chromedriver')
+        service = Service(executable_path='/usr/lib/chromium/chromedriver')
         
         try:
             self.driver = webdriver.Chrome(service=service, options=options)
