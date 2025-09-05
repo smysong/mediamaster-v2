@@ -8,7 +8,7 @@
 - ⚠️ 本次更新不支持在线升级，请勿执行在线升级！否则会造成资源搜索、下载等服务异常。
 - ⚠️ 本次更新涉及底层基础镜像变更，无法兼容v2.4.3及以下版本，请重新拉取Docker镜像进行更新！
 - ⚠️ 请务必在升级前备份配置文件目录中所有数据！
-- 使用 `smysong/mediamaster-v2:latest`或代理加速 `docker.1ms.run/smysong/mediamaster-v2:latest`拉取测试版镜像。
+- 使用 `smysong/mediamaster-v2:latest`或代理加速 `docker.1ms.run/smysong/mediamaster-v2:latest`拉取最新版镜像。
 
 ### 🚀 主要功能优化
 
