@@ -21,4 +21,6 @@ jobs:
         password: ${{ secrets.DOCKER_PASSWORD }}
 
     - name: Build and push the Docker image
-      run: docker buildx build --platform linux/amd64 -t smysong/mediamaster-v2:latest --push .
+      run: |
+        docker buildx create --name mybuilder --use
+        docker buildx build --platform linux/amd64,linux/arm64 -t smysong/mediamaster-v2:latest --push .
