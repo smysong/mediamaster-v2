@@ -35,9 +35,9 @@ class TvshowIndexer:
             logging.getLogger().handlers.clear()
             logging.basicConfig(
                 level=logging.INFO,
-                format=f"%(levelname)s - [Instance: {instance_id}] - %(message)s",
+                format=f"%(levelname)s - INST - {instance_id} - %(message)s",
                 handlers=[
-                    logging.FileHandler(f"/tmp/log/tvshow_hdtv_{instance_id}.log", mode='w'),
+                    logging.FileHandler(f"/tmp/log/tvshow_hdtv_inst_{instance_id}.log", mode='w'),
                     logging.StreamHandler()
                 ]
             )
@@ -61,12 +61,12 @@ class TvshowIndexer:
         # 设置用户配置文件缓存目录，添加实例ID以避免冲突
         user_data_dir = '/app/ChromeCache/user-data-dir'
         if self.instance_id:
-            user_data_dir = f'/app/ChromeCache/user-data-dir-{self.instance_id}'
+            user_data_dir = f'/app/ChromeCache/user-data-dir-inst-{self.instance_id}'
         options.add_argument(f'--user-data-dir={user_data_dir}')
         # 设置磁盘缓存目录，添加实例ID以避免冲突
         disk_cache_dir = "/app/ChromeCache/disk-cache-dir"
         if self.instance_id:
-            disk_cache_dir = f"/app/ChromeCache/disk-cache-dir-{self.instance_id}"
+            disk_cache_dir = f"/app/ChromeCache/disk-cache-dir-inst-{self.instance_id}"
         options.add_argument(f"--disk-cache-dir={disk_cache_dir}")
         
         # 设置默认下载目录
@@ -200,7 +200,25 @@ class TvshowIndexer:
             )
             return True
         except TimeoutException:
-            return False
+            try:
+                # 检查是否存在用户信息元素 (第一种结构)
+                WebDriverWait(self.driver, 5).until(
+                    EC.presence_of_element_located((By.ID, "um"))
+                )
+                # 进一步检查用户信息元素中的关键子元素
+                self.driver.find_element(By.CLASS_NAME, "vwmy")
+                return True
+            except TimeoutException:
+                try:
+                    # 检查是否存在用户信息元素 (第二种结构)
+                    WebDriverWait(self.driver, 5).until(
+                        EC.presence_of_element_located((By.CLASS_NAME, "dropdown-avatar"))
+                    )
+                    # 检查用户名元素是否存在
+                    self.driver.find_element(By.CSS_SELECTOR, ".dropdown-avatar .dropdown-toggle")
+                    return True
+                except TimeoutException:
+                    return False
 
     def extract_tv_info(self):
         """从数据库读取订阅的电视节目信息和缺失的集数信息"""
@@ -476,6 +494,7 @@ class TvshowIndexer:
         self.login(login_url, self.config["bt_login_username"], self.config["bt_login_password"])
 
         # 搜索和建立索引
+        self.site_captcha(search_url)  # 检查并处理滑动验证码
         self.search(search_url, all_tv_info)
 
         # 清理工作，关闭浏览器
@@ -537,6 +556,7 @@ if __name__ == "__main__":
             "季": str(args.season) if args.season else "",  # 季数为空时传递空字符串
             "缺失集数": []  # 手动搜索时不指定缺失集数
         }]
+        indexer.site_captcha(search_url)  # 检查并处理滑动验证码
         indexer.search(search_url, tv_info)
 
         # 清理工作，关闭浏览器

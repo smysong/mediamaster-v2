@@ -2,12 +2,41 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
-## [2.5.0] - 2025-09-05
+## [2.5.1] - 2025-09-05
 
-### ⚠️ 重要提醒
+### ⚠️ 重要提示
 - ⚠️ 本次更新不支持在线升级，请勿执行在线升级！否则会造成资源搜索、下载等服务异常。
-- ⚠️ 本次更新涉及底层基础镜像变更，请重新拉取Docker镜像进行更新！！！
-- ⚠️ 请务必在升级前备份配置文件目录中所有数据！！！
+- ⚠️ 本次更新涉及底层基础镜像变更，无法兼容v2.4.3及以下版本，请重新拉取Docker镜像进行更新！
+- ⚠️ 请务必在升级前备份配置文件目录中所有数据！
+- 使用 `smysong/mediamaster-v2:latest`或代理加速 `docker.1ms.run/smysong/mediamaster-v2:latest`拉取测试版镜像。
+
+### 🚀 主要功能优化
+
+#### CPU架构支持
+- 新增ARM64架构支持
+  - 适配极空间、绿联、Openwrt、iStoreOS等使用ARM64 (aarch64)/ARMv8 CPU架构的NAS设备及软路由。 
+
+#### Docker镜像
+- 使用Alpine Linux作为新的基础镜像，并优化镜像体积大小。
+
+#### WebDriver
+- 使用Alpine Linux软件源内置的Chromium浏览器和chromedriver，便于升级以及兼容不同CPU架构。
+- 优化多线程运行时的缓存目录、日志文件输出、保存路径、名称等。
+
+#### 服务控制
+- 优化服务控制页面，增加服务运行状态展示。
+- 调整页面UI，实时日志模态框显示效果等。
+
+#### 站点优化
+- 优化高清影视之家、高清剧集网站索引程序、种子下载程序的验证码检查逻辑和登录状态检查逻辑。
+
+## [2.5.0] - beta - 2025-09-03
+
+### ⚠️ 重要提示
+- ⚠️ 本次更新不支持在线升级，请勿执行在线升级！否则会造成资源搜索、下载等服务异常。
+- ⚠️ 本次更新涉及底层基础镜像变更，无法兼容v2.4.3及以下版本，请重新拉取Docker镜像进行更新！
+- ⚠️ 请务必在升级前备份配置文件目录中所有数据！
+- 使用 `smysong/mediamaster-v2:beta`或代理加速 `docker.1ms.run/smysong/mediamaster-v2:beta`拉取测试版镜像。
 
 ### 🚀 主要功能优化
 
@@ -23,7 +52,7 @@
 
 ## [2.4.3] - 2025-08-29
 
-### ⚠️ 重要提醒
+### ⚠️ 重要提示
 - 本次更新涉及数据库变更，请在升级前备份 `data.db` 数据库文件（配置文件挂载目录中）
 
 ### 🚀 主要功能优化
@@ -452,3 +481,5 @@
 [2.4.1]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.4.1
 [2.4.2]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.4.2
 [2.4.3]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.4.3
+[2.5.0]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.0
+[2.5.1]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.1

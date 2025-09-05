@@ -35,9 +35,9 @@ class MovieIndexer:
             logging.getLogger().handlers.clear()
             logging.basicConfig(
                 level=logging.INFO,
-                format=f"%(levelname)s - [Instance: {instance_id}] - %(message)s",
+                format=f"%(levelname)s - INST - {instance_id} - %(message)s",
                 handlers=[
-                    logging.FileHandler(f"/tmp/log/movie_bthd_{instance_id}.log", mode='w'),
+                    logging.FileHandler(f"/tmp/log/movie_bthd_inst_{instance_id}.log", mode='w'),
                     logging.StreamHandler()
                 ]
             )
@@ -60,12 +60,12 @@ class MovieIndexer:
         # 设置用户配置文件缓存目录，添加实例ID以避免冲突
         user_data_dir = '/app/ChromeCache/user-data-dir'
         if self.instance_id:
-            user_data_dir = f'/app/ChromeCache/user-data-dir-{self.instance_id}'
+            user_data_dir = f'/app/ChromeCache/user-data-dir-inst-{self.instance_id}'
         options.add_argument(f'--user-data-dir={user_data_dir}')
         # 设置磁盘缓存目录，添加实例ID以避免冲突
         disk_cache_dir = "/app/ChromeCache/disk-cache-dir"
         if self.instance_id:
-            disk_cache_dir = f"/app/ChromeCache/disk-cache-dir-{self.instance_id}"
+            disk_cache_dir = f"/app/ChromeCache/disk-cache-dir-inst-{self.instance_id}"
         options.add_argument(f"--disk-cache-dir={disk_cache_dir}")
         
         # 设置默认下载目录
@@ -201,7 +201,25 @@ class MovieIndexer:
             )
             return True
         except TimeoutException:
-            return False
+            try:
+                # 检查是否存在用户信息元素 (第一种结构)
+                WebDriverWait(self.driver, 5).until(
+                    EC.presence_of_element_located((By.ID, "um"))
+                )
+                # 进一步检查用户信息元素中的关键子元素
+                self.driver.find_element(By.CLASS_NAME, "vwmy")
+                return True
+            except TimeoutException:
+                try:
+                    # 检查是否存在用户信息元素 (第二种结构)
+                    WebDriverWait(self.driver, 5).until(
+                        EC.presence_of_element_located((By.CLASS_NAME, "dropdown-avatar"))
+                    )
+                    # 检查用户名元素是否存在
+                    self.driver.find_element(By.CSS_SELECTOR, ".dropdown-avatar .dropdown-toggle")
+                    return True
+                except TimeoutException:
+                    return False
 
     def extract_movie_info(self):
         """从数据库读取订阅电影信息"""
@@ -415,6 +433,7 @@ class MovieIndexer:
         self.login(login_url, self.config["bt_login_username"], self.config["bt_login_password"])
 
         # 搜索和建立索引
+        self.site_captcha(search_url)  # 检查并处理滑动验证码
         self.search(search_url, all_movie_info)
 
         # 清理工作，关闭浏览器
@@ -467,6 +486,7 @@ if __name__ == "__main__":
         if args.title:
             # 将单个电影信息封装为列表并调用 search 方法
             movie_info = [{"标题": args.title, "年份": str(args.year) if args.year else ""}]
+            indexer.site_captcha(search_url)  # 检查并处理滑动验证码
             indexer.search(search_url, movie_info)
         else:
             logging.error("手动搜索模式需要提供 --title 参数")

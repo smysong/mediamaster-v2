@@ -71,7 +71,7 @@ def main():
         # 提交所有任务，为每个任务生成唯一的instance_id
         future_to_script = {}
         for i, (script_name, friendly_name) in enumerate(scripts.items()):
-            instance_id = f"instance_{i}"
+            instance_id = f"{i}"
             future = executor.submit(run_script, script_name, friendly_name, instance_id)
             future_to_script[future] = (script_name, friendly_name)
             time.sleep(2)

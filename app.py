@@ -1288,7 +1288,7 @@ def api_search_media():
                 for i, script_info in enumerate(search_scripts):
                     if script_info["type"] == "both" or script_info["type"] == media_type:
                         # 为每个脚本生成固定的instance_id
-                        instance_id = f"manual_{script_info['site']}_{i}"
+                        instance_id = f"manual_{i}"
                         future = executor.submit(execute_script, script_info, instance_id)
                         future_to_script[future] = script_info
                 

@@ -52,10 +52,10 @@ class XunleiDownloader:
         options.add_argument('--disable-gpu')  # 禁用GPU加速
         options.add_argument('--disable-extensions')  # 禁用扩展插件
         # 设置用户配置文件缓存目录，使用固定instance-id 11作为该程序特有的id
-        user_data_dir = f'/app/ChromeCache/user-data-dir-{instance_id}'
+        user_data_dir = f'/app/ChromeCache/user-data-dir-inst-{instance_id}'
         options.add_argument(f'--user-data-dir={user_data_dir}')
         # 设置磁盘缓存目录，使用instance-id区分
-        disk_cache_dir = f"/app/ChromeCache/disk-cache-dir-{instance_id}"
+        disk_cache_dir = f"/app/ChromeCache/disk-cache-dir-inst-{instance_id}"
         options.add_argument(f"--disk-cache-dir={disk_cache_dir}")
         
         # 设置默认下载目录，使用instance-id区分

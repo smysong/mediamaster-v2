@@ -89,10 +89,10 @@ class MediaDownloader:
         options.add_argument('--allow-insecure-localhost')
         options.add_argument('--ignore-ssl-errors')
         # 设置用户配置文件缓存目录，使用固定instance-id 10作为该程序特有的id
-        user_data_dir = f'/app/ChromeCache/user-data-dir-{instance_id}'
+        user_data_dir = f'/app/ChromeCache/user-data-dir-inst-{instance_id}'
         options.add_argument(f'--user-data-dir={user_data_dir}')
         # 设置磁盘缓存目录，同样使用instance-id区分
-        disk_cache_dir = f"/app/ChromeCache/disk-cache-dir-{instance_id}"
+        disk_cache_dir = f"/app/ChromeCache/disk-cache-dir-inst-{instance_id}"
         options.add_argument(f"--disk-cache-dir={disk_cache_dir}")
         
         # 设置默认下载目录，使用instance-id区分
@@ -267,7 +267,25 @@ class MediaDownloader:
             )
             return True
         except TimeoutException:
-            return False
+            try:
+                # 检查是否存在用户信息元素 (第一种结构)
+                WebDriverWait(self.driver, 5).until(
+                    EC.presence_of_element_located((By.ID, "um"))
+                )
+                # 进一步检查用户信息元素中的关键子元素
+                self.driver.find_element(By.CLASS_NAME, "vwmy")
+                return True
+            except TimeoutException:
+                try:
+                    # 检查是否存在用户信息元素 (第二种结构)
+                    WebDriverWait(self.driver, 5).until(
+                        EC.presence_of_element_located((By.CLASS_NAME, "dropdown-avatar"))
+                    )
+                    # 检查用户名元素是否存在
+                    self.driver.find_element(By.CSS_SELECTOR, ".dropdown-avatar .dropdown-toggle")
+                    return True
+                except TimeoutException:
+                    return False
 
     def is_logged_in_gy(self):
         try:
@@ -441,6 +459,8 @@ class MediaDownloader:
         """高清影视之家解析并下载种子文件"""
         try:
             self.login_bthd_site(self.config["bt_login_username"], self.config["bt_login_password"])
+            # 检查页面是否有验证码
+            self.site_captcha(result['link'])  # 调用 site_captcha 方法
             self.driver.get(result['link'])
             logging.info(f"进入：{title_text} 详情页面...")
             logging.info(f"开始查找种子文件下载链接...")
@@ -501,6 +521,8 @@ class MediaDownloader:
         """高清剧集网解析并下载种子文件"""
         try:
             self.login_hdtv_site(self.config["bt_login_username"], self.config["bt_login_password"])
+            # 检查页面是否有验证码
+            self.site_captcha(result['link'])  # 调用 site_captcha 方法
             self.driver.get(result['link'])
             logging.info(f"进入：{title_text} 详情页面...")
             logging.info(f"开始查找种子文件下载链接...")

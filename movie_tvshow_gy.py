@@ -37,9 +37,9 @@ class MediaIndexer:
             logging.getLogger().handlers.clear()
             logging.basicConfig(
                 level=logging.INFO,
-                format=f"%(levelname)s - [Instance: {instance_id}] - %(message)s",
+                format=f"%(levelname)s - INST - {instance_id} - %(message)s",
                 handlers=[
-                    logging.FileHandler(f"/tmp/log/movie_tvshow_gy_{instance_id}.log", mode='w'),
+                    logging.FileHandler(f"/tmp/log/movie_tvshow_gy_inst_{instance_id}.log", mode='w'),
                     logging.StreamHandler()
                 ]
             )
@@ -62,12 +62,12 @@ class MediaIndexer:
         # 设置用户配置文件缓存目录，添加实例ID以避免冲突
         user_data_dir = '/app/ChromeCache/user-data-dir'
         if self.instance_id:
-            user_data_dir = f'/app/ChromeCache/user-data-dir-{self.instance_id}'
+            user_data_dir = f'/app/ChromeCache/user-data-dir-inst-{self.instance_id}'
         options.add_argument(f'--user-data-dir={user_data_dir}')
         # 设置磁盘缓存目录，添加实例ID以避免冲突
         disk_cache_dir = "/app/ChromeCache/disk-cache-dir"
         if self.instance_id:
-            disk_cache_dir = f"/app/ChromeCache/disk-cache-dir-{self.instance_id}"
+            disk_cache_dir = f"/app/ChromeCache/disk-cache-dir-inst-{self.instance_id}"
         options.add_argument(f"--disk-cache-dir={disk_cache_dir}")
         
         # 设置默认下载目录

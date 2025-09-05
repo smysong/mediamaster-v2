@@ -6,105 +6,122 @@
         <div class="card mb-4">
             <div class="card-header">服务控制</div>
             <div class="card-body">
-                <table class="table table-striped">
-                    <thead>
-                        <tr>
-                            <th scope="col">服务名称</th>
-                            <th scope="col">操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>扫描媒体库</td>
-                            <td>
-                                <button class="btn btn-sm btn-primary" onclick="runService('scan_media')">运行</button>
-                                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('scan_media')">实时日志</button>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>获取豆瓣想看</td>
-                            <td>
-                                <button class="btn btn-sm btn-primary" onclick="runService('subscr')">运行</button>
-                                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('subscr')">实时日志</button>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>刷新正在订阅</td>
-                            <td>
-                                <button class="btn btn-sm btn-primary" onclick="runService('check_subscr')">运行</button>
-                                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('check_subscr')">实时日志</button>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>刷新TMDB ID</td>
-                            <td>
-                                <button class="btn btn-sm btn-primary" onclick="runService('tmdb_id')">运行</button>
-                                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('tmdb_id')">实时日志</button>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>更新站点索引</td>
-                            <td>
-                                <button class="btn btn-sm btn-primary" onclick="runService('indexer')">运行</button>
-                                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('indexer')">实时日志</button>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>订阅检索下载</td>
-                            <td>
-                                <button class="btn btn-sm btn-primary" onclick="runService('downloader')">运行</button>
-                                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('downloader')">实时日志</button>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>更新添加日期</td>
-                            <td>
-                                <button class="btn btn-sm btn-primary" onclick="runService('dateadded')">运行</button>
-                                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('dateadded')">实时日志</button>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>演职人员更新</td>
-                            <td>
-                                <button class="btn btn-sm btn-primary" onclick="runService('actor_nfo')">运行</button>
-                                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('actor_nfo')">实时日志</button>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>下载目录监控</td>
-                            <td>
-                                <button class="btn btn-sm btn-primary" disabled>运行</button>
-                                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('sync')">实时日志</button>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>添加迅雷任务</td>
-                            <td>
-                                <button class="btn btn-sm btn-primary" onclick="runService('xunlei')">运行</button>
-                                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('xunlei')">实时日志</button>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>刮削媒体元数据</td>
-                            <td>
-                                <button class="btn btn-sm btn-primary" onclick="runService('scrape_metadata')">运行</button>
-                                <button class="btn btn-sm btn-secondary" onclick="viewRealTimeLog('scrape_metadata')">实时日志</button>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th scope="col" class="py-3">服务名称</th>
+                                <th scope="col" class="py-3">状态</th>
+                                <th scope="col" class="py-3">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="align-middle">扫描媒体库</td>
+                                <td class="align-middle"><span class="status-indicator" data-service="scan_media">检查中...</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary me-1" onclick="runService('scan_media')">运行</button>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="viewRealTimeLog('scan_media')">日志</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="align-middle">获取豆瓣想看</td>
+                                <td class="align-middle"><span class="status-indicator" data-service="subscr">检查中...</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary me-1" onclick="runService('subscr')">运行</button>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="viewRealTimeLog('subscr')">日志</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="align-middle">刷新正在订阅</td>
+                                <td class="align-middle"><span class="status-indicator" data-service="check_subscr">检查中...</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary me-1" onclick="runService('check_subscr')">运行</button>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="viewRealTimeLog('check_subscr')">日志</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="align-middle">刷新TMDB ID</td>
+                                <td class="align-middle"><span class="status-indicator" data-service="tmdb_id">检查中...</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary me-1" onclick="runService('tmdb_id')">运行</button>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="viewRealTimeLog('tmdb_id')">日志</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="align-middle">更新站点索引</td>
+                                <td class="align-middle"><span class="status-indicator" data-service="indexer">检查中...</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary me-1" onclick="runService('indexer')">运行</button>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="viewRealTimeLog('indexer')">日志</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="align-middle">订阅检索下载</td>
+                                <td class="align-middle"><span class="status-indicator" data-service="downloader">检查中...</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary me-1" onclick="runService('downloader')">运行</button>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="viewRealTimeLog('downloader')">日志</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="align-middle">更新添加日期</td>
+                                <td class="align-middle"><span class="status-indicator" data-service="dateadded">检查中...</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary me-1" onclick="runService('dateadded')">运行</button>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="viewRealTimeLog('dateadded')">日志</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="align-middle">演职人员更新</td>
+                                <td class="align-middle"><span class="status-indicator" data-service="actor_nfo">检查中...</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary me-1" onclick="runService('actor_nfo')">运行</button>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="viewRealTimeLog('actor_nfo')">日志</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="align-middle">下载目录监控</td>
+                                <td class="align-middle"><span class="status-indicator" data-service="sync">检查中...</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary me-1" disabled>运行</button>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="viewRealTimeLog('sync')">日志</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="align-middle">添加迅雷任务</td>
+                                <td class="align-middle"><span class="status-indicator" data-service="xunlei">检查中...</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary me-1" onclick="runService('xunlei')">运行</button>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="viewRealTimeLog('xunlei')">日志</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="align-middle">刮削媒体元数据</td>
+                                <td class="align-middle"><span class="status-indicator" data-service="scrape_metadata">检查中...</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary me-1" onclick="runService('scrape_metadata')">运行</button>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="viewRealTimeLog('scrape_metadata')">日志</button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
-        <!-- Modal for Real-time Log -->
+        
+        <!-- 实时日志模态框 -->
         <div class="modal fade" id="realTimeLogModal" tabindex="-1" aria-labelledby="realTimeLogModalLabel" aria-hidden="true">
             <div class="modal-dialog modal-lg">
                 <div class="modal-content">
-                    <div class="modal-header d-flex justify-content-between align-items-center">
+                    <div class="modal-header">
                         <h5 class="modal-title" id="realTimeLogModalLabel">实时日志</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
-                    <div class="modal-body" id="realTimeLogContent">
-                        <!-- 实时日志内容将显示在这里 -->
+                    <div class="modal-body p-0">
+                        <div class="log-container p-3 bg-dark text-light" id="realTimeLogContent" style="max-height: 60vh; overflow-y: auto;">
+                            <!-- 实时日志内容将显示在这里 -->
+                        </div>
                     </div>
                 </div>
             </div>
@@ -112,7 +129,153 @@
     </div>
 </main>
 
+<style>
+.table th {
+    font-weight: 500;
+    border-top: none;
+}
+
+.table > :not(:first-child) {
+    border-top: none;
+}
+
+.status-indicator {
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-weight: 500;
+    min-width: 80px;
+    text-align: center;
+}
+
+.status-running {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+}
+
+.status-stopped {
+    background-color: #ffebee;
+    color: #c62828;
+}
+
+.status-indicator::before {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 8px;
+}
+
+.status-running::before {
+    background-color: #4caf50;
+}
+
+.status-stopped::before {
+    background-color: #f44336;
+}
+
+.log-container p {
+    font-size: clamp(9px, 1.2vw, 13px);
+    margin-bottom: 4px;
+    overflow-wrap: break-word;
+    word-break: break-all;
+    line-height: 1.4;
+}
+
+.table-hover > tbody > tr:hover {
+    background-color: rgba(0,0,0,.02);
+}
+</style>
+
 <script>
+// 服务映射关系 - 将服务名称映射到进程文件名
+const serviceProcessMap = {
+    'scan_media': 'scan_media.py',
+    'subscr': 'subscr.py',
+    'check_subscr': 'check_subscr.py',
+    'tmdb_id': 'tmdb_id.py',
+    'indexer': 'indexer.py',
+    'downloader': 'downloader.py',
+    'dateadded': 'dateadded.py',
+    'actor_nfo': 'actor_nfo.py',
+    'sync': 'sync.py',
+    'xunlei': 'xunlei.py',
+    'scrape_metadata': 'scrape_metadata.py'
+};
+
+// 定时器变量
+let statusUpdateInterval = null;
+
+// 页面加载完成后自动刷新服务状态
+document.addEventListener('DOMContentLoaded', function() {
+    refreshServiceStatus();
+    // 每3秒自动更新一次服务状态
+    startAutoRefresh();
+});
+
+// 页面隐藏时停止自动刷新，显示时恢复刷新
+document.addEventListener('visibilitychange', function() {
+    if (document.hidden) {
+        stopAutoRefresh();
+    } else {
+        refreshServiceStatus();
+        startAutoRefresh();
+    }
+});
+
+// 开始自动刷新
+function startAutoRefresh() {
+    if (statusUpdateInterval) {
+        clearInterval(statusUpdateInterval);
+    }
+    statusUpdateInterval = setInterval(refreshServiceStatus, 3000); // 每3秒刷新一次
+}
+
+// 停止自动刷新
+function stopAutoRefresh() {
+    if (statusUpdateInterval) {
+        clearInterval(statusUpdateInterval);
+        statusUpdateInterval = null;
+    }
+}
+
+function refreshServiceStatus() {
+    // 调用后端API获取系统进程信息
+    fetch('/api/system_processes')
+        .then(response => response.json())
+        .then(data => {
+            // 获取正在运行的Python进程文件名列表
+            const runningProcesses = data.processes
+                .filter(proc => proc.name.includes('python') && proc.file_name)
+                .map(proc => proc.file_name);
+
+            // 更新每个服务的状态，只在状态变化时更新DOM以避免闪烁
+            document.querySelectorAll('.status-indicator').forEach(element => {
+                const serviceName = element.getAttribute('data-service');
+                const processName = serviceProcessMap[serviceName];
+                
+                // 确定新状态
+                let newClass = 'status-indicator status-stopped';
+                let newText = '未运行';
+                
+                if (processName && runningProcesses.includes(processName)) {
+                    newClass = 'status-indicator status-running';
+                    newText = '运行中';
+                }
+                
+                // 只有状态发生变化时才更新DOM，避免闪烁
+                if (element.className !== newClass || element.textContent !== newText) {
+                    element.textContent = newText;
+                    element.className = newClass;
+                }
+            });
+        })
+        .catch(error => {
+            console.error('获取服务状态失败:', error);
+        });
+}
+
 function runService(serviceName) {
     fetch('/run_service', {
         method: 'POST',
@@ -127,6 +290,9 @@ function runService(serviceName) {
         const toastElement = document.querySelector('.toast');
         const toast = new bootstrap.Toast(toastElement, { delay: 2000 });
         toast.show();
+        
+        // 运行服务后稍等片刻再刷新状态
+        setTimeout(refreshServiceStatus, 1000);
     })
     .catch((error) => {
         console.error('Error:', error);
@@ -158,19 +324,15 @@ function viewRealTimeLog(serviceName) {
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
             const p = document.createElement('p');
-
-            // 设置文字大小和margin-bottom距离
-            p.style.fontSize = 'clamp(10px, 1.2vw, 14px)';
-            p.style.marginBottom = '6px';
-            // 添加 overflow-wrap 和 word-break 样式
-            p.style.overflowWrap = 'break-word';
-            p.style.wordBreak = 'break-all';
             p.textContent = line;
             fragment.appendChild(p);
         }
 
         // 将DocumentFragment添加到logContent中
         logContent.appendChild(fragment);
+        
+        // 自动滚动到底部
+        logContent.scrollTop = logContent.scrollHeight;
     };
 
     eventSource.onerror = function() {
@@ -194,13 +356,6 @@ function viewRealTimeLog(serviceName) {
             console.error('Error:', error);
         });
     });
-}
-
-// 显示Toast消息的辅助函数
-function showToaster() {
-    const toastElement = document.querySelector('.toast');
-    const toast = new bootstrap.Toast(toastElement, { delay: 2000 });
-    toast.show();
 }
 </script>
 {% endblock %}
