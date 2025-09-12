@@ -10,6 +10,8 @@
 
 支持下载器：迅雷、qBittorrent、Transmission
 
+CPU架构支持：x86_64 、 ARM64
+
 本项目仅用于个人学习研究Python技术使用，请勿用于其他用途。
 
 **管理界面预览：**

@@ -464,7 +464,7 @@
         .modal-content {
             background-color: rgba(255, 255, 255, 0.9); /* White background with transparency */
             backdrop-filter: blur(5px); /* Blur effect */
-            margin: 20% auto; /* 10% from the top and centered */
+            margin: 10% auto; /* 10% from the top and centered */
             padding: 20px;
             border: 1px solid #888;
             width: 80%; /* Could be more or less, depending on screen size */
@@ -756,12 +756,6 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link {% if request.path == url_for('douban_subscriptions') %}active{% endif %}" href="{{ url_for('douban_subscriptions') }}">
-                                <i class="bi bi-calendar-heart"></i>
-                                豆瓣想看
-                            </a>
-                        </li>
-                        <li class="nav-item">
                             <a class="nav-link {% if request.path == url_for('manual_search') %}active{% endif %}" href="{{ url_for('manual_search') }}">
                                 <i class="bi bi-search"></i>
                                 资源搜索
@@ -834,7 +828,7 @@
 
     <!-- 版本更新模态框 -->
     <div class="modal fade" id="versionUpdateModal" tabindex="-1" aria-labelledby="versionUpdateModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
+        <div class="modal-dialog modal-xl">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="versionUpdateModalLabel">关于程序</h5>
@@ -1126,9 +1120,12 @@
 
     // 等待后端重启
     async function waitForBackendRestart() {
-        const maxWaitTime = 60000; // 最大等待时间：60秒
-        const checkInterval = 2000; // 检查间隔：2秒
+        const maxWaitTime = 120000; // 最大等待时间：120秒
+        const checkInterval = 3000; // 检查间隔：3秒
         const startTime = Date.now();
+
+        // 先等待5秒，让系统有时间开始重启
+        await new Promise(resolve => setTimeout(resolve, 5000));
 
         while (Date.now() - startTime < maxWaitTime) {
             const isBackendUp = await checkBackendStatus();

@@ -48,16 +48,21 @@ class MediaIndexer:
             logging.info("WebDriver已经初始化，无需重复初始化")
             return
         options = Options()
-        options.add_argument('--headless')  # 无头模式运行
-        options.add_argument('--no-sandbox')  # 在非root用户下需要禁用沙盒
-        options.add_argument('--disable-dev-shm-usage')  # 解决/dev/shm空间不足的问题
-        options.add_argument('--window-size=1920x1080')  # 设置窗口大小
-        options.add_argument('--disable-gpu')  # 禁用GPU加速
-        options.add_argument('--disable-extensions')  # 禁用扩展插件
+        options.add_argument('--headless=new')  # 使用新版无头模式
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--window-size=1920x1080')
+        options.add_argument('--disable-gpu')
+        options.add_argument('--disable-extensions')
+        options.add_argument('--disable-background-timer-throttling')  # 禁用后台定时器节流
+        options.add_argument('--disable-renderer-backgrounding')       # 禁用渲染器后台运行
+        options.add_argument('--disable-features=VizDisplayCompositor') # 禁用Viz显示合成器
         # 忽略SSL证书错误
         options.add_argument('--ignore-certificate-errors')
         options.add_argument('--allow-insecure-localhost')
         options.add_argument('--ignore-ssl-errors')
+        # 设置浏览器语言为中文
+        options.add_argument('--lang=zh-CN')
         # 设置用户配置文件缓存目录，添加实例ID以避免冲突
         user_data_dir = '/app/ChromeCache/user-data-dir'
         if self.instance_id:

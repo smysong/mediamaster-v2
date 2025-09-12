@@ -721,7 +721,7 @@
 
     // 调用资源搜索接口（流式版本）
     function searchResources(title, year, type, tmdbId, season = null, forceRefresh = false) {
-        showLoader();
+        showLoader(); // 显示加载指示器
 
         const apiUrl = '/api/search_media';
 
@@ -774,6 +774,11 @@
             body: JSON.stringify(requestData)
         })
         .then(response => {
+            // 隐藏加载指示器，请求发送后隐藏
+            setTimeout(() => {
+                hideLoader();
+            }, 2000); // 延时2秒后隐藏加载指示器
+            
             const reader = response.body.getReader();
             const decoder = new TextDecoder('utf-8');
             let buffer = '';
@@ -844,7 +849,6 @@
                         if (progressContainer) {
                             progressContainer.style.display = 'none';
                         }
-                        hideLoader();
                         return;
                     }
                     
@@ -898,12 +902,6 @@
                                         // 更新进度和显示结果
                                         const siteName = siteNameMap[data.site] || data.site;
                                         displayResults(containerId, collectedResults, tmdbId, season, forceRefresh);
-                                        
-                                        // 接收到有效数据，隐藏加载指示器
-                                        if (!validDataReceived) {
-                                            validDataReceived = true;
-                                            hideLoader();
-                                        }
                                     }
                                 } else if (data.status === 'complete') {
                                     updateProgressByStage(4, '搜索完成');
@@ -912,14 +910,8 @@
                                     if (progressContainer) {
                                         progressContainer.style.display = 'none';
                                     }
-                                    // 如果一直没有收到有效数据，也要隐藏加载指示器
-                                    if (!validDataReceived) {
-                                        validDataReceived = true;
-                                        hideLoader();
-                                        
-                                        // 显示"无结果"提示
-                                        displayResults(containerId, collectedResults, tmdbId, season, forceRefresh);
-                                    }
+                                    // 显示最终结果
+                                    displayResults(containerId, collectedResults, tmdbId, season, forceRefresh);
                                 } else if (data.status === 'error') {
                                     updateProgress(containerId, 100, data.message); // 保持进度条为100%
                                     showToast(data.message);
@@ -928,14 +920,8 @@
                                     if (progressContainer) {
                                         progressContainer.style.display = 'none';
                                     }
-                                    // 出现错误时也要隐藏加载指示器
-                                    if (!validDataReceived) {
-                                        validDataReceived = true;
-                                        hideLoader();
-                                        
-                                        // 显示"无结果"提示
-                                        displayResults(containerId, collectedResults, tmdbId, season, forceRefresh);
-                                    }
+                                    // 显示结果（包括错误情况）
+                                    displayResults(containerId, collectedResults, tmdbId, season, forceRefresh);
                                 }
                             } catch (e) {
                                 console.error('Error parsing JSON:', e);
@@ -954,14 +940,8 @@
                     if (progressContainer) {
                         progressContainer.style.display = 'none';
                     }
-                    // 出现错误时也要隐藏加载指示器
-                    if (!validDataReceived) {
-                        validDataReceived = true;
-                        hideLoader();
-                        
-                        // 显示"无结果"提示
-                        displayResults(containerId, collectedResults, tmdbId, season, forceRefresh);
-                    }
+                    // 显示结果（包括错误情况）
+                    displayResults(containerId, collectedResults, tmdbId, season, forceRefresh);
                 });
             }
             
@@ -976,14 +956,10 @@
             if (progressContainer) {
                 progressContainer.style.display = 'none';
             }
-            // 出现错误时也要隐藏加载指示器
-            if (!validDataReceived) {
-                validDataReceived = true;
-                hideLoader();
-                
-                // 显示"无结果"提示
-                displayResults(containerId, {}, tmdbId, season, forceRefresh);
-            }
+            // 隐藏加载指示器
+            hideLoader();
+            // 显示结果（包括错误情况）
+            displayResults(containerId, {}, tmdbId, season, forceRefresh);
         });
     }
 

@@ -848,24 +848,33 @@ def edit_subscription(type, id):
     elif type == 'tv':
         subscription = db.execute('SELECT * FROM MISS_TVS WHERE id = ?', (id,)).fetchone()
     else:
-        return "Invalid subscription type", 400
+        return jsonify(success=False, message="Invalid subscription type"), 400
 
     if request.method == 'POST':
         title = request.form['title']
-        year = request.form['year'] if type == 'movie' else None
-        season = request.form['season'] if type == 'tv' else None
-        missing_episodes = request.form['missing_episodes'] if type == 'tv' else None
+        year = request.form.get('year')
+        season = request.form.get('season')
+        missing_episodes = request.form.get('missing_episodes')
 
-        if type == 'movie':
-            db.execute('UPDATE MISS_MOVIES SET title = ?, year = ? WHERE id = ?', (title, year, id))
-        elif type == 'tv':
-            db.execute('UPDATE MISS_TVS SET title = ?, season = ?, missing_episodes = ? WHERE id = ?', (title, season, missing_episodes, id))
-        db.commit()
-        return redirect(url_for('subscriptions'))
-    # 从会话中获取用户昵称和头像
-    nickname = session.get('nickname')
-    avatar_url = session.get('avatar_url')
-    return render_template('edit_subscription.html', subscription=subscription, type=type, nickname=nickname, avatar_url=avatar_url, version=APP_VERSION)
+        try:
+            if type == 'movie':
+                db.execute('UPDATE MISS_MOVIES SET title = ?, year = ? WHERE id = ?', (title, year, id))
+            elif type == 'tv':
+                db.execute('UPDATE MISS_TVS SET title = ?, season = ?, missing_episodes = ? WHERE id = ?', 
+                          (title, season, missing_episodes, id))
+            db.commit()
+            logger.info(f"用户更新订阅: {type} ID={id}")
+            return jsonify(success=True, message="订阅更新成功")
+        except Exception as e:
+            db.rollback()
+            logger.error(f"更新订阅失败: {e}")
+            return jsonify(success=False, message="更新失败，请稍后再试"), 500
+
+    # GET 请求时返回 JSON 数据
+    if subscription:
+        return jsonify(dict(subscription))
+    else:
+        return jsonify(success=False, message="未找到订阅"), 404
 
 @app.route('/delete_subscription/<type>/<int:id>', methods=['POST'])
 @login_required
@@ -880,17 +889,22 @@ def delete_subscription(type, id):
     db.commit()
     return redirect(url_for('subscriptions'))
 
-# 豆瓣想看
-@app.route('/douban_subscriptions')
+# 获取豆瓣想看数据的JSON接口
+@app.route('/douban_subscriptions_json')
 @login_required
-def douban_subscriptions():
+def douban_subscriptions_json():
     db = get_db()
     rss_movies = db.execute('SELECT * FROM RSS_MOVIES').fetchall()
     rss_tvs = db.execute('SELECT * FROM RSS_TVS').fetchall()
-    # 从会话中获取用户昵称和头像
-    nickname = session.get('nickname')
-    avatar_url = session.get('avatar_url')
-    return render_template('douban_subscriptions.html', rss_movies=rss_movies, rss_tvs=rss_tvs, nickname=nickname, avatar_url=avatar_url, version=APP_VERSION)
+    
+    # 将Row对象转换为字典列表
+    rss_movies_dict = [dict(row) for row in rss_movies]
+    rss_tvs_dict = [dict(row) for row in rss_tvs]
+    
+    return jsonify({
+        "rss_movies": rss_movies_dict,
+        "rss_tvs": rss_tvs_dict
+    })
 
 # 获取剧集关联列表的JSON接口
 @app.route('/tv_alias_list_json')
@@ -1428,7 +1442,7 @@ def download_resource():
 
 GROUP_MAPPING = {
     "定时任务": {
-        "run_interval_hours": {"type": "text", "label": "程序运行间隔"}
+        "run_interval_hours": {"type": "text", "label": "自动化流程间隔"}
     },
     "消息通知": {
         "notification": {"type": "switch", "label": "消息通知"},
@@ -1879,6 +1893,120 @@ def get_fastest_proxy(original_url):
 @app.route('/health_check', methods=['GET'])
 def health_check():
     return jsonify({"status": "ok"}), 200
+
+@app.route('/restart_program', methods=['POST'])
+@login_required
+def restart_program():
+    """
+    重启程序：结束主进程以触发自动重启
+    """
+    try:
+        logger.info("开始执行程序重启操作")
+        
+        # 检查是否有重启权限
+        if not session.get('user_id'):
+            logger.warning("未授权用户尝试执行重启")
+            return jsonify({"error": "未授权的操作"}), 403
+
+        logger.info("准备重启程序，正在结束主进程...")
+        
+        # 异步重启容器
+        def restart_container():
+            logger.info("正在重启容器...")
+            time.sleep(2)
+            # 查找并结束主进程
+            target_process_name = "main.py"
+            found_process = False
+
+            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                try:
+                    # 检查进程是否运行了 main.py
+                    if target_process_name in proc.info['cmdline']:
+                        logger.info(f"找到目标进程: PID={proc.info['pid']}, CMD={proc.info['cmdline']}")
+                        proc.terminate()  # 发送终止信号
+                        proc.wait(timeout=5)  # 等待进程结束
+                        found_process = True
+                        logger.info(f"已成功结束进程: PID={proc.info['pid']}")
+                except (psutil.NoSuchProcess, psutil.TimeoutExpired):
+                    continue
+
+            if not found_process:
+                logger.warning("未找到运行中的 python main.py 进程")
+        
+        # 启动后台线程执行重启操作
+        threading.Thread(target=restart_container).start()
+        
+        return jsonify({"message": "重启命令已发送！程序将自动重启。"}), 200
+        
+    except Exception as e:
+        logger.error(f"重启程序失败: {e}")
+        return jsonify({"error": "重启失败，请稍后再试。"}), 500
+
+@app.route('/reset_program', methods=['POST'])
+@login_required
+def reset_program():
+    """
+    重置程序：删除/config目录中的所有文件并重启容器，但保留client_id文件
+    """
+    try:
+        logger.info("开始执行程序重置操作")
+        
+        # 检查是否有重置权限
+        if not session.get('user_id'):
+            logger.warning("未授权用户尝试执行重置")
+            return jsonify({"error": "未授权的操作"}), 403
+
+        # 删除/config目录中的所有文件和子目录，但保留/config目录本身和client_id文件
+        config_dir = '/config'
+        if os.path.exists(config_dir):
+            for item in os.listdir(config_dir):
+                # 跳过client_id文件
+                if item == 'client_id':
+                    logger.info("保留client_id文件")
+                    continue
+                    
+                item_path = os.path.join(config_dir, item)
+                if os.path.isfile(item_path) or os.path.islink(item_path):
+                    os.unlink(item_path)
+                    logger.info(f"已删除文件: {item_path}")
+                elif os.path.isdir(item_path):
+                    import shutil
+                    shutil.rmtree(item_path)
+                    logger.info(f"已删除目录: {item_path}")
+        
+        logger.info("配置文件已清理完成，准备重启容器")
+        
+        # 异步重启容器
+        def restart_container():
+            logger.info("正在重启容器...")
+            time.sleep(2)
+            # 查找并结束主进程
+            target_process_name = "main.py"
+            found_process = False
+
+            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                try:
+                    # 检查进程是否运行了 main.py
+                    if target_process_name in proc.info['cmdline']:
+                        logger.info(f"找到目标进程: PID={proc.info['pid']}, CMD={proc.info['cmdline']}")
+                        proc.terminate()  # 发送终止信号
+                        proc.wait(timeout=5)  # 等待进程结束
+                        found_process = True
+                        logger.info(f"已成功结束进程: PID={proc.info['pid']}")
+                except (psutil.NoSuchProcess, psutil.TimeoutExpired):
+                    continue
+
+            if not found_process:
+                logger.warning("未找到运行中的 python main.py 进程")
+        
+        # 启动后台线程执行重启操作
+        threading.Thread(target=restart_container).start()
+        
+        return jsonify({"message": "重置成功！程序将重启以恢复默认配置。"}), 200
+        
+    except Exception as e:
+        logger.error(f"重置程序失败: {e}")
+        return jsonify({"error": "重置失败，请稍后再试。"}), 500
 
 @app.route('/check_update', methods=['GET'])
 @login_required

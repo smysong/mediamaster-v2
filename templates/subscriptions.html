@@ -1,6 +1,60 @@
 {% extends "base.html" %}
 {% block title %}正在订阅{% endblock %}
 {% block content %}
+<style>
+.douban-badge {
+    font-size: 0.65rem;
+}
+
+.hover-lift {
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.hover-lift:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+}
+
+.modal-content {
+    border-radius: 0.75rem;
+}
+
+.modal-header {
+    border-top-left-radius: 0.75rem;
+    border-top-right-radius: 0.75rem;
+}
+
+.missing-episodes-badge {
+    max-width: 170px;
+}
+
+@media (min-width: 768px) {
+    .missing-episodes-badge {
+        max-width: 700px;
+    }
+}
+
+@media (max-width: 768px) {
+    .modal-dialog {
+        margin: 0.5rem;
+        max-width: calc(100% - 1rem);
+    }
+    .card-body .text-truncate {
+        max-width: 170px;
+    }
+    
+    /* 确保按钮在小屏幕上对齐到右下角 */
+    .card-body .d-flex.flex-column.flex-md-row {
+        flex-direction: column;
+    }
+    
+    .card-body .ms-md-3.mt-2 {
+        align-self: flex-end;
+        margin-left: 0;
+    }
+
+}
+</style>
 <main class="container mt-1">
     <div class="row fade-in">
         <div class="d-flex justify-content-end mb-3">
@@ -11,71 +65,83 @@
                 <button type="button" class="btn btn-sm btn-primary ms-2" data-bs-toggle="modal" data-bs-target="#tvAliasModal">
                     <i class="bi bi-view-list"></i>剧集关联
                 </button>
+                <button type="button" class="btn btn-sm btn-primary ms-2" data-bs-toggle="modal" data-bs-target="#doubanSubscriptionsModal">
+                    <i class="bi bi-heart"></i>豆瓣想看
+                </button>
             </div>
         </div>
 
+        <!-- 正在订阅的电影 -->
         <div class="card mb-4">
             <div class="card-header">正在订阅的电影</div>
             <div class="card-body">
                 {% if miss_movies %}
-                <table class="table table-striped">
-                    <thead>
-                        <tr>
-                            <th>标题</th>
-                            <th>年份</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+                    <div class="row">
                         {% for movie in miss_movies %}
-                        <tr>
-                            <td>{{ movie['title'] }}</td>
-                            <td>{{ movie['year'] }}</td>
-                            <td>
-                                <a href="{{ url_for('edit_subscription', type='movie', id=movie['id']) }}" class="btn btn-sm btn-warning">编辑</a>
-                                <form action="{{ url_for('delete_subscription', type='movie', id=movie['id']) }}" method="POST" style="display:inline;">
-                                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('确定要删除吗？')">删除</button>
-                                </form>
-                            </td>
-                        </tr>
+                        <div class="col-12 mb-3">
+                            <div class="card h-100">
+                                <div class="card-body d-flex flex-column flex-md-row bg-light">
+                                    <div class="flex-grow-1 mb-2 mb-md-0">
+                                        <h6 class="card-title mb-1">{{ movie['title'] }}</h6>
+                                        <div class="d-flex flex-wrap align-items-center text-muted small">
+                                            <span class="me-3 text-dark"><i class="bi bi-calendar4-range me-1"></i>{{ movie['year'] }}</span>
+                                        </div>
+                                    </div>
+                                    <div class="d-flex flex-wrap gap-2 ms-md-3 mt-2 mt-md-0 align-self-md-end">
+                                        <button type="button" class="btn btn-sm btn-warning edit-subscription-btn" 
+                                                data-type="movie" 
+                                                data-id="{{ movie['id'] }}"
+                                                data-title="{{ movie['title'] }}"
+                                                data-year="{{ movie['year'] }}">编辑</button>
+                                        <form action="{{ url_for('delete_subscription', type='movie', id=movie['id']) }}" method="POST" class="d-inline">
+                                            <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('确定要删除吗？')">删除</button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                         {% endfor %}
-                    </tbody>
-                </table>
+                    </div>
                 {% else %}
                 <p>目前没有正在订阅的电影。</p>
                 {% endif %}
             </div>
         </div>
-
+        <!-- 正在订阅的电视剧 -->
         <div class="card mb-4">
             <div class="card-header">正在订阅的电视剧</div>
             <div class="card-body">
                 {% if miss_tvs %}
-                <table class="table table-striped">
-                    <thead>
-                        <tr>
-                            <th>标题</th>
-                            <th>季</th>
-                            <th>缺失的集</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+                    <div class="row">
                         {% for tv in miss_tvs %}
-                        <tr class="miss-episode-text">
-                            <td>{{ tv['title'] }}</td>
-                            <td>{{ tv['season'] }}</td>
-                            <td class="miss-episode-text">{{ tv['missing_episodes'] }}</td>
-                            <td style="flex-wrap: nowrap;">
-                                <a href="{{ url_for('edit_subscription', type='tv', id=tv['id']) }}" class="btn btn-sm btn-warning">编辑</a>
-                                <form action="{{ url_for('delete_subscription', type='tv', id=tv['id']) }}" method="POST" style="display:inline;">
-                                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('确定要删除吗？')">删除</button>
-                                </form>
-                            </td>
-                        </tr>
+                        <div class="col-12 mb-3">
+                            <div class="card h-100">
+                                <div class="card-body d-flex flex-column flex-md-row bg-light">
+                                    <div class="flex-grow-1 mb-2 mb-md-0">
+                                        <h6 class="card-title mb-1">{{ tv['title'] }}</h6>
+                                        <div class="d-flex flex-wrap align-items-center text-muted small">
+                                            <span class="me-3 text-dark"><i class="bi bi-calendar4-range me-1"></i>{{ tv['year'] }}</span>
+                                            <span class="me-3 text-dark"><i class="bi bi-collection-play me-1"></i>第 {{ tv['season'] }} 季</span>
+                                            <span class="me-3 text-dark text-truncate missing-episodes-badge"><i class="bi bi-film me-1"></i>缺失: {{ tv['missing_episodes'] }}</span>
+                                        </div>
+                                    </div>
+                                    <div class="d-flex flex-wrap gap-2 ms-md-3 mt-2 mt-md-0 align-self-md-end">
+                                        <button type="button" class="btn btn-sm btn-warning edit-subscription-btn" 
+                                                data-type="tv" 
+                                                data-id="{{ tv['id'] }}"
+                                                data-title="{{ tv['title'] }}"
+                                                data-year="{{ tv['year'] }}"
+                                                data-season="{{ tv['season'] }}"
+                                                data-missing-episodes="{{ tv['missing_episodes'] }}">编辑</button>
+                                        <form action="{{ url_for('delete_subscription', type='tv', id=tv['id']) }}" method="POST" class="d-inline">
+                                            <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('确定要删除吗？')">删除</button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                         {% endfor %}
-                    </tbody>
-                </table>
+                    </div>
                 {% else %}
                 <p>目前没有正在订阅的电视剧。</p>
                 {% endif %}
@@ -211,6 +277,75 @@
         </div>
     </div>
 </div>
+<!-- 豆瓣想看模态框 -->
+<div class="modal fade" id="doubanSubscriptionsModal" tabindex="-1" aria-labelledby="doubanSubscriptionsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header">
+                <h5 class="modal-title" id="doubanSubscriptionsModalLabel">豆瓣想看数据</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div id="doubanSubscriptionsContent">
+                    <!-- 豆瓣想看内容将通过 AJAX 加载 -->
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">加载中...</span>
+                        </div>
+                        <p class="mt-2 text-muted">正在加载豆瓣想看内容...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- 编辑订阅模态框 -->
+<div class="modal fade" id="editSubscriptionModal" tabindex="-1" aria-labelledby="editSubscriptionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editSubscriptionModalLabel">编辑订阅</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editSubscriptionForm">
+                    <input type="hidden" id="editSubscriptionId">
+                    <input type="hidden" id="editSubscriptionType">
+                    
+                    <div class="mb-3">
+                        <label for="editTitle" class="form-label">标题</label>
+                        <input type="text" class="form-control" id="editTitle" required>
+                    </div>
+                    
+                    <div class="mb-3" id="editYearField">
+                        <label for="editYear" class="form-label">年份</label>
+                        <input type="text" class="form-control" id="editYear" required>
+                    </div>
+                    
+                    <div class="mb-3" id="editTvFields" style="display: none;">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="editSeason" class="form-label">季</label>
+                                <input type="text" class="form-control" id="editSeason" required>
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-md-12">
+                                <label for="editMissingEpisodes" class="form-label">缺失的集</label>
+                                <input type="text" class="form-control" id="editMissingEpisodes" required>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer" style="width: 100%;">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-sm btn-primary" id="saveSubscriptionBtn">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 
 <script>
     // 全局变量用于跟踪事件是否已绑定
@@ -1170,6 +1305,220 @@
         .catch(error => {
             console.error('Error:', error);
             showToast(aliasId ? '更新失败' : '添加失败', 'danger');
+        });
+    });
+
+    // 豆瓣想看模态框相关功能
+    document.getElementById('doubanSubscriptionsModal').addEventListener('show.bs.modal', function () {
+        loadDoubanSubscriptions();
+    });
+
+    // 加载豆瓣想看内容
+    function loadDoubanSubscriptions() {
+        const container = document.getElementById('doubanSubscriptionsContent');
+        container.innerHTML = `
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">加载中...</span>
+                </div>
+                <p class="mt-2 text-muted">正在加载豆瓣想看内容...</p>
+            </div>
+        `;
+        
+        fetch('/douban_subscriptions_json')
+            .then(response => response.json())
+            .then(data => {
+                let html = '';
+                
+                // 电影部分
+                html += `
+                    <div class="p-4">
+                        <h5 class="mb-4 pb-2 border-bottom d-flex align-items-center">
+                            <i class="bi bi-film me-2 text-primary"></i>想看的电影
+                        </h5>
+                `;
+                
+                if (data.rss_movies && data.rss_movies.length > 0) {
+                    html += `<div class="row">`;
+                    
+                    data.rss_movies.forEach(movie => {
+                        const title = movie.TITLE || movie.title || '';
+                        const subTitle = movie.SUB_TITLE || movie.sub_title || '';
+                        const year = movie.YEAR || movie.year || '';
+                        const doubanId = movie.DOUBAN_ID || movie.douban_id || '';
+                        const url = movie.URL || movie.url || '#';
+                        
+                        html += `
+                            <div class="col-lg-6 col-xl-4 mb-4">
+                                <div class="card h-100 border-0 shadow-sm hover-lift">
+                                    <div class="card-body d-flex flex-column">
+                                        <h6 class="card-title mb-1 text-truncate" title="${title}">
+                                            <a href="${url}" target="_blank" class="text-decoration-none text-dark">${title}</a>
+                                        </h6>
+                                        <p class="card-text small text-muted mb-2 text-truncate" title="${subTitle}">${subTitle}</p>
+                                        <div class="mt-auto d-flex justify-content-between align-items-center">
+                                            <span class="badge bg-light text-dark">${year}</span>
+                                            <a href="${url}" target="_blank" class="badge bg-primary text-white douban-badge text-decoration-none">豆瓣ID：${doubanId}</a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    
+                    html += `</div>`;
+                } else {
+                    html += `
+                        <div class="text-center py-5">
+                            <i class="bi bi-film text-muted" style="font-size: 3rem;"></i>
+                            <p class="mt-3 text-muted">目前没有想看的电影</p>
+                        </div>
+                    `;
+                }
+                
+                html += `</div>`;
+                
+                // 电视剧部分
+                html += `
+                    <div class="p-4 bg-light bg-opacity-50">
+                        <h5 class="mb-4 pb-2 border-bottom d-flex align-items-center">
+                            <i class="bi bi-tv me-2 text-primary"></i>想看的电视剧
+                        </h5>
+                `;
+                
+                if (data.rss_tvs && data.rss_tvs.length > 0) {
+                    html += `<div class="row">`;
+                    
+                    data.rss_tvs.forEach(tv => {
+                        const title = tv.TITLE || tv.title || '';
+                        const subTitle = tv.SUB_TITLE || tv.sub_title || '';
+                        const year = tv.YEAR || tv.year || '';
+                        const season = tv.SEASON || tv.season || '';
+                        const episode = tv.EPISODE || tv.episode || '';
+                        const doubanId = tv.DOUBAN_ID || tv.douban_id || '';
+                        const url = tv.URL || tv.url || '#';
+                        
+                        html += `
+                            <div class="col-lg-6 col-xl-4 mb-4">
+                                <div class="card h-100 border-0 shadow-sm hover-lift">
+                                    <div class="card-body d-flex flex-column">
+                                        <h6 class="card-title mb-1 text-truncate" title="${title}">
+                                            <a href="${url}" target="_blank" class="text-decoration-none text-dark">${title}</a>
+                                        </h6>
+                                        <p class="card-text small text-muted mb-2 text-truncate" title="${subTitle}">${subTitle}</p>
+                                        <div class="mt-auto">
+                                            <div class="d-flex justify-content-between flex-wrap gap-1">
+                                                <span class="badge bg-light text-dark">${year}</span>
+                                                <span class="badge bg-secondary text-white">第${season}季</span>
+                                                <span class="badge bg-success text-white">共${episode}集</span>
+                                            </div>
+                                            <div class="mt-2">
+                                                <a href="${url}" target="_blank" class="badge bg-primary text-white douban-badge w-100 text-decoration-none d-inline-block">豆瓣ID：${doubanId}</a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    
+                    html += `</div>`;
+                } else {
+                    html += `
+                        <div class="text-center py-5">
+                            <i class="bi bi-tv text-muted" style="font-size: 3rem;"></i>
+                            <p class="mt-3 text-muted">目前没有想看的电视剧</p>
+                        </div>
+                    `;
+                }
+                
+                html += `</div>`;
+                
+                container.innerHTML = html;
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                container.innerHTML = `
+                    <div class="text-center py-5">
+                        <i class="bi bi-exclamation-triangle text-danger" style="font-size: 3rem;"></i>
+                        <p class="mt-3 text-danger">加载豆瓣想看内容失败</p>
+                        <button class="btn btn-sm btn-outline-primary mt-2" onclick="loadDoubanSubscriptions()">
+                            <i class="bi bi-arrow-repeat me-1"></i>重新加载
+                        </button>
+                    </div>
+                `;
+            });
+    }
+
+    // 编辑订阅按钮事件处理
+    document.addEventListener('click', function(e) {
+        if (e.target.classList.contains('edit-subscription-btn')) {
+            const type = e.target.getAttribute('data-type');
+            const id = e.target.getAttribute('data-id');
+            const title = e.target.getAttribute('data-title');
+            const year = e.target.getAttribute('data-year');
+            
+            // 填充表单数据
+            document.getElementById('editSubscriptionId').value = id;
+            document.getElementById('editSubscriptionType').value = type;
+            document.getElementById('editTitle').value = title;
+            document.getElementById('editYear').value = year;
+            
+            // 根据类型显示/隐藏字段
+            if (type === 'tv') {
+                document.getElementById('editTvFields').style.display = 'block';
+                document.getElementById('editSeason').value = e.target.getAttribute('data-season');
+                document.getElementById('editMissingEpisodes').value = e.target.getAttribute('data-missing-episodes');
+            } else {
+                document.getElementById('editTvFields').style.display = 'none';
+            }
+            
+            // 显示模态框
+            const modal = new bootstrap.Modal(document.getElementById('editSubscriptionModal'));
+            modal.show();
+        }
+    });
+
+    // 保存订阅按钮事件处理
+    document.getElementById('saveSubscriptionBtn').addEventListener('click', function() {
+        const id = document.getElementById('editSubscriptionId').value;
+        const type = document.getElementById('editSubscriptionType').value;
+        const title = document.getElementById('editTitle').value;
+        const year = document.getElementById('editYear').value;
+        
+        // 构造表单数据
+        const formData = new FormData();
+        formData.append('title', title);
+        formData.append('year', year);
+        
+        if (type === 'tv') {
+            formData.append('season', document.getElementById('editSeason').value);
+            formData.append('missing_episodes', document.getElementById('editMissingEpisodes').value);
+        }
+        
+        // 发送更新请求
+        fetch(`/edit_subscription/${type}/${id}`, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json()) // 解析JSON响应
+        .then(data => {
+            if (data.success) {
+                showToast(data.message || '订阅更新成功', 'success');
+                // 关闭模态框
+                const modal = bootstrap.Modal.getInstance(document.getElementById('editSubscriptionModal'));
+                if (modal) modal.hide();
+                // 延迟刷新页面以显示更新后的数据
+                setTimeout(() => {
+                    location.reload();
+                }, 1500);
+            } else {
+                showToast(data.message || '更新失败', 'danger');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToast('更新订阅时发生错误', 'danger');
         });
     });
 </script>
