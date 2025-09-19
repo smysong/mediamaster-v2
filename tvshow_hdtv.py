@@ -1,5 +1,6 @@
 import sqlite3
 import json
+import time
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -260,33 +261,58 @@ class TvshowIndexer:
         for item in all_tv_info:
             logging.info(f"开始搜索剧集: {item['剧集']}  年份: {item['年份']}  季: {item['季']}")
             search_query = f"{item['剧集']} {item['年份']}"
-            self.driver.get(search_url)
+            search_results = []
+            
             try:
-                # 输入搜索关键词并提交
+                # 首先执行搜索
+                self.driver.get(search_url)
                 search_box = WebDriverWait(self.driver, 10).until(
                     EC.presence_of_element_located((By.NAME, "srchtxt"))
                 )
                 search_box.send_keys(search_query)
                 search_box.send_keys(Keys.RETURN)
                 logging.debug(f"搜索关键词: {search_query}")
-    
-                # 等待搜索结果加载
-                WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.ID, "threadlist"))
-                )
-    
-                # 查找搜索结果中的链接
-                results = self.driver.find_elements(By.CSS_SELECTOR, "#threadlist li.pbw h3.xs3 a")
-                search_results = []
-                for result in results:
-                    title_text = result.text
-                    link = result.get_attribute('href')
-                    search_results.append({
-                        "title": title_text,
-                        "link": link
-                    })
-    
-                logging.info(f"找到 {len(search_results)} 个资源项")
+
+                # 处理所有页面的搜索结果
+                page = 1
+                while True:
+                    logging.info(f"正在处理第 {page} 页搜索结果")
+                    
+                    # 等待搜索结果加载
+                    WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.ID, "threadlist"))
+                    )
+                    
+                    # 查找当前页面搜索结果中的链接
+                    results = self.driver.find_elements(By.CSS_SELECTOR, "#threadlist li.pbw h3.xs3 a")
+                    for result in results:
+                        title_text = result.text
+                        link = result.get_attribute('href')
+                        search_results.append({
+                            "title": title_text,
+                            "link": link
+                        })
+
+                    logging.debug(f"第 {page} 页找到 {len(results)} 个资源项")
+                    
+                    # 检查是否有下一页
+                    try:
+                        # 查找"下一页"链接
+                        next_page_link = self.driver.find_element(By.CSS_SELECTOR, "div.pg a.nxt")
+                        if next_page_link.is_displayed() and next_page_link.is_enabled():
+                            # 点击下一页
+                            next_page_link.click()
+                            page += 1
+                            # 等待页面加载完成
+                            time.sleep(2)  # 等待页面加载
+                        else:
+                            logging.info("已到达最后一页")
+                            break
+                    except Exception as e:
+                        logging.debug(f"没有找到下一页链接或已到达最后一页: {e}")
+                        break
+
+                logging.info(f"总共找到 {len(search_results)} 个资源项")
 
                 # 过滤搜索结果
                 filtered_results = []
@@ -294,20 +320,20 @@ class TvshowIndexer:
                     # 检查年份是否匹配
                     if item['年份'] and item['年份'] not in result['title']:
                         continue
-    
+
                     # 检查是否包含排除关键词
                     exclude_keywords = self.config.get("resources_exclude_keywords", "").split(',')
-                    if any(keyword.strip() in result['title'] for keyword in exclude_keywords):
+                    if any(keyword.strip() in result['title'] for keyword in exclude_keywords if keyword.strip()):
                         continue
-    
+
                     filtered_results.append(result)
-    
+
                 logging.info(f"过滤后剩余 {len(filtered_results)} 个资源项")
 
                 # 获取首选分辨率和备选分辨率
                 preferred_resolution = self.config.get('preferred_resolution', "未知分辨率")
                 fallback_resolution = self.config.get('fallback_resolution', "未知分辨率")
-    
+
                 # 按分辨率和类型（单集、集数范围、全集）分类搜索结果
                 categorized_results = {
                     "首选分辨率": {
@@ -335,7 +361,7 @@ class TvshowIndexer:
                     if episode_type == "未知集数":
                         logging.warning(f"跳过未知集数的资源: {result['title']}")
                         continue
-    
+
                     # 根据分辨率和类型分类
                     if resolution == preferred_resolution:
                         categorized_results["首选分辨率"][episode_type].append({
@@ -343,7 +369,8 @@ class TvshowIndexer:
                             "link": result['link'],
                             "resolution": details['resolution'],
                             "start_episode": details['start_episode'],
-                            "end_episode": details['end_episode']
+                            "end_episode": details['end_episode'],
+                            "size": details['size']
                         })
                     elif resolution == fallback_resolution:
                         categorized_results["备选分辨率"][episode_type].append({
@@ -351,7 +378,8 @@ class TvshowIndexer:
                             "link": result['link'],
                             "resolution": details['resolution'],
                             "start_episode": details['start_episode'],
-                            "end_episode": details['end_episode']
+                            "end_episode": details['end_episode'],
+                            "size": details['size']
                         })
                     else:
                         categorized_results["其他分辨率"][episode_type].append({
@@ -359,12 +387,13 @@ class TvshowIndexer:
                             "link": result['link'],
                             "resolution": details['resolution'],
                             "start_episode": details['start_episode'],
-                            "end_episode": details['end_episode']
+                            "end_episode": details['end_episode'],
+                            "size": details['size']
                         })
-    
+
                 # 保存结果到 JSON 文件
                 self.save_results_to_json(item['剧集'], item['季'], item['年份'], categorized_results)
-    
+
             except TimeoutException:
                 logging.error("搜索结果为空或加载超时")
             except Exception as e:
@@ -397,10 +426,10 @@ class TvshowIndexer:
 
     def extract_details(self, title_text):
         """
-        从标题中提取电视节目的详细信息，包括分辨率、集数范围等。
+        从标题中提取电视节目的详细信息，包括分辨率、集数范围和文件大小等。
         """
         title_text = str(title_text)
-    
+
         # 提取分辨率
         resolution_match = re.search(r'(\d{3,4}p)', title_text, re.IGNORECASE)
         if resolution_match:
@@ -409,25 +438,25 @@ class TvshowIndexer:
             resolution = "2160p"
         else:
             resolution = "未知分辨率"
-    
+
         # 初始化集数范围
         start_episode = None
         end_episode = None
         episode_type = "未知集数"
-    
+
         # 处理单集或集数范围格式
         episode_pattern = r"(?:EP|第)(\d{1,3})(?:[-~](?:EP|第)?(\d{1,3}))?"
         episode_match = re.search(episode_pattern, title_text, re.IGNORECASE)
-    
+
         if episode_match:
             start_episode = int(episode_match.group(1))
             end_episode = int(episode_match.group(2)) if episode_match.group(2) else start_episode
             episode_type = "单集" if start_episode == end_episode else "集数范围"
         elif "全" in title_text:
-            # 如果标题中包含“全”字，则认为是全集资源
+            # 如果标题中包含"全"字，则认为是全集资源
             full_episode_pattern = r"全(\d{1,3})"
             full_episode_match = re.search(full_episode_pattern, title_text)
-    
+
             if full_episode_match:
                 start_episode = 1
                 end_episode = int(full_episode_match.group(1))
@@ -437,24 +466,31 @@ class TvshowIndexer:
                 end_episode = None  # 表示未知的全集结束集数
                 episode_type = "全集"
         elif re.search(r"(更至|更新至)(\d{1,3})集", title_text):
-            # 匹配“更至XX集”或“更新至XX集”
+            # 匹配"更至XX集"或"更新至XX集"
             update_match = re.search(r"(更至|更新至)(\d{1,3})集", title_text)
             if update_match:
                 start_episode = 1
                 end_episode = int(update_match.group(2))
                 episode_type = "集数范围"
-    
+                
+        # 提取文件大小信息
+        size = "未知大小"
+        size_match = re.search(r'(\d+\.?\d*)\s*(GB|MB|TB)', title_text, re.IGNORECASE)
+        if size_match:
+            size = f"{size_match.group(1)} {size_match.group(2).upper()}"
+
         # 添加日志记录
         logging.debug(
             f"提取结果 - 标题: {title_text}, 分辨率: {resolution}, 开始集数: {start_episode}, "
-            f"结束集数: {end_episode}, 集数类型: {episode_type}"
+            f"结束集数: {end_episode}, 集数类型: {episode_type}, 文件大小: {size}"
         )
-    
+
         return {
             "resolution": resolution,
             "start_episode": start_episode,
             "end_episode": end_episode,
-            "episode_type": episode_type
+            "episode_type": episode_type,
+            "size": size
         }
     
     def run(self):

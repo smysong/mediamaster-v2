@@ -501,14 +501,19 @@ class MediaDownloader:
                 # 新增：重命名种子文件
                 latest_torrent = get_latest_torrent_file()
                 if latest_torrent:
-                    # 电影命名方式，重命名只用title参数
-                    if not resolution:
-                        resolution = "未知分辨率"
-                    if not year:
-                        year = ""
-                    if not title:
-                        title = title_text
-                    new_name = f"{title} ({year})-{resolution}.torrent"
+                    # 判断是否为手动模式（通过title参数与title_text相同来判断）
+                    if title and title == title_text:
+                        # 手动模式下只使用标题命名
+                        new_name = f"{title}.torrent"
+                    else:
+                        # 自动模式下使用完整命名
+                        if not resolution:
+                            resolution = "未知分辨率"
+                        if not year:
+                            year = ""
+                        if not title:
+                            title = title_text
+                        new_name = f"{title} ({year})-{resolution}.torrent"
                     rename_torrent_file(latest_torrent, new_name)
                 else:
                     raise Exception("未能找到下载的种子文件")
@@ -563,17 +568,23 @@ class MediaDownloader:
                 # 新增：重命名种子文件
                 latest_torrent = get_latest_torrent_file()
                 if latest_torrent:
-                    if not resolution:
-                        resolution = "未知分辨率"
-                    if not year:
-                        year = ""
-                    if not season:
-                        season = ""
-                    if not episode_range:
-                        episode_range = "未知集数"
-                    if not title:
-                        title = title_text
-                    new_name = f"{title} ({year})-S{season}-[{episode_range}]-{resolution}.torrent"
+                    # 判断是否为手动模式（通过title参数与title_text相同来判断）
+                    if title and title == title_text:
+                        # 手动模式下只使用标题命名
+                        new_name = f"{title}.torrent"
+                    else:
+                        # 自动模式下使用完整命名
+                        if not resolution:
+                            resolution = "未知分辨率"
+                        if not year:
+                            year = ""
+                        if not season:
+                            season = ""
+                        if not episode_range:
+                            episode_range = "未知集数"
+                        if not title:
+                            title = title_text
+                        new_name = f"{title} ({year})-S{season}-[{episode_range}]-{resolution}.torrent"
                     rename_torrent_file(latest_torrent, new_name)
                 else:
                     raise Exception("未能找到下载的种子文件")
@@ -648,17 +659,23 @@ class MediaDownloader:
                 # 新增：重命名种子文件
                 latest_torrent = get_latest_torrent_file()
                 if latest_torrent:
-                    if not resolution:
-                        resolution = "未知分辨率"
-                    if not year:
-                        year = ""
-                    if not title:
-                        title = title_text
-                    # 判断是否为电视剧命名
-                    if season and episode_range:
-                        new_name = f"{title} ({year})-S{season}-[{episode_range}]-{resolution}.torrent"
+                    # 判断是否为手动模式（通过title参数与title_text相同来判断）
+                    if title and title == title_text:
+                        # 手动模式下只使用标题命名
+                        new_name = f"{title}.torrent"
                     else:
-                        new_name = f"{title} ({year})-{resolution}.torrent"
+                        # 自动模式下使用完整命名
+                        if not resolution:
+                            resolution = "未知分辨率"
+                        if not year:
+                            year = ""
+                        if not title:
+                            title = title_text
+                        # 判断是否为电视剧命名
+                        if season and episode_range:
+                            new_name = f"{title} ({year})-S{season}-[{episode_range}]-{resolution}.torrent"
+                        else:
+                            new_name = f"{title} ({year})-{resolution}.torrent"
                     rename_torrent_file(latest_torrent, new_name)
                 else:
                     raise Exception("未能找到下载的种子文件")
@@ -711,17 +728,23 @@ class MediaDownloader:
                 # 新增：重命名种子文件
                 latest_torrent = get_latest_torrent_file()
                 if latest_torrent:
-                    if not resolution:
-                        resolution = "未知分辨率"
-                    if not year:
-                        year = ""
-                    if not title:
-                        title = title_text
-                    # 判断是否为电视剧命名
-                    if season and episode_range:
-                        new_name = f"{title} ({year})-S{season}-[{episode_range}]-{resolution}.torrent"
+                    # 判断是否为手动模式（通过title参数与title_text相同来判断）
+                    if title and title == title_text:
+                        # 手动模式下只使用标题命名
+                        new_name = f"{title}.torrent"
                     else:
-                        new_name = f"{title} ({year})-{resolution}.torrent"
+                        # 自动模式下使用完整命名
+                        if not resolution:
+                            resolution = "未知分辨率"
+                        if not year:
+                            year = ""
+                        if not title:
+                            title = title_text
+                        # 判断是否为电视剧命名
+                        if season and episode_range:
+                            new_name = f"{title} ({year})-S{season}-[{episode_range}]-{resolution}.torrent"
+                        else:
+                            new_name = f"{title} ({year})-{resolution}.torrent"
                     rename_torrent_file(latest_torrent, new_name)
                 else:
                     raise Exception("未能找到下载的种子文件")
@@ -787,17 +810,23 @@ class MediaDownloader:
                     # 新增：重命名种子文件
                     latest_torrent = get_latest_torrent_file()
                     if latest_torrent:
-                        if not resolution:
-                            resolution = "未知分辨率"
-                        if not year:
-                            year = ""
-                        if not title:
-                            title = title_text
-                        # 判断是否为电视剧命名
-                        if season and episode_range:
-                            new_name = f"{title} ({year})-S{season}-[{episode_range}]-{resolution}.torrent"
+                        # 判断是否为手动模式（通过title参数与title_text相同来判断）
+                        if title and title == title_text:
+                            # 手动模式下只使用标题命名
+                            new_name = f"{title}.torrent"
                         else:
-                            new_name = f"{title} ({year})-{resolution}.torrent"
+                            # 自动模式下使用完整命名
+                            if not resolution:
+                                resolution = "未知分辨率"
+                            if not year:
+                                year = ""
+                            if not title:
+                                title = title_text
+                            # 判断是否为电视剧命名
+                            if season and episode_range:
+                                new_name = f"{title} ({year})-S{season}-[{episode_range}]-{resolution}.torrent"
+                            else:
+                                new_name = f"{title} ({year})-{resolution}.torrent"
                         rename_torrent_file(latest_torrent, new_name)
                     else:
                         raise Exception("未能找到下载的种子文件")
@@ -1240,7 +1269,7 @@ if __name__ == "__main__":
         try:
             downloader.load_config()
             downloader.setup_webdriver()
-    
+
             # 初始化相关 URL 属性
             bt_movie_base_url = downloader.config.get("bt_movie_base_url", "")
             downloader.movie_login_url = f"{bt_movie_base_url}/member.php?mod=logging&action=login"
@@ -1249,18 +1278,19 @@ if __name__ == "__main__":
             gy_base_url = downloader.config.get("gy_base_url", "")
             downloader.gy_login_url = f"{gy_base_url}/user/login"
             downloader.gy_user_info_url = f"{gy_base_url}/user/account"
-    
+
             logging.info(f"手动运行下载功能，站点: {args.site}, 标题: {args.title}, 链接: {args.link}")
+            # 修改各下载函数调用，添加is_manual参数
             if args.site.upper() == "BTHD":
-                downloader.bthd_download_torrent({"link": args.link}, args.title)
+                downloader.bthd_download_torrent({"link": args.link}, args.title, title=args.title)
             elif args.site.upper() == "BTYS":
-                downloader.btys_download_torrent({"link": args.link}, args.title)
+                downloader.btys_download_torrent({"link": args.link}, args.title, title=args.title)
             elif args.site.upper() == "BT0":
-                downloader.bt0_download_torrent({"link": args.link}, args.title)
+                downloader.bt0_download_torrent({"link": args.link}, args.title, title=args.title)
             elif args.site.upper() == "GY":
-                downloader.gy_download_torrent({"link": args.link}, args.title)
+                downloader.gy_download_torrent({"link": args.link}, args.title, title=args.title)
             elif args.site.upper() == "HDTV":
-                downloader.hdtv_download_torrent({"link": args.link}, args.title)
+                downloader.hdtv_download_torrent({"link": args.link}, args.title, title=args.title)
             else:
                 logging.error(f"未知的站点名称: {args.site}")
         except Exception as e:

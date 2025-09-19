@@ -23,6 +23,14 @@ import time
 import logging
 import json
 import glob
+import threading
+import uuid
+from collections import deque
+
+# 使用线程安全的字典存储下载进度
+download_progress_messages = {}
+# 使用锁确保线程安全
+progress_lock = threading.Lock()
 
 # 配置日志
 # 创建独立的 logger 实例
@@ -119,7 +127,7 @@ def login():
         if user is None:
             error = '用户名或密码错误！'
         else:
-            hashed_password = user['password']
+            hashed_password = user['PASSWORD']
             if not isinstance(hashed_password, str):
                 hashed_password = hashed_password.decode('utf-8')
 
@@ -129,9 +137,10 @@ def login():
         if error is None:
             session.permanent = True
             session.clear()
-            session['user_id'] = user['id']
-            session['nickname'] = user['nickname']
-            session['avatar_url'] = user['avatar_url']
+            session['user_id'] = user['ID']
+            session['username'] = user['USERNAME']
+            session['nickname'] = user['NICKNAME']
+            session['avatar_url'] = user['AVATAR_URL']
             session['_permanent'] = True
             session.modified = True
             logger.info(f"用户 {username} 登录成功")
@@ -144,8 +153,8 @@ def login():
 
 @app.route('/logout')
 def logout():
-    nickname = session.get('nickname')
-    logger.info(f"用户 {nickname} 登出")
+    username = session.get('username')
+    logger.info(f"用户 {username} 登出")
     session.clear()
     return redirect(url_for('login'))
 
@@ -156,7 +165,8 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@app.route('/update_profile', methods=['POST'])
+# 更新用户资料路由
+@app.route('/api/update_profile', methods=['POST'])
 @login_required
 def update_profile():
     try:
@@ -167,18 +177,27 @@ def update_profile():
 
         # 获取表单数据
         username = request.form.get('username')
+        nickname_input = request.form.get('nickname')  # 获取昵称输入
         avatar_file = request.files.get('avatar')
-
-        # 标记是否更新了昵称或头像
-        updated_nickname = False
+        
         updated_avatar = False
-
-        # 更新用户名
-        if username:
-            db.execute('UPDATE USERS SET nickname = ? WHERE id = ?', (username, user_id))
-            logger.info(f"用户 {user_id} 更新了昵称: {username}")
-            updated_nickname = True
-
+        
+        # 更新用户名和昵称（如果有提供）
+        if username or nickname_input:
+            if username and nickname_input:
+                # 同时更新用户名和昵称
+                db.execute('UPDATE USERS SET USERNAME = ?, NICKNAME = ? WHERE ID = ?', 
+                          (username, nickname_input, user_id))
+                logger.info(f"用户 {nickname} 更新了用户名和昵称: {username}, {nickname_input}")
+            elif username:
+                # 只更新用户名
+                db.execute('UPDATE USERS SET USERNAME = ? WHERE ID = ?', (username, user_id))
+                logger.info(f"用户 {nickname} 更新了用户名: {username}")
+            elif nickname_input:
+                # 只更新昵称
+                db.execute('UPDATE USERS SET NICKNAME = ? WHERE ID = ?', (nickname_input, user_id))
+                logger.info(f"用户 {nickname} 更新了昵称: {nickname_input}")
+        
         # 更新头像
         if avatar_file and allowed_file(avatar_file.filename):
             upload_folder = 'static/uploads/avatars'
@@ -187,7 +206,8 @@ def update_profile():
             file_path = os.path.join(upload_folder, filename)
             avatar_file.save(file_path)
             avatar_url = f"/{upload_folder}/{filename}"
-            db.execute('UPDATE USERS SET avatar_url = ? WHERE id = ?', (avatar_url, user_id))
+            # 注意：这里使用大写字段名 'AVATAR_URL'
+            db.execute('UPDATE USERS SET AVATAR_URL = ? WHERE ID = ?', (avatar_url, user_id))
             logger.info(f"用户 {nickname} 更新了头像: {avatar_url}")
             updated_avatar = True
         elif not avatar_file:
@@ -197,78 +217,75 @@ def update_profile():
         db.commit()
         logger.info(f"用户 {nickname} 个人资料更新成功")
 
-        # 更新会话中的昵称和头像
-        if updated_nickname:
-            session['nickname'] = username
+        # 更新会话中的信息
+        if username:
+            session['username'] = username
+        if nickname_input:
+            session['nickname'] = nickname_input
+            nickname = nickname_input  # 更新本地变量
         if updated_avatar:
             session['avatar_url'] = avatar_url
 
-        # 构造返回消息
-        if updated_nickname and updated_avatar:
-            message = '昵称和头像已更新！'
-        elif updated_nickname:
-            message = '昵称已更新！'
-        elif updated_avatar:
-            message = '头像已更新！'
-        else:
-            message = '无需更新！'
-
-        return jsonify(success=True, message=message)
-
+        return jsonify({"success": True, "message": "个人资料更新成功"})
     except Exception as e:
-        db.rollback()
-        logger.error(f"用户 {nickname} 更新个人资料失败: {e}")
-        return jsonify(success=False, message='更新失败，请稍后再试。'), 500
+        logger.error(f"更新个人资料失败: {e}")
+        return jsonify({"success": False, "message": "更新失败，请稍后再试"}), 500
 
-@app.route('/change_password', methods=['GET', 'POST'])
+# 修改密码路由
+@app.route('/api/change_password', methods=['POST'])
 @login_required
 def change_password():
-    user_id = session['user_id']
-    nickname = session.get('nickname')
-    if request.method == 'POST':
-        old_password = request.form['old_password']
+    try:
+        user_id = session['user_id']
+        nickname = session.get('nickname')
+        logger.info(f"用户 {nickname} 请求修改密码")
+
+        # 获取表单数据
+        old_password = request.form.get('old_password')
         new_password = request.form.get('new_password')
-        new_username = request.form.get('new_username')
+        confirm_password = request.form.get('confirm_password')
         
-        logger.info(f"用户 {nickname} 尝试修改密码和/或用户名")
+        # 验证输入
+        if not old_password or not new_password:
+            logger.warning(f"用户 {nickname} 密码修改失败: 缺少必要参数")
+            return jsonify(success=False, message='请提供当前密码和新密码。'), 400
+            
+        # 验证确认密码
+        if new_password != confirm_password:
+            logger.warning(f"用户 {nickname} 密码修改失败: 新密码和确认密码不一致")
+            return jsonify(success=False, message='新密码和确认密码不一致。'), 400
 
         db = get_db()
+        
+        # 获取当前用户信息
         user = db.execute('SELECT * FROM USERS WHERE ID = ?', (user_id,)).fetchone()
+        if not user:
+            logger.error(f"用户 {nickname} 密码修改失败: 用户不存在")
+            return jsonify(success=False, message='用户不存在。'), 400
 
-        hashed_password = user['password']
+        # 验证当前密码 (使用 bcrypt 验证)
+        hashed_password = user['PASSWORD']
         if not isinstance(hashed_password, str):
             hashed_password = hashed_password.decode('utf-8')
-
-        # 验证旧密码
-        if user and bcrypt.checkpw(old_password.encode('utf-8'), hashed_password.encode('utf-8')):
-            # 更新登录用户名（如果提供了新用户名）
-            if new_username and new_username != user['USERNAME']:
-                db.execute('UPDATE USERS SET USERNAME = ? WHERE ID = ?', (new_username, user_id))
-                logger.info(f"用户 {nickname} 登录用户名已更新为: {new_username}")
             
-            # 更新密码（如果提供了新密码）
-            if new_password:
-                new_hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
-                db.execute('UPDATE USERS SET PASSWORD = ? WHERE ID = ?', (new_hashed_password, user_id))
-                logger.info(f"用户 {new_username or nickname} 密码修改成功")
+        if not bcrypt.checkpw(old_password.encode('utf-8'), hashed_password.encode('utf-8')):
+            logger.warning(f"用户 {nickname} 密码修改失败: 当前密码错误")
+            return jsonify(success=False, message='当前密码错误。'), 400
+
+        # 更新密码 (使用 bcrypt 生成新密码)
+        new_hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
+        if isinstance(new_hashed_password, bytes):
+            new_hashed_password = new_hashed_password.decode('utf-8')
             
-            db.commit()
-            logger.info(f"用户信息更新成功")
-            return jsonify(success=True, message='您的信息已成功更新。', redirect_url=url_for('dashboard'))
-
-        logger.warning(f"用户 {nickname} 信息更新失败: 旧密码错误")
-        return jsonify(success=False, message='旧密码错误。', redirect_url=url_for('change_password'))
-
-    # 获取当前用户的用户名（登录名）
-    db = get_db()
-    user = db.execute('SELECT USERNAME FROM USERS WHERE ID = ?', (user_id,)).fetchone()
-    current_username = user['USERNAME'] if user else ''
-    
-    return render_template('change_password.html', 
-                          nickname=session.get('nickname'), 
-                          avatar_url=session.get('avatar_url'), 
-                          version=APP_VERSION,
-                          current_username=current_username)
+        db.execute('UPDATE USERS SET PASSWORD = ? WHERE ID = ?', (new_hashed_password, user_id))
+        db.commit()
+        
+        logger.info(f"用户 {nickname} 密码修改成功")
+        return jsonify(success=True, message='密码修改成功！'), 200
+        
+    except Exception as e:
+        logger.error(f"修改密码失败: {e}")
+        return jsonify(success=False, message='密码修改失败，请稍后再试。'), 500
 
 @app.errorhandler(InternalServerError)
 def handle_500(error):
@@ -290,14 +307,16 @@ def dashboard():
     total_episodes = db.execute('SELECT SUM(LENGTH(episodes) - LENGTH(REPLACE(episodes, \',\', \'\')) + 1) FROM LIB_TV_SEASONS').fetchone()[0] or 0
      
     # 从会话中获取用户昵称和头像
+    username = session.get('username')
     nickname = session.get('nickname')
     avatar_url = session.get('avatar_url')
-    
+
     return render_template('dashboard.html', 
                            total_movies=total_movies, 
                            total_tvs=total_tvs, 
                            total_episodes=total_episodes, 
                            nickname=nickname, 
+                           username=username, 
                            avatar_url=avatar_url, 
                            version=APP_VERSION)
 
@@ -403,6 +422,123 @@ def system_processes():
     return jsonify({
         "processes": processes
     })
+
+@app.route('/api/site_status', methods=['GET'])
+@login_required
+def site_status():
+    """
+    获取站点状态信息（从文件中读取）
+    """
+    try:
+        # 导入站点测试模块
+        import sys
+        import os
+        import json
+        sys.path.append('/app')
+        
+        # 动态导入站点测试模块
+        if 'site_test' in sys.modules:
+            import importlib
+            importlib.reload(sys.modules['site_test'])
+            site_test_module = sys.modules['site_test']
+        else:
+            import site_test
+            site_test_module = site_test
+            
+        # 创建站点测试实例并获取配置
+        tester = site_test_module.SiteTester()
+        sites = tester.load_sites_config()
+        
+        # 读取站点启用状态
+        db = get_db()
+        enabled_sites = {}
+        for site_name in sites.keys():
+            option_name = f"{site_name.lower()}_enabled"
+            try:
+                result = db.execute('SELECT VALUE FROM CONFIG WHERE OPTION = ?', (option_name,)).fetchone()
+                enabled_sites[site_name] = result['VALUE'] == 'True' if result else False
+            except Exception as e:
+                logger.error(f"读取站点 {site_name} 启用状态失败: {e}")
+                enabled_sites[site_name] = False
+        
+        # 读取站点状态文件
+        status_file_path = '/tmp/site_status.json'
+        site_status_data = {}
+        last_checked = None
+        
+        if os.path.exists(status_file_path):
+            try:
+                with open(status_file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    site_status_data = data.get('status', {})
+                    last_checked = data.get('last_checked')
+            except json.JSONDecodeError as e:
+                logger.error(f"解析站点状态文件失败: {e}")
+            except Exception as e:
+                logger.error(f"读取站点状态文件失败: {e}")
+        else:
+            logger.warning("站点状态文件不存在")
+        
+        # 返回站点信息
+        site_info = []
+        for site_name, site_config in sites.items():
+            site_info.append({
+                'name': site_name,
+                'url': site_config['base_url'],
+                'keyword': site_config['keyword'],
+                'enabled': enabled_sites.get(site_name, False)
+            })
+        
+        return jsonify({
+            'sites': site_info,
+            'last_checked': last_checked,
+            'status': site_status_data
+        })
+    except Exception as e:
+        logger.error(f"获取站点状态失败: {e}")
+        return jsonify({'error': '获取站点状态失败'}), 500
+
+@app.route('/api/check_site_status', methods=['POST'])
+@login_required
+def check_site_status():
+    """
+    手动检查站点状态并更新状态文件
+    """
+    try:
+        import sys
+        import os
+        import json
+        sys.path.append('/app')
+        
+        # 动态导入站点测试模块
+        if 'site_test' in sys.modules:
+            import importlib
+            importlib.reload(sys.modules['site_test'])
+            site_test_module = sys.modules['site_test']
+        else:
+            import site_test
+            site_test_module = site_test
+            
+        # 运行站点测试
+        tester = site_test_module.SiteTester()
+        results = tester.run_tests()
+        
+        # 保存结果到文件
+        status_data = {
+            'status': results,
+            'last_checked': time.strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+        with open('/tmp/site_status.json', 'w', encoding='utf-8') as f:
+            json.dump(status_data, f, ensure_ascii=False, indent=2)
+        
+        return jsonify({
+            'status': results,
+            'last_checked': status_data['last_checked']
+        })
+    except Exception as e:
+        logger.error(f"检查站点状态失败: {e}")
+        return jsonify({'error': '检查站点状态失败'}), 500
 
 @app.route('/recommendations')
 @login_required
@@ -1203,6 +1339,7 @@ def api_search_media():
                                                     for item in data[resolution_key][category_key]:
                                                         all_results[site].append({
                                                             "title": item.get("title"),
+                                                            "size": item.get("size"),
                                                             "link": item.get("link"),
                                                             "resolution": item.get("resolution")
                                                         })
@@ -1211,6 +1348,7 @@ def api_search_media():
                                             for item in data[resolution_key]:
                                                 all_results[site].append({
                                                     "title": item.get("title"),
+                                                    "size": item.get("size"),
                                                     "link": item.get("link"),
                                                     "resolution": item.get("resolution")
                                                 })
@@ -1374,6 +1512,7 @@ def api_search_media():
                                                     for item in data[resolution_key][category_key]:
                                                         all_results[site].append({
                                                             "title": item.get("title"),
+                                                            "size": item.get("size"),
                                                             "link": item.get("link"),
                                                             "resolution": item.get("resolution")
                                                         })
@@ -1382,6 +1521,7 @@ def api_search_media():
                                             for item in data[resolution_key]:
                                                 all_results[site].append({
                                                     "title": item.get("title"),
+                                                    "size": item.get("size"),
                                                     "link": item.get("link"),
                                                     "resolution": item.get("resolution")
                                                 })
@@ -1403,12 +1543,36 @@ def api_search_media():
 
     return Response(stream_with_context(generate()), mimetype='text/plain')
 
+# 下载进度API
+@app.route('/api/download_progress/<task_id>')
+@login_required
+def download_progress(task_id):
+    """
+    获取指定任务的下载进度信息
+    """
+    global download_progress_messages
+    try:
+        with progress_lock:
+            # 返回指定任务的进度信息
+            if task_id in download_progress_messages and download_progress_messages[task_id]:
+                # 转换 deque 为 list
+                messages_list = list(download_progress_messages[task_id])
+                return jsonify({"messages": messages_list})
+            else:
+                return jsonify({"messages": ["等待任务开始..."]})
+    except Exception as e:
+        logger.error(f"获取下载进度失败: {e}")
+        return jsonify({"error": "获取进度失败"}), 500
+
+# 下载资源API
 @app.route('/api/download_resource', methods=['POST'])
 @login_required
 def download_resource():
     """
     接收前端选择的资源数据，并调用 downloader.py 脚本进行下载。
     """
+    global download_progress_messages
+    
     try:
         # 获取请求数据
         data = request.json
@@ -1421,24 +1585,76 @@ def download_resource():
             logger.warning("下载资源失败: 缺少必要参数")
             return jsonify({"error": "缺少必要参数"}), 400
 
-        # 构建下载命令
-        command = f'python downloader.py --site {site} --title "{title}" --link "{link}"'
+        # 生成任务ID
+        task_id = str(uuid.uuid4())
 
-        # 执行下载命令
-        logger.info(f"执行下载命令: {command}")
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        # 初始化该任务的进度消息队列
+        with progress_lock:
+            if task_id not in download_progress_messages:
+                download_progress_messages[task_id] = deque(maxlen=100)
+            download_progress_messages[task_id].append(f"开始种子下载任务: {title}")
 
-        # 检查命令执行结果
-        if result.returncode != 0:
-            logger.error(f"下载失败: {result.stderr}")
-            return jsonify({"error": f"下载失败: {result.stderr}"}), 500
+        # 构建下载命令（使用列表形式避免shell解析问题，并确保所有参数都是字符串）
+        command = [
+            'python', 'downloader.py',
+            '--site', str(site),
+            '--title', str(title),
+            '--link', str(link)
+        ]
+        
+        logger.info(f"执行下载命令: {' '.join(command)}")
 
-        logger.info(f"下载成功: {result.stdout}")
-        return jsonify({"message": "下载成功"}), 200
+        # 异步执行下载任务
+        def run_download():
+            try:
+                with progress_lock:
+                    if task_id in download_progress_messages:
+                        download_progress_messages[task_id].append(f"执行命令: {' '.join(command)}")
 
+                # 使用 subprocess.Popen 异步执行，并实时获取输出
+                process = subprocess.Popen(
+                    command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,  # 将stderr重定向到stdout，统一处理输出
+                    text=True,
+                    bufsize=1,
+                    universal_newlines=True
+                )
+                
+                # 实时读取标准输出（包括错误信息）
+                while True:
+                    output = process.stdout.readline()
+                    if output == '' and process.poll() is not None:
+                        break
+                    if output:
+                        with progress_lock:
+                            if task_id in download_progress_messages:
+                                # 直接添加输出内容
+                                download_progress_messages[task_id].append(output.strip())
+
+                process.poll()
+                
+            except Exception as e:
+                logger.error(f"执行下载任务失败: {e}")
+                error_msg = f"下载出错: {str(e)}"
+                with progress_lock:
+                    if task_id in download_progress_messages:
+                        download_progress_messages[task_id].append(error_msg)
+        
+        # 在后台线程中执行下载任务
+        thread = threading.Thread(target=run_download)
+        thread.daemon = True
+        thread.start()
+        
+        # 立即返回任务ID给前端
+        return jsonify({
+            "message": "开始后台执行下载",
+            "task_id": task_id
+        }), 200
+            
     except Exception as e:
-        logger.error(f"下载资源失败: {e}")
-        return jsonify({"error": "下载失败，请稍后再试"}), 500
+        logger.error(f"添加任务失败: {e}")
+        return jsonify({"error": str(e)}), 500
 
 GROUP_MAPPING = {
     "定时任务": {
@@ -1575,6 +1791,141 @@ def save_settings():
         logger.error(f"配置保存失败: {e}")
         flash('设置保存失败，请稍后再试。', 'error')
     return redirect(url_for('settings_page'))
+
+@app.route('/api/browse_directory', methods=['GET'])
+@login_required
+def browse_directory():
+    """
+    浏览目录结构的API接口
+    """
+    path = request.args.get('path', '/')
+    try:
+        # 安全检查，确保路径在允许的范围内
+        if path == '/':
+            # 允许访问根目录下的所有路径
+            items = []
+            try:
+                for item in os.listdir(path):
+                    item_path = os.path.join(path, item)
+                    # 只显示目录
+                    if os.path.isdir(item_path):
+                        items.append({
+                            'name': item,
+                            'path': item_path,
+                            'is_dir': True
+                        })
+            except PermissionError:
+                return jsonify({'error': '没有权限访问根目录'}), 403
+                
+            # 按名称排序
+            items.sort(key=lambda x: x['name'].lower())
+            return jsonify({'path': path, 'items': items})
+        
+        # 确保路径存在且为目录
+        if not os.path.exists(path) or not os.path.isdir(path):
+            return jsonify({'error': '路径不存在或不是目录'}), 400
+            
+        items = []
+        try:
+            for item in os.listdir(path):
+                item_path = os.path.join(path, item)
+                items.append({
+                    'name': item,
+                    'path': item_path,
+                    'is_dir': os.path.isdir(item_path)
+                })
+        except PermissionError:
+            return jsonify({'error': '没有权限访问该目录'}), 403
+            
+        # 按目录和名称排序
+        items.sort(key=lambda x: (not x['is_dir'], x['name'].lower()))
+        
+        # 添加上级目录
+        parent_path = os.path.dirname(path)
+        if parent_path != path:  # 不是根目录
+            items.insert(0, {
+                'name': '..',
+                'path': parent_path,
+                'is_dir': True
+            })
+            
+        return jsonify({'path': path, 'items': items})
+    except Exception as e:
+        logger.error(f"浏览目录失败: {e}")
+        return jsonify({'error': '浏览目录失败'}), 500
+
+@app.route('/api/create_directory', methods=['POST'])
+@login_required
+def create_directory():
+    """
+    创建新目录的API接口
+    """
+    try:
+        data = request.json
+        parent_path = data.get('path')
+        dir_name = data.get('dir_name')
+        
+        if not parent_path or not dir_name:
+            return jsonify({'error': '缺少必要参数'}), 400
+            
+        # 防止目录遍历攻击
+        if '..' in dir_name or dir_name.startswith('/'):
+            return jsonify({'error': '无效的目录名称'}), 400
+            
+        new_dir_path = os.path.join(parent_path, dir_name)
+        
+        # 检查目录是否已存在
+        if os.path.exists(new_dir_path):
+            return jsonify({'error': '目录已存在'}), 400
+            
+        # 创建目录
+        os.makedirs(new_dir_path, exist_ok=True)
+        logger.info(f"成功创建目录: {new_dir_path}")
+        
+        # 返回新建目录的完整路径
+        return jsonify({'message': '目录创建成功', 'path': new_dir_path}), 200
+    except Exception as e:
+        logger.error(f"创建目录失败: {e}")
+        return jsonify({'error': '创建目录失败'}), 500
+
+@app.route('/api/rename_directory', methods=['POST'])
+@login_required
+def rename_directory():
+    """
+    重命名目录的API接口
+    """
+    try:
+        data = request.json
+        old_path = data.get('old_path')
+        new_name = data.get('new_name')
+        
+        if not old_path or not new_name:
+            return jsonify({'error': '缺少必要参数'}), 400
+            
+        # 防止目录遍历攻击
+        if '..' in new_name or new_name.startswith('/'):
+            return jsonify({'error': '无效的目录名称'}), 400
+            
+        # 确保原路径存在且为目录
+        if not os.path.exists(old_path) or not os.path.isdir(old_path):
+            return jsonify({'error': '原目录不存在或不是目录'}), 400
+            
+        # 构造新路径
+        parent_path = os.path.dirname(old_path)
+        new_path = os.path.join(parent_path, new_name)
+        
+        # 检查新路径是否已存在
+        if os.path.exists(new_path):
+            return jsonify({'error': '目标目录已存在'}), 400
+            
+        # 重命名目录
+        os.rename(old_path, new_path)
+        logger.info(f"成功重命名目录: {old_path} -> {new_path}")
+        
+        return jsonify({'message': '目录重命名成功', 'path': new_path}), 200
+    except Exception as e:
+        logger.error(f"重命名目录失败: {e}")
+        return jsonify({'error': '重命名目录失败'}), 500
 
 @app.route('/download_mgmt')
 @login_required

@@ -1,4 +1,5 @@
 import os
+import json
 import subprocess
 import time
 import logging
@@ -159,6 +160,39 @@ def start_chrome_monitor():
     thread.start()
     logging.info("Chrome 进程监控已启动")
 
+def check_site_status_and_save():
+    """检查站点状态并保存到文件"""
+    try:
+        # 导入站点测试模块
+        import sys
+        sys.path.append('/app')
+        
+        import site_test
+            
+        # 运行站点测试
+        tester = site_test.SiteTester()
+        results = tester.run_tests()
+        
+        # 保存结果到文件
+        status_data = {
+            'status': results,
+            'last_checked': time.strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+        with open('/tmp/site_status.json', 'w', encoding='utf-8') as f:
+            json.dump(status_data, f, ensure_ascii=False, indent=2)
+            
+        logging.info("站点状态检测完成并已保存到 /tmp/site_status.json")
+        
+    except Exception as e:
+        logging.error(f"站点状态检测失败: {e}")
+
+def site_status_thread():
+    """在后台线程中执行站点状态检测"""
+    logging.info("开始后台站点状态检测...")
+    check_site_status_and_save()
+    logging.info("后台站点状态检测完成")
+
 # 全局变量
 running = True
 app_pid = None
@@ -202,9 +236,13 @@ def main():
     app_pid = start_app()
     sync_pid = start_sync()
     start_chrome_monitor()  # 启动 Chrome 监控线程
+    
+    # 在后台线程中启动站点状态检测，不阻塞主程序
+    site_thread = threading.Thread(target=site_status_thread, daemon=True)
+    site_thread.start()
+    logging.info("站点状态检测已在后台启动")
 
     while running:
-
         run_script('scan_media.py')
         logging.info("-" * 80)
         logging.info("扫描媒体库：已执行完毕，等待5秒...")

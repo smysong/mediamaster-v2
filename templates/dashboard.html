@@ -187,6 +187,71 @@
     }
 }
 
+/* 站点状态指示器样式 */
+.status-indicator {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 20px;
+    font-weight: 500;
+    text-align: center;
+}
+
+.status-running {
+    color: #2e7d32;
+}
+
+.status-stopped {
+    color: #c62828;
+}
+
+.status-indicator::before {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 8px;
+}
+
+.status-running::before {
+    background-color: #4caf50;
+}
+
+.status-stopped::before {
+    background-color: #f44336;
+}
+/* 站点URL样式 */
+#site-status-content table a {
+    color: #000000 !important;
+    text-decoration: none !important;
+}
+
+#site-status-content table a:hover {
+    color: #007bff !important;
+    text-decoration: none !important;
+}
+/* 加载状态样式 */
+#site-status-content .d-flex {
+    min-height: 100px;
+}
+
+#site-status-content .spinner-border {
+    width: 1.5rem;
+    height: 1.5rem;
+    border-width: 0.15em;
+    animation: spinner-border 0.75s linear infinite;
+}
+
+#site-status-content .ms-2 {
+    animation: none;
+}
+
+.visually-hidden,
+.ms-2,
+.text-muted {
+    font-size: clamp(8px, 1.2vw, 14px) !important;
+}
+
 /* 响应式布局（仅保留 1400px 断点） */
 @media (max-width: 1400px) {
     .container {
@@ -384,12 +449,34 @@
             </section>
         </div>
 
+        <!-- 站点状态模块 -->
+        <div class="col-md-12">
+            <section class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>站点状态</span>
+                    <span>
+                        <i class="bi bi-arrow-clockwise" id="refresh-site-status" title="重新检测站点状态" style="color: #ffffff;"></i>
+                    </span>
+                </div>
+                <div class="card-body">
+                    <div id="site-status-content">
+                        <div class="d-flex justify-content-center align-items-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">加载中...</span>
+                            </div>
+                            <span class="ms-2">正在加载站点状态...</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
         <!-- 系统进程模块 -->
         <div class="col-md-12">
             <section class="card mb-4">
                 <div class="card-header">系统进程</div>
                 <div class="card-body">
-                    <table class="table table-striped">
+                    <table class="table">
                         <thead>
                             <tr>
                                 <th>任务名称</th>
@@ -416,6 +503,26 @@ $(document).ready(function() {
             window.location.href = target;
         }
     });
+
+    // 为刷新图标添加鼠标悬停效果
+    $('#refresh-site-status').hover(
+        function() {
+            $(this).css('cursor', 'pointer');
+            $(this).css('opacity', '0.8');
+        },
+        function() {
+            $(this).css('opacity', '1');
+        }
+    );
+
+    // 站点名称映射
+    const siteNameMap = {
+        'BT0': '不太灵影视',
+        'GY': '观影',
+        'BTYS': 'BT影视',
+        'BTHD': '高清影视之家',
+        'HDTV': '高清剧集网'
+    };
 
     // 初始化SVG图表
     var chartDom = document.getElementById('speedChart');
@@ -597,6 +704,7 @@ $(document).ready(function() {
                     'download_task_adder.py': '添加下载任务',
                     'xunlei.py': '迅雷-添加下载任务',
                     'xunlei_torrent.py': '迅雷-种子监听服务',
+                    'site_test.py': '站点状态检测服务',
                     'chromedriver': 'Chrome驱动',
                     'chrome': 'Chrome浏览器'
                 };
@@ -630,6 +738,148 @@ $(document).ready(function() {
             }
         });
     }
+
+    // 站点状态相关函数
+    function loadSiteStatus() {
+        // 检查是否正在进行手动检测，如果是则不执行自动刷新
+        if ($('#site-status-content .spinner-border:contains("检测中")').length > 0) {
+            return;
+        }
+        
+        $.ajax({
+            url: '/api/site_status',
+            method: 'GET',
+            success: function(data) {
+                renderSiteStatus(data);
+            },
+            error: function(xhr, status, error) {
+                console.error('加载站点状态失败:', error);
+                $('#site-status-content').html(`
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i> 加载站点状态失败: ${error}
+                    </div>
+                `);
+            }
+        });
+    }
+
+    function renderSiteStatus(data) {
+        // 检查是否有错误信息
+        if (data.error) {
+            $('#site-status-content').html(`
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i> ${data.error}
+                </div>
+            `);
+            return;
+        }
+
+        let html = `
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>站点名称</th>
+                            <th>状态</th>
+                            <th>启用</th>
+                            <th>URL</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+
+        if (data.sites && Array.isArray(data.sites)) {
+            data.sites.forEach(function(site) {
+                // 使用映射获取中文名称，如果不存在则使用原始名称
+                const displayName = siteNameMap[site.name] || site.name;
+                
+                const status = data.status && data.status.hasOwnProperty(site.name) ? 
+                    data.status[site.name] : null;
+                
+                // 状态显示样式
+                let statusHtml = '';
+                if (status === true) {
+                    statusHtml = '<span class="status-indicator status-running">正常</span>';
+                } else if (status === false) {
+                    statusHtml = '<span class="status-indicator status-stopped">异常</span>';
+                } else {
+                    statusHtml = '<span class="status-indicator status-stopped">未知</span>';
+                }
+
+                const enabledHtml = site.enabled ? 
+                    '<span class="status-indicator status-running">是</span>' : 
+                    '<span class="status-indicator status-stopped">否</span>';
+
+                html += `
+                    <tr>
+                        <td>${displayName}</td>
+                        <td>${statusHtml}</td>
+                        <td>${enabledHtml}</td>
+                        <td><a href="${site.url}" target="_blank">${site.url}</a></td>
+                    </tr>
+                `;
+            });
+        }
+
+        html += `
+                    </tbody>
+                </table>
+        `;
+
+        if (data.last_checked) {
+            html += `<small class="text-muted">最后检查时间: ${data.last_checked}</small>`;
+        }
+
+        html += `</div>`;
+        
+        $('#site-status-content').html(html);
+    }
+
+    function checkSiteStatus() {
+        // 显示检测中状态（只在内容区域）
+        $('#site-status-content').html(`
+            <div class="d-flex justify-content-center align-items-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">后台检测中...预计2分钟,可以执行其他操作或等待检测完成</span>
+                </div>
+                <span class="ms-2">后台检测中...预计2分钟,可以执行其他操作或等待检测完成</span>
+            </div>
+        `);
+        
+        $.ajax({
+            url: '/api/check_site_status',
+            method: 'POST',
+            success: function(data) {
+                if (data.error) {
+                    showToast('检查失败: ' + data.error, 'error');
+                    // 显示错误信息
+                    $('#site-status-content').html(`
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle"></i> ${data.error}
+                        </div>
+                    `);
+                } else {
+                    // 直接渲染站点状态，而不是调用loadSiteStatus
+                    renderSiteStatus(data);
+                    showToast('站点状态检查完成', 'success');
+                }
+            },
+            error: function(xhr, status, error) {
+                showToast('检查失败: ' + error, 'error');
+                // 显示错误信息
+                $('#site-status-content').html(`
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i> 检查失败: ${error}
+                    </div>
+                `);
+            }
+        });
+    }
+
+    // 绑定刷新图标事件
+    $('#refresh-site-status').on('click', function() {
+        checkSiteStatus();
+    });
 
     function updateGauge(id, value) {
         var gauge = document.getElementById(id);
@@ -671,11 +921,14 @@ $(document).ready(function() {
         }
     }
 
+    // 初始化所有模块
     updateSystemResources();
     updateSystemProcesses();
+    loadSiteStatus(); // 加载站点状态
 
-    setInterval(updateSystemResources, 3000);
+    setInterval(updateSystemResources, 4000);
     setInterval(updateSystemProcesses, 1000);
+    setInterval(loadSiteStatus, 6000);
 });
 </script>
 {% endblock %}

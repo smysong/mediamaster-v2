@@ -267,6 +267,31 @@
         .offcanvas-header {
             display: none;
         }
+
+        /* 统一表单元素字体大小 */
+        input.form-control, 
+        select.form-select, 
+        textarea.form-control,
+        .btn {
+            font-size: clamp(10px, 1.0vw, 14px) !important;
+        }
+
+        /* 用户资料模态框中的表单元素 */
+        #userProfileModal input.form-control,
+        #userProfileModal select.form-select,
+        #userProfileModal textarea.form-control,
+        #userProfileModal .btn {
+            font-size: clamp(10px, 1.0vw, 14px) !important;
+        }
+
+        /* 版本更新模态框中的元素 */
+        #versionUpdateModal input.form-control,
+        #versionUpdateModal select.form-select,
+        #versionUpdateModal textarea.form-control,
+        #versionUpdateModal .btn {
+            font-size: clamp(10px, 1.0vw, 14px) !important;
+        }
+
         @media (max-width: 768px) {
             nav#sidebarMenu {
                 width: 300px;
@@ -680,7 +705,7 @@
 </head>
 <body>
     <!-- Toast 消息通知 -->
-    <div class="toast" id="toast" role="alert" aria-live="assertive" aria-atomic="true" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1060;">
+    <div class="toast" id="toast" role="alert" aria-live="assertive" aria-atomic="true" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1200;">
         <div class="toast-header">
             <strong class="me-auto">系统提示</strong>
             <small>现在</small>
@@ -809,18 +834,54 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="userProfileForm">
-                        <div class="mb-3">
-                            <label for="username" class="form-label">用户昵称</label>
-                            <input type="text" class="form-control" id="username" value="{{ nickname }}">
+                    <ul class="nav nav-tabs" id="profileTabs" role="tablist">
+                        <li class="nav-item" role="presentation" style="margin-bottom: 1px;">
+                            <button class="nav-link active" id="profile-tab" data-bs-toggle="tab" data-bs-target="#profile" type="button" role="tab" aria-controls="profile" aria-selected="true">个人资料</button>
+                        </li>
+                        <li class="nav-item" role="presentation" style="margin-bottom: 1px;">
+                            <button class="nav-link" id="password-tab" data-bs-toggle="tab" data-bs-target="#password" type="button" role="tab" aria-controls="password" aria-selected="false">修改密码</button>
+                        </li>
+                    </ul>
+                    <div class="tab-content" id="profileTabsContent">
+                        <div class="tab-pane fade show active" id="profile" role="tabpanel" aria-labelledby="profile-tab">
+                            <form id="userProfileForm" class="mt-3">
+                                <div class="mb-3">
+                                    <label for="username" class="form-label">用户名</label>
+                                    <input type="text" class="form-control" id="username" value="{{ username }}">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="nickname" class="form-label">用户昵称</label>
+                                    <input type="text" class="form-control" id="nickname" value="{{ nickname }}">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="avatar" class="form-label">用户头像</label>
+                                    <input type="file" class="form-control" id="avatar">
+                                </div>
+                                <button type="submit" class="btn btn-sm btn-primary">保存更改</button>
+                            </form>
                         </div>
-                        <div class="mb-3">
-                            <label for="avatar" class="form-label">用户头像</label>
-                            <input type="file" class="form-control" id="avatar">
+                        <div class="tab-pane fade" id="password" role="tabpanel" aria-labelledby="password-tab">
+                            <form id="changePasswordForm" class="mt-3">
+                                <div class="mb-3" style="display: none;">
+                                    <label for="visible-username" class="form-label">用户名</label>
+                                    <input type="text" class="form-control" id="visible-username" name="username" value="{{ username }}" autocomplete="username" readonly>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="current_password" class="form-label">当前密码</label>
+                                    <input type="password" class="form-control" id="current_password" required autocomplete="current-password">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="new_password" class="form-label">新密码</label>
+                                    <input type="password" class="form-control" id="new_password" required autocomplete="new-password">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="confirm_password" class="form-label">确认新密码</label>
+                                    <input type="password" class="form-control" id="confirm_password" required autocomplete="new-password">
+                                </div>
+                                <button type="submit" class="btn btn-sm btn-primary">更新密码</button>
+                            </form>
                         </div>
-                        <button type="submit" class="btn btn-sm btn-primary">保存更改</button>
-                        <a href="/change_password" class="btn btn-sm btn-warning" style="float: right;">修改密码</a>
-                    </form>
+                    </div>
                 </div>
             </div>
         </div>
@@ -867,6 +928,35 @@
 <script src="/static/js/bootstrap.bundle.js"></script>
 <script src="/static/js/marked.min.js"></script>
 <script>
+    // 显示Toast消息的函数
+    function showToast(message, type = 'info') {
+        const toast = document.getElementById('toast');
+        const toastMessage = document.getElementById('toastMessage');
+        
+        // 设置消息内容
+        toastMessage.textContent = message;
+        
+        // 设置样式类型
+        const toastHeader = toast.querySelector('.toast-header');
+        switch(type) {
+            case 'success':
+                toastMessage.style.color = '#006400';
+                break;
+            case 'error':
+                toastMessage.style.color = '#DC143C';
+                break;
+            case 'warning':
+                toastMessage.style.color = '#FF8C00';
+                break;
+            default:
+                toastMessage.style.color = '#000000';
+        }
+        
+        // 显示Toast
+        const bsToast = new bootstrap.Toast(toast, {delay: 3000});
+        bsToast.show();
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         const sidebar = document.getElementById('sidebarMenu');
         const content = document.querySelector('.content');
@@ -910,29 +1000,75 @@
 
         const formData = new FormData();
         formData.append('username', document.getElementById('username').value);
+        formData.append('nickname', document.getElementById('nickname').value); 
         const avatarFile = document.getElementById('avatar').files[0];
         if (avatarFile) {
             formData.append('avatar', avatarFile);
         }
 
-        fetch('/update_profile', {
+        fetch('/api/update_profile', {
             method: 'POST',
             body: formData
         })
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                alert('个人资料已更新！');
-                location.reload(); // 刷新页面以更新显示
+                showToast(data.message, 'success');
+                // 更新页面上的昵称显示
+                document.querySelector('.nickname').textContent = document.getElementById('nickname').value || document.querySelector('.nickname').textContent;
+                // 关闭模态框
+                const modal = bootstrap.Modal.getInstance(document.getElementById('userProfileModal'));
+                modal.hide();
             } else {
-                // 显示错误提示
-                alert(`更新失败：${data.message}`);
+                showToast(data.message, 'error');
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            // 捕获网络或其他错误并显示提示
-            alert('发生错误，请稍后再试或检查网络连接。');
+            showToast('发生错误，请稍后再试或检查网络连接。', 'error');
+        });
+    });
+
+    // 修改密码表单处理
+    document.getElementById('changePasswordForm').addEventListener('submit', function(event) {
+        event.preventDefault();
+        
+        const currentPassword = document.getElementById('current_password').value;
+        const newPassword = document.getElementById('new_password').value;
+        const confirmPassword = document.getElementById('confirm_password').value;
+        
+        // 验证新密码和确认密码是否一致
+        if (newPassword !== confirmPassword) {
+            showToast('新密码和确认密码不一致', 'warning');
+            return;
+        }
+        
+        // 构造请求数据
+        const formData = new FormData();
+        formData.append('old_password', currentPassword);
+        formData.append('new_password', newPassword);
+        formData.append('confirm_password', confirmPassword);
+        
+        fetch('/api/change_password', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showToast(data.message, 'success');
+                // 清空表单
+                document.getElementById('changePasswordForm').reset();
+                // 关闭模态框
+                const modal = bootstrap.Modal.getInstance(document.getElementById('userProfileModal'));
+                modal.hide();
+            } else {
+                showToast(data.message, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToast('发生错误，请稍后再试或检查网络连接。', 'error');
         });
     });
 
@@ -944,6 +1080,7 @@
 
             if (data.error) {
                 console.error('检查更新失败:', data.error);
+                showToast(`检查更新失败: ${data.error}`, 'error');
                 return;
             }
 
@@ -957,6 +1094,7 @@
             }
         } catch (error) {
             console.error('检查更新失败:', error);
+            showToast('检查更新失败，请稍后再试。', 'error');
         }
     });
 
@@ -977,7 +1115,7 @@
             const data = await response.json();
 
             if (data.error) {
-                alert(data.error);
+                showToast(data.error, 'error');
                 return;
             }
 
@@ -1028,7 +1166,7 @@
             }
         } catch (error) {
             console.error('检查更新失败:', error);
-            alert('检查更新失败，请稍后再试。');
+            showToast('检查更新失败，请稍后再试。', 'error');
         }
     });
 
@@ -1074,9 +1212,9 @@
             const data = await response.json();
 
             if (data.error) {
-                alert(data.error);
+                showToast(data.error, 'error');
             } else {
-                alert(data.message);
+                showToast(data.message, 'success');
 
                 // 修改加载指示器文字提示
                 showLoadingIndicator(loadingOverlay, loadingText, '系统重启中...');
@@ -1086,12 +1224,12 @@
                 if (isBackendUp) {
                     location.reload(); // 刷新页面
                 } else {
-                    alert('系统重启超时，请手动刷新页面。');
+                    showToast('系统重启超时，请手动刷新页面。', 'warning');
                 }
             }
         } catch (error) {
             console.error('执行更新失败:', error);
-            alert('执行更新失败，请稍后再试。');
+            showToast('执行更新失败，请稍后再试。', 'error');
         } finally {
             // 隐藏加载遮罩层
             hideLoadingIndicator(loadingOverlay);

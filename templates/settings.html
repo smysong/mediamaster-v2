@@ -9,7 +9,8 @@
         left: 0;
         right: 0;
         z-index: 100;
-        background-color: #f8f9fa;
+        background-color: rgba(248, 249, 250, 0.5);
+        backdrop-filter: blur(10px);
         padding: 0.5rem 0.5rem;
         border-bottom: 1px solid #dee2e6;
         box-shadow: 0 2px 4px rgba(0,0,0,.05);
@@ -30,8 +31,29 @@
     
     .setting-item .form-label,
     .setting-item .form-control,
-    .setting-item .form-select {
+    .setting-item .form-select,
+    .modal-body .form-label,
+    .modal-body .form-control,
+    .modal-body .form-select {
         font-size: clamp(10px, 1.0vw, 14px) !important;
+    }
+    
+    .directory-selector-btn {
+        border-top-left-radius: 0;
+        border-bottom-left-radius: 0;
+    }
+    
+    .directory-list .list-group-item {
+        border-radius: 0.375rem;
+        margin-bottom: 0.25rem;
+    }
+    
+    .directory-list .list-group-item:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .directory-list .list-group-item i {
+        color: #ffc107;
     }
 </style>
 <main class="container-fluid px-4 py-4 main-content">
@@ -95,7 +117,15 @@
                                             <option value="False" {% if field.value == 'False' %}selected{% endif %}>关闭</option>
                                         </select>
                                     {% else %}
-                                        <input type="text" class="form-control" name="{{ key }}" id="{{ key }}" value="{{ field.value }}">
+                                        <div class="input-group">
+                                            <input type="text" class="form-control" name="{{ key }}" id="{{ key }}" value="{{ field.value }}">
+                                            {% if key in ['media_dir', 'movies_path', 'episodes_path', 'unknown_path', 'download_dir'] %}
+                                            <button class="btn btn-sm btn-outline-primary directory-selector-btn" 
+                                                    type="button" data-target="{{ key }}">
+                                                <i class="bi bi-folder" style="margin-right:0px;"></i>
+                                            </button>
+                                            {% endif %}
+                                        </div>
                                         {% if ',' in field.value %}
                                         <div class="form-text">
                                             <i class="bi bi-info-circle me-1"></i> 多个值可以用逗号分隔
@@ -183,6 +213,87 @@
     <div class="loader-container" id="loading-overlay">
         <div class="loader"></div>
         <div class="loading-text">请稍后...</div>
+    </div>
+    
+    <!-- 目录选择模态框 -->
+    <div class="modal fade" id="directorySelectorModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">选择目录</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">当前路径:</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="currentPath" readonly>
+                            <button class="btn btn-sm btn-outline-primary" type="button" id="refreshPath" title="刷新">
+                                <i class="bi bi-arrow-repeat" style="margin-right:0px;"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary" type="button" id="newDirBtn" title="新建目录">
+                                <i class="bi bi-folder-plus" style="margin-right:0px;"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary" type="button" id="renameDirBtn" title="重命名目录">
+                                <i class="bi bi-pencil" style="margin-right:0px;"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="directory-list" id="directoryList" style="max-height: 400px; overflow-y: auto;">
+                        <!-- 目录列表将通过JavaScript动态填充 -->
+                    </div>
+                </div>
+                <div class="modal-footer" style="width: 100%;">
+                    <button type="button" class="btn btn-sm btn-primary" id="selectDirectoryBtn">选择此目录</button>
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新建目录模态框 -->
+    <div class="modal fade" id="newDirModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">新建目录</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">目录名称</label>
+                        <input type="text" class="form-control" id="newDirName" placeholder="请输入目录名称">
+                    </div>
+                </div>
+                <div class="modal-footer" style="width: 100%;">
+                    <button type="button" class="btn btn-sm btn-primary" id="confirmNewDirBtn">创建</button>
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 重命名目录模态框 -->
+    <div class="modal fade" id="renameDirModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">重命名目录</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">新名称</label>
+                        <input type="text" class="form-control" id="renameDirName" placeholder="请输入新名称">
+                        <input type="hidden" id="renameDirPath">
+                    </div>
+                </div>
+                <div class="modal-footer" style="width: 100%;">
+                    <button type="button" class="btn btn-sm btn-primary" id="confirmRenameDirBtn">重命名</button>
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">取消</button>
+                </div>
+            </div>
+        </div>
     </div>
 </main>
 
@@ -327,7 +438,7 @@
                 }
             });
         });
-    }); // 这里是缺少的闭合括号
+    });
 
     // 重置按钮的点击事件处理
     function handleReset() {
@@ -444,5 +555,180 @@
         // 开始轮询
         setTimeout(poll, pollInterval);
     }
+    
+    // 目录选择相关变量
+    let currentSelectedPath = '';
+    let targetInputId = '';
+    
+    // 打开目录选择器
+    function openDirectorySelector(inputId) {
+        targetInputId = inputId;
+        currentSelectedPath = $('#' + inputId).val() || '/';
+        loadDirectory(currentSelectedPath);
+        new bootstrap.Modal(document.getElementById('directorySelectorModal')).show();
+    }
+    
+    // 加载目录内容
+    function loadDirectory(path) {
+        $('#currentPath').val(path);
+        $('#directoryList').html('<div class="text-center"><div class="spinner-border" role="status"></div></div>');
+        
+        $.get('/api/browse_directory', {path: path})
+            .done(function(data) {
+                if (data.error) {
+                    $('#directoryList').html(`<div class="alert alert-danger">${data.error}</div>`);
+                    return;
+                }
+                
+                let html = '<div class="list-group">';
+                data.items.forEach(function(item) {
+                    if (item.is_dir) {
+                        html += `
+                            <a href="#" class="list-group-item list-group-item-action directory-item" 
+                               data-path="${item.path}">
+                                <i class="bi bi-folder me-2"></i>${item.name}
+                            </a>
+                        `;
+                    }
+                });
+                html += '</div>';
+                $('#directoryList').html(html);
+                
+                // 绑定目录项点击事件
+                $('.directory-item').on('click', function(e) {
+                    e.preventDefault();
+                    const path = $(this).data('path');
+                    loadDirectory(path);
+                });
+            })
+            .fail(function(xhr) {
+                let errorMsg = '加载目录失败';
+                if (xhr.responseJSON && xhr.responseJSON.error) {
+                    errorMsg = xhr.responseJSON.error;
+                }
+                $('#directoryList').html(`<div class="alert alert-danger">${errorMsg}</div>`);
+            });
+    }
+    
+    // 刷新当前目录
+    $('#refreshPath').on('click', function() {
+        loadDirectory($('#currentPath').val());
+    });
+    
+    // 选择目录按钮事件
+    $('#selectDirectoryBtn').on('click', function() {
+        if (targetInputId) {
+            $('#' + targetInputId).val($('#currentPath').val());
+            bootstrap.Modal.getInstance(document.getElementById('directorySelectorModal')).hide();
+        }
+    });
+    
+    // 绑定选择按钮事件
+    $('.directory-selector-btn').on('click', function() {
+        const targetId = $(this).data('target');
+        openDirectorySelector(targetId);
+    });
+
+    // 新建目录按钮事件
+    $('#newDirBtn').on('click', function() {
+        $('#newDirName').val('');
+        new bootstrap.Modal(document.getElementById('newDirModal')).show();
+    });
+
+    // 确认新建目录按钮事件
+    $('#confirmNewDirBtn').on('click', function() {
+        const dirName = $('#newDirName').val().trim();
+        const currentPath = $('#currentPath').val();
+        
+        if (!dirName) {
+            alert('请输入目录名称');
+            return;
+        }
+        
+        // 发送创建目录请求
+        $.ajax({
+            url: '/api/create_directory',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                path: currentPath,
+                dir_name: dirName
+            }),
+            success: function(response) {
+                bootstrap.Modal.getInstance(document.getElementById('newDirModal')).hide();
+                // 将当前路径设置为新建的目录路径
+                loadDirectory(response.path);
+            },
+            error: function(xhr) {
+                let errorMsg = '创建目录失败';
+                if (xhr.responseJSON && xhr.responseJSON.error) {
+                    errorMsg = xhr.responseJSON.error;
+                }
+                alert(errorMsg);
+            }
+        });
+    });
+
+    // 重命名目录按钮事件
+    $('#renameDirBtn').on('click', function() {
+        const currentPath = $('#currentPath').val();
+        // 如果当前路径是根目录，不允许重命名
+        if (currentPath === '/') {
+            alert('不能重命名根目录');
+            return;
+        }
+        
+        const dirName = path.basename(currentPath);
+        $('#renameDirName').val(dirName);
+        $('#renameDirPath').val(currentPath);
+        new bootstrap.Modal(document.getElementById('renameDirModal')).show();
+    });
+
+    // 确认重命名目录按钮事件
+    $('#confirmRenameDirBtn').on('click', function() {
+        const newName = $('#renameDirName').val().trim();
+        const oldPath = $('#renameDirPath').val();
+        const parentPath = path.dirname(oldPath);
+        
+        if (!newName) {
+            alert('请输入新名称');
+            return;
+        }
+        
+        // 发送重命名目录请求
+        $.ajax({
+            url: '/api/rename_directory',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                old_path: oldPath,
+                new_name: newName
+            }),
+            success: function(response) {
+                bootstrap.Modal.getInstance(document.getElementById('renameDirModal')).hide();
+                loadDirectory(parentPath); // 刷新父目录
+            },
+            error: function(xhr) {
+                let errorMsg = '重命名目录失败';
+                if (xhr.responseJSON && xhr.responseJSON.error) {
+                    errorMsg = xhr.responseJSON.error;
+                }
+                alert(errorMsg);
+            }
+        });
+    });
+
+    // 添加path工具函数
+    const path = {
+        basename: function(path) {
+            return path.split('/').pop();
+        },
+        dirname: function(path) {
+            const parts = path.split('/');
+            parts.pop();
+            return parts.join('/') || '/';
+        }
+    };
 </script>
+
 {% endblock %}

@@ -365,14 +365,14 @@ class MediaIndexer:
                                 continue
                             
                             # 获取资源列表
-                            resource_items = self.driver.find_elements(By.CSS_SELECTOR, "div.down-list > ul > li.down-list2")
+                            resource_items = self.driver.find_elements(By.CSS_SELECTOR, "table.bit_list tbody tr")
                             logging.info(f"找到 {len(resource_items)} 个资源项")
                             categorized_results = {
                                 "首选分辨率": [],
                                 "备选分辨率": [],
                                 "其他分辨率": []
                             }
-                            
+
                             # 获取配置中的首选和备选分辨率
                             preferred_resolution = self.config.get('preferred_resolution', "未知分辨率")
                             fallback_resolution = self.config.get('fallback_resolution', "未知分辨率")
@@ -383,9 +383,23 @@ class MediaIndexer:
                             for resource in resource_items:
                                 try:
                                     # 提取资源标题
-                                    resource_title = resource.find_element(By.CSS_SELECTOR, "p.down-list3 a").get_attribute("title")
-                                    resource_link = resource.find_element(By.CSS_SELECTOR, "span a[target='_blank']").get_attribute("href")
+                                    title_element = resource.find_element(By.CSS_SELECTOR, "td a.torrent")
+                                    resource_title = title_element.get_attribute("title")
+                                    resource_link = resource.find_element(By.CSS_SELECTOR, "div a[target='_blank']").get_attribute("href")
                                     logging.debug(f"资源标题: {resource_title}, 链接: {resource_link}")
+                                    
+                                    # 尝试提取文件大小信息
+                                    resource_size = "未知大小"
+                                    try:
+                                        # 查找包含文件大小的元素（第三个td）
+                                        size_element = resource.find_element(By.CSS_SELECTOR, "td:nth-child(3)")
+                                        size_text = size_element.text.strip()
+                                        # 使用正则表达式提取文件大小
+                                        size_match = re.search(r'(\d+\.?\d*)\s*(GB|MB|TB)', size_text, re.IGNORECASE)
+                                        if size_match:
+                                            resource_size = f"{size_match.group(1)} {size_match.group(2).upper()}"
+                                    except Exception as size_error:
+                                        logging.debug(f"无法提取文件大小信息: {size_error}")
                                     
                                     # 检查是否包含排除关键词
                                     if any(keyword.strip() in resource_title for keyword in exclude_keywords):
@@ -397,6 +411,9 @@ class MediaIndexer:
 
                                     # 提取详细信息
                                     details = self.extract_details_movie(resource_title)
+                                    # 如果从页面提取到了文件大小，则使用页面的文件大小信息
+                                    if resource_size != "未知大小":
+                                        details["size"] = resource_size
                                     resolution = details["resolution"]
                                     logging.debug(f"解析出的分辨率: {resolution}, 详细信息: {details}")
                                     
@@ -407,7 +424,8 @@ class MediaIndexer:
                                             "link": resource_link,
                                             "resolution": resolution,
                                             "audio_tracks": details["audio_tracks"],
-                                            "subtitles": details["subtitles"]
+                                            "subtitles": details["subtitles"],
+                                            "size": details["size"]
                                         })
                                     elif resolution == fallback_resolution:
                                         categorized_results["备选分辨率"].append({
@@ -415,7 +433,8 @@ class MediaIndexer:
                                             "link": resource_link,
                                             "resolution": resolution,
                                             "audio_tracks": details["audio_tracks"],
-                                            "subtitles": details["subtitles"]
+                                            "subtitles": details["subtitles"],
+                                            "size": details["size"]
                                         })
                                     else:
                                         categorized_results["其他分辨率"].append({
@@ -423,11 +442,12 @@ class MediaIndexer:
                                             "link": resource_link,
                                             "resolution": resolution,
                                             "audio_tracks": details["audio_tracks"],
-                                            "subtitles": details["subtitles"]
+                                            "subtitles": details["subtitles"],
+                                            "size": details["size"]
                                         })
                                 except Exception as e:
                                     logging.warning(f"解析资源项时出错: {e}")
-                            
+
                             logging.info(f"过滤后剩余 {len(filtered_resources)} 个资源项")
 
                             # 保存结果到 JSON 文件
@@ -582,7 +602,7 @@ class MediaIndexer:
                         continue
 
                     # 获取资源列表
-                    resource_items = self.driver.find_elements(By.CSS_SELECTOR, "div.down-list > ul > li.down-list2")
+                    resource_items = self.driver.find_elements(By.CSS_SELECTOR, "table.bit_list tbody tr")
                     logging.info(f"找到 {len(resource_items)} 个资源项")
                     categorized_results = {
                         "首选分辨率": {
@@ -613,18 +633,32 @@ class MediaIndexer:
                         try:
                             # 提取资源标题
                             try:
-                                resource_title = resource.find_element(By.CSS_SELECTOR, "p.down-list3 a").get_attribute("title")
+                                title_element = resource.find_element(By.CSS_SELECTOR, "td a.torrent")
+                                resource_title = title_element.get_attribute("title")
                             except Exception as e:
                                 logging.warning(f"无法找到资源标题元素: {e}")
                                 continue
 
                             try:
-                                resource_link = resource.find_element(By.CSS_SELECTOR, "span a[target='_blank']").get_attribute("href")
+                                resource_link = resource.find_element(By.CSS_SELECTOR, "div a[target='_blank']").get_attribute("href")
                             except Exception as e:
                                 logging.warning(f"无法找到资源链接元素: {e}")
                                 continue
 
                             logging.debug(f"资源标题: {resource_title}, 链接: {resource_link}")
+
+                            # 尝试提取文件大小信息
+                            resource_size = "未知大小"
+                            try:
+                                # 查找包含文件大小的元素（第三个td）
+                                size_element = resource.find_element(By.CSS_SELECTOR, "td:nth-child(3)")
+                                size_text = size_element.text.strip()
+                                # 使用正则表达式提取文件大小
+                                size_match = re.search(r'(\d+\.?\d*)\s*(GB|MB|TB)', size_text, re.IGNORECASE)
+                                if size_match:
+                                    resource_size = f"{size_match.group(1)} {size_match.group(2).upper()}"
+                            except Exception as size_error:
+                                logging.debug(f"无法提取文件大小信息: {size_error}")
 
                             # 检查是否包含排除关键词
                             if any(keyword.strip() in resource_title for keyword in exclude_keywords):
@@ -637,6 +671,9 @@ class MediaIndexer:
                             # 提取详细信息
                             try:
                                 details = self.extract_details_tvshow(resource_title)
+                                # 如果从页面提取到了文件大小，则使用页面的文件大小信息
+                                if resource_size != "未知大小":
+                                    details["size"] = resource_size
                             except Exception as e:
                                 logging.warning(f"解析资源详细信息时出错: {e}")
                                 continue
@@ -657,7 +694,8 @@ class MediaIndexer:
                                     "link": resource_link,
                                     "resolution": resolution,
                                     "start_episode": details["start_episode"],
-                                    "end_episode": details["end_episode"]
+                                    "end_episode": details["end_episode"],
+                                    "size": details["size"]
                                 })
                             elif resolution == fallback_resolution:
                                 categorized_results["备选分辨率"][episode_type].append({
@@ -665,7 +703,8 @@ class MediaIndexer:
                                     "link": resource_link,
                                     "resolution": resolution,
                                     "start_episode": details["start_episode"],
-                                    "end_episode": details["end_episode"]
+                                    "end_episode": details["end_episode"],
+                                    "size": details["size"]
                                 })
                             else:
                                 categorized_results["其他分辨率"][episode_type].append({
@@ -673,7 +712,8 @@ class MediaIndexer:
                                     "link": resource_link,
                                     "resolution": resolution,
                                     "start_episode": details["start_episode"],
-                                    "end_episode": details["end_episode"]
+                                    "end_episode": details["end_episode"],
+                                    "size": details["size"]
                                 })
                         except Exception as e:
                             logging.warning(f"解析资源项时出错: {e}")
@@ -729,42 +769,49 @@ class MediaIndexer:
             "audio_tracks": [],
             "subtitles": []
         }
-    
+
         # 使用正则表达式提取分辨率
         resolution_match = re.search(r'(\d{3,4}p)', title, re.IGNORECASE)
         if resolution_match:
             details["resolution"] = resolution_match.group(1).lower()
         elif "4K" in title.upper():  # 匹配4K规则
             details["resolution"] = "2160p"
-    
+
         # 提取方括号内的内容
         bracket_content_matches = re.findall(r'\[([^\]]+)\]', title)
         for content in bracket_content_matches:
             # 检查是否包含 "+" 或 "/"，如果有则分隔为多个信息
             parts = [part.strip() for part in re.split(r'[+/]', content)]
-    
+
             for part in parts:
                 # 匹配音轨信息
                 if re.search(r'(音轨|配音)', part):
                     details["audio_tracks"].append(part)
-    
+
                 # 匹配字幕信息
                 if re.search(r'(字幕)', part):
                     details["subtitles"].append(part)
-    
+
         # 增加对 "国语中字" 的匹配
         if "国语中字" in title:
             details["audio_tracks"].append("国语配音")
             details["subtitles"].append("中文字幕")
-    
+        
+        # 解析文件大小（从标题中提取）
+        size_match = re.search(r'(\d+\.?\d*)\s*(GB|MB|TB)', title, re.IGNORECASE)
+        if size_match:
+            details["size"] = f"{size_match.group(1)} {size_match.group(2).upper()}"
+        else:
+            details["size"] = "未知大小"
+
         return details
-    
+
     def extract_details_tvshow(self, title_text):
         """
         从标题中提取电视节目的详细信息，包括分辨率、集数范围等。
         """
         title_text = str(title_text)
-    
+
         # 提取分辨率
         resolution_match = re.search(r'(\d{3,4}p)', title_text, re.IGNORECASE)
         if resolution_match:
@@ -773,25 +820,25 @@ class MediaIndexer:
             resolution = "2160p"
         else:
             resolution = "未知分辨率"
-    
+
         # 初始化集数范围
         start_episode = None
         end_episode = None
         episode_type = "未知集数"
-    
+
         # 处理单集或集数范围格式
         episode_pattern = r"(?:EP|第)(\d{1,3})(?:[-~](?:EP|第)?(\d{1,3}))?"
         episode_match = re.search(episode_pattern, title_text, re.IGNORECASE)
-    
+
         if episode_match:
             start_episode = int(episode_match.group(1))
             end_episode = int(episode_match.group(2)) if episode_match.group(2) else start_episode
             episode_type = "单集" if start_episode == end_episode else "集数范围"
         elif "全" in title_text:
-            # 如果标题中包含“全”字，则认为是全集资源
+            # 如果标题中包含"全"字，则认为是全集资源
             full_episode_pattern = r"全(\d{1,3})"
             full_episode_match = re.search(full_episode_pattern, title_text)
-    
+
             if full_episode_match:
                 start_episode = 1
                 end_episode = int(full_episode_match.group(1))
@@ -801,25 +848,34 @@ class MediaIndexer:
                 end_episode = None  # 表示未知的全集结束集数
                 episode_type = "全集"
         elif re.search(r"(更至|更新至)(\d{1,3})集", title_text):
-            # 匹配“更至XX集”或“更新至XX集”
+            # 匹配"更至XX集"或"更新至XX集"
             update_match = re.search(r"(更至|更新至)(\d{1,3})集", title_text)
             if update_match:
                 start_episode = 1
                 end_episode = int(update_match.group(2))
                 episode_type = "集数范围"
-    
+                
         # 添加日志记录
         logging.debug(
             f"提取结果 - 标题: {title_text}, 分辨率: {resolution}, 开始集数: {start_episode}, "
             f"结束集数: {end_episode}, 集数类型: {episode_type}"
         )
-    
-        return {
+        
+        # 解析文件大小（从标题中提取）
+        details = {
             "resolution": resolution,
             "start_episode": start_episode,
             "end_episode": end_episode,
             "episode_type": episode_type
         }
+        
+        size_match = re.search(r'(\d+\.?\d*)\s*(GB|MB|TB)', title_text, re.IGNORECASE)
+        if size_match:
+            details["size"] = f"{size_match.group(1)} {size_match.group(2).upper()}"
+        else:
+            details["size"] = "未知大小"
+
+        return details
 
     def run(self):
         # 加载配置文件

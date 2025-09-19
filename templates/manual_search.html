@@ -283,6 +283,104 @@
     font-size: 14px;
     margin-top: 5px;
 }
+
+/* 日志窗口样式 */
+.log-window {
+    position: fixed;
+    bottom: 20px;
+    right: 2px;
+    width: 400px;
+    height: 300px;
+    background-color: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 5px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    z-index: 1000;
+    display: none;
+    flex-direction: column;
+}
+
+.log-window.collapsed {
+    width: 40px;
+    height: 40px;
+    bottom: 20px;
+    right: 20px;
+    cursor: pointer;
+}
+
+.log-window.collapsed .log-window-body,
+.log-window.collapsed .log-window-title,
+.log-window.collapsed .log-window-controls {
+    display: none;
+}
+
+.log-window-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+    border-radius: 5px 5px 0 0;
+}
+
+.log-window.collapsed .log-window-header {
+    justify-content: center;
+    padding: 0;
+    border: none;
+    background: none;
+    height: 100%;
+}
+
+.log-window-title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.log-window-controls {
+    display: flex;
+    gap: 5px;
+}
+
+.log-window-body {
+    flex: 1;
+    font-family: 'Courier New', monospace;
+    font-size: clamp(8px, 1.2vw, 12px);
+    background-color: rgb(33, 37, 41);
+    color: rgb(248, 249, 250);
+    padding: 5px;
+    word-wrap: break-word; /* 长单词换行 */
+}
+
+.log-line {
+    margin: 0 0 5px 0;
+    word-break: break-all; /* 强制换行 */
+    white-space: normal; /* 允许正常换行 */
+    line-height: 1.5;
+}
+
+/* 收起状态下的展开图标 */
+.log-window.collapsed::before {
+    content: "≡";
+    font-size: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    color: #000;
+}
+
+.log-window.collapsed:hover {
+    background-color: #f0f0f0;
+}
+
+/* 确保收起状态下的点击区域 */
+.log-window.collapsed .log-window-header {
+    width: 100%;
+    height: 100%;
+}
 </style>
 
 <main class="container mt-1">
@@ -330,6 +428,10 @@
 
 <script>
 
+    // 日志变量声明
+    let logWindow = null;
+    let progressInterval = null;
+    let currentTaskId = null;
     // 从模板获取 TMDB API 密钥
     const tmdbApiKey = "{{ tmdb_api_key }}";
 
@@ -1018,6 +1120,12 @@
         progressText.textContent = message;
     }
 
+    // 格式化资源标题，移除文件大小等冗余信息
+    function formatResourceTitle(title) {
+        // 移除常见的文件大小格式，如 [1.2GB], [1024MB] 等
+        return title.replace(/\[\d+\.?\d*\s*[MG]B\]/gi, '').replace(/\[([^\]]*?)\]$/g, '').trim();
+    }
+
     // 显示结果
     function displayResults(containerId, results, tmdbId, season, forceRefresh) {
         const resourceTbody = document.getElementById(`resource-tbody-${containerId}`);
@@ -1150,13 +1258,13 @@
             row.setAttribute('data-container-id', containerId);
             
             row.innerHTML = `
-                <td class="search_titles" style="text-align:left;"><a href="${item.link}" target="_blank">${item.title}</a></td>
+                <td class="search_titles" style="text-align:left;"><a href="${item.link}" target="_blank">${formatResourceTitle(item.title)}</a> [${item.size}]</td>
                 <td><button class="btn btn-sm btn-primary download-button" data-link="${item.link}" data-title="${item.title}" data-site="${item.site}">下载</button></td>
             `;
             resourceTbody.appendChild(row);
         });
         
-        // 添加下载按钮点击事件监听器
+        // 下载按钮点击事件监听器
         resourceTbody.querySelectorAll('.download-button').forEach(button => {
             button.addEventListener('click', function() {
                 showLoader();
@@ -1168,18 +1276,39 @@
                 fetch('/api/download_resource', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
                     },
                     body: JSON.stringify({ site, title, link })
                 })
-                .then(response => response.json())
+                .then(response => {
+                    // 检查响应是否为JSON格式
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        return response.json();
+                    } else {
+                        throw new Error('服务器返回了非JSON响应');
+                    }
+                })
                 .then(data => {
-                    if (data.message) {
-                        showToast(data.message); // 显示成功消息
+                    if (data.task_id) {
+                        // 延迟2秒后隐藏加载指示器
+                        setTimeout(hideLoader, 2000);
+                        // 显示后台下载提示
+                        showToast('开始后台执行下载任务，可在日志窗口查看进度');
+                        // 保存任务ID
+                        currentTaskId = data.task_id;
+                        // 显示日志窗口
+                        showLogWindow();
+                        // 开始获取下载进度
+                        startDownloadProgress(data.task_id);
                     } else if (data.error) {
                         showToast(data.error); // 显示错误消息
+                        hideLoader();
+                    } else {
+                        showToast('未知响应格式');
+                        hideLoader();
                     }
-                    hideLoader();
                 })
                 .catch(error => {
                     console.error('Error:', error);
@@ -1188,7 +1317,150 @@
                 });
             });
         });
-        
+
+        // 开始获取下载进度函数
+        function startDownloadProgress(taskId) {
+            // 如果已有进度更新在运行，先清除
+            if (progressInterval) {
+                clearInterval(progressInterval);
+            }
+            
+            // 清空日志窗口内容
+            const content = document.getElementById('log-content');
+            if (content) {
+                content.innerHTML = '';
+            }
+            
+            // 每1秒获取一次进度更新
+            let lastMessages = [];
+            progressInterval = setInterval(() => {
+                fetch(`/api/download_progress/${taskId}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.messages) {
+                            // 检查是否有新消息
+                            const newMessages = data.messages.filter(msg => !lastMessages.includes(msg));
+                            if (newMessages.length > 0) {
+                                newMessages.forEach(msg => {
+                                    updateLogWindow(msg);
+                                });
+                                // 更新已显示消息列表
+                                lastMessages = [...data.messages];
+                            }
+                        }
+                    })
+                    .catch(error => {
+                        console.error('获取进度失败:', error);
+                    });
+            }, 1000);
+        }
+
+        // 显示日志窗口
+        function showLogWindow() {
+            if (!logWindow) {
+                logWindow = document.createElement('div');
+                logWindow.id = 'log-window';
+                logWindow.className = 'log-window';
+                logWindow.innerHTML = `
+                    <div class="log-window-header">
+                        <h5 class="log-window-title">种子下载日志</h5>
+                        <div class="log-window-controls">
+                            <button id="toggle-log-window" class="btn btn-sm btn-outline-secondary">收起</button>
+                            <button id="close-log-window" class="btn btn-sm btn-outline-secondary">关闭</button>
+                        </div>
+                    </div>
+                    <div class="log-window-body">
+                        <div class="log-content" id="log-content" style="max-height: 30vh; overflow-y: auto; padding-bottom: 10px;">
+                            <p class="log-line">等待任务开始...</p>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(logWindow);
+                
+                // 添加事件监听器
+                document.getElementById('close-log-window').addEventListener('click', closeLogWindow);
+                document.getElementById('toggle-log-window').addEventListener('click', function(e) {
+                    e.stopPropagation(); // 阻止事件冒泡
+                    toggleLogWindow();
+                });
+                
+                // 为收起状态的窗口添加点击事件
+                logWindow.addEventListener('click', function(e) {
+                    if (logWindow.classList.contains('collapsed')) {
+                        toggleLogWindow();
+                    }
+                });
+            } else {
+                // 清空之前的内容
+                const content = document.getElementById('log-content');
+                if (content) {
+                    content.innerHTML = '<p class="log-line">> 等待任务开始...</p>';
+                }
+                
+                // 确保窗口是展开状态
+                logWindow.classList.remove('collapsed');
+            }
+            
+            logWindow.style.display = 'flex';
+        }
+
+        // 关闭日志窗口
+        function closeLogWindow() {
+            if (logWindow) {
+                logWindow.style.display = 'none';
+                // 停止进度更新
+                if (progressInterval) {
+                    clearInterval(progressInterval);
+                    progressInterval = null;
+                }
+                // 清空当前任务ID
+                currentTaskId = null;
+            }
+        }
+
+        // 收起/展开日志窗口
+        function toggleLogWindow() {
+            const toggleBtn = document.getElementById('toggle-log-window');
+            if (logWindow.classList.contains('collapsed')) {
+                // 展开窗口
+                logWindow.classList.remove('collapsed');
+                if (toggleBtn) {
+                    toggleBtn.textContent = '收起';
+                }
+            } else {
+                // 收起窗口
+                logWindow.classList.add('collapsed');
+                if (toggleBtn) {
+                    toggleBtn.textContent = '';
+                }
+            }
+        }
+
+        // 更新日志窗口内容
+        function updateLogWindow(message) {
+            const content = document.getElementById('log-content');
+            if (content) {
+                // 创建DocumentFragment对象
+                const fragment = document.createDocumentFragment();
+                
+                // 根据消息内容构建DOM节点
+                const lines = message.split('\n');
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i];
+                    const p = document.createElement('p');
+                    p.className = 'log-line';
+                    p.textContent = line;
+                    fragment.appendChild(p);
+                }
+                
+                // 将DocumentFragment添加到content中
+                content.appendChild(fragment);
+                
+                // 自动滚动到底部
+                content.scrollTop = content.scrollHeight;
+            }
+        }
+
         // 初始化排序功能
         initSorting(containerId);
         

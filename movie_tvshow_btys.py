@@ -316,7 +316,8 @@ class MediaIndexer:
                                             # 优先从 h4 标签获取标题，如果失败则回退到原来的 title 属性
                                             try:
                                                 h4_tag = info.find_element(By.CSS_SELECTOR, "h4")
-                                                resource_title = h4_tag.text.strip()
+                                                # 获取h4标签的完整文本，包括子元素span中的文件大小信息
+                                                resource_title = h4_tag.get_attribute("textContent").strip()
                                             except:
                                                 resource_title = a_tag.get_attribute("title")
                                             resource_link = a_tag.get_attribute("href")
@@ -343,7 +344,8 @@ class MediaIndexer:
                                             "link": res["link"],
                                             "resolution": resolution,
                                             "audio_tracks": details["audio_tracks"],
-                                            "subtitles": details["subtitles"]
+                                            "subtitles": details["subtitles"],
+                                            "size": details.get("size", "未知大小")
                                         })
                                     elif resolution == fallback_resolution:
                                         categorized_results["备选分辨率"].append({
@@ -351,7 +353,8 @@ class MediaIndexer:
                                             "link": res["link"],
                                             "resolution": resolution,
                                             "audio_tracks": details["audio_tracks"],
-                                            "subtitles": details["subtitles"]
+                                            "subtitles": details["subtitles"],
+                                            "size": details.get("size", "未知大小")
                                         })
                                     else:
                                         categorized_results["其他分辨率"].append({
@@ -359,7 +362,8 @@ class MediaIndexer:
                                             "link": res["link"],
                                             "resolution": resolution,
                                             "audio_tracks": details["audio_tracks"],
-                                            "subtitles": details["subtitles"]
+                                            "subtitles": details["subtitles"],
+                                            "size": details.get("size", "未知大小")
                                         })
 
                                 # 保存结果到 JSON 文件
@@ -516,7 +520,8 @@ class MediaIndexer:
                                             # 优先从 h4 标签获取标题，如果失败则回退到原来的 title 属性
                                             try:
                                                 h4_tag = info.find_element(By.CSS_SELECTOR, "h4")
-                                                resource_title = h4_tag.text.strip()
+                                                # 获取h4标签的完整文本，包括子元素span中的文件大小信息
+                                                resource_title = h4_tag.get_attribute("textContent").strip()
                                             except:
                                                 resource_title = a_tag.get_attribute("title")
                                             resource_link = a_tag.get_attribute("href")
@@ -547,7 +552,8 @@ class MediaIndexer:
                                             "link": res["link"],
                                             "resolution": resolution,
                                             "start_episode": details["start_episode"],
-                                            "end_episode": details["end_episode"]
+                                            "end_episode": details["end_episode"],
+                                            "size": details.get("size", "未知大小")
                                         })
                                     elif resolution == fallback_resolution:
                                         categorized_results["备选分辨率"][episode_type].append({
@@ -555,7 +561,8 @@ class MediaIndexer:
                                             "link": res["link"],
                                             "resolution": resolution,
                                             "start_episode": details["start_episode"],
-                                            "end_episode": details["end_episode"]
+                                            "end_episode": details["end_episode"],
+                                            "size": details.get("size", "未知大小")
                                         })
                                     else:
                                         categorized_results["其他分辨率"][episode_type].append({
@@ -563,7 +570,8 @@ class MediaIndexer:
                                             "link": res["link"],
                                             "resolution": resolution,
                                             "start_episode": details["start_episode"],
-                                            "end_episode": details["end_episode"]
+                                            "end_episode": details["end_episode"],
+                                            "size": details.get("size", "未知大小")
                                         })
 
                                 # 保存结果到 JSON 文件
@@ -649,42 +657,49 @@ class MediaIndexer:
             "audio_tracks": [],
             "subtitles": []
         }
-    
+
         # 使用正则表达式提取分辨率
         resolution_match = re.search(r'(\d{3,4}p)', title, re.IGNORECASE)
         if resolution_match:
             details["resolution"] = resolution_match.group(1).lower()
         elif "4K" in title.upper():  # 匹配4K规则
             details["resolution"] = "2160p"
-    
+
         # 提取方括号内的内容
         bracket_content_matches = re.findall(r'\[([^\]]+)\]', title)
         for content in bracket_content_matches:
             # 检查是否包含 "+" 或 "/"，如果有则分隔为多个信息
             parts = [part.strip() for part in re.split(r'[+/]', content)]
-    
+
             for part in parts:
                 # 匹配音轨信息
                 if re.search(r'(音轨|配音)', part):
                     details["audio_tracks"].append(part)
-    
+
                 # 匹配字幕信息
                 if re.search(r'(字幕)', part):
                     details["subtitles"].append(part)
-    
+
         # 增加对 "国语中字" 的匹配
         if "国语中字" in title:
             details["audio_tracks"].append("国语配音")
             details["subtitles"].append("中文字幕")
-    
+        
+        # 解析文件大小
+        size_match = re.search(r'\[([\d.]+(?:GB|MB|TB))\]', title)
+        if size_match:
+            details["size"] = size_match.group(1)
+        else:
+            details["size"] = "未知大小"
+
         return details
-    
+
     def extract_details_tvshow(self, title_text):
         """
         从标题中提取电视节目的详细信息，包括分辨率、集数范围等。
         """
         title_text = str(title_text)
-    
+
         # 提取分辨率
         resolution_match = re.search(r'(\d{3,4}p)', title_text, re.IGNORECASE)
         if resolution_match:
@@ -693,25 +708,25 @@ class MediaIndexer:
             resolution = "2160p"
         else:
             resolution = "未知分辨率"
-    
+
         # 初始化集数范围
         start_episode = None
         end_episode = None
         episode_type = "未知集数"
-    
+
         # 处理单集或集数范围格式
         episode_pattern = r"(?:EP|第)(\d{1,3})(?:[-~](?:EP|第)?(\d{1,3}))?"
         episode_match = re.search(episode_pattern, title_text, re.IGNORECASE)
-    
+
         if episode_match:
             start_episode = int(episode_match.group(1))
             end_episode = int(episode_match.group(2)) if episode_match.group(2) else start_episode
             episode_type = "单集" if start_episode == end_episode else "集数范围"
         elif "全" in title_text:
-            # 如果标题中包含“全”字，则认为是全集资源
+            # 如果标题中包含"全"字，则认为是全集资源
             full_episode_pattern = r"全(\d{1,3})"
             full_episode_match = re.search(full_episode_pattern, title_text)
-    
+
             if full_episode_match:
                 start_episode = 1
                 end_episode = int(full_episode_match.group(1))
@@ -721,25 +736,34 @@ class MediaIndexer:
                 end_episode = None  # 表示未知的全集结束集数
                 episode_type = "全集"
         elif re.search(r"(更至|更新至)(\d{1,3})集", title_text):
-            # 匹配“更至XX集”或“更新至XX集”
+            # 匹配"更至XX集"或"更新至XX集"
             update_match = re.search(r"(更至|更新至)(\d{1,3})集", title_text)
             if update_match:
                 start_episode = 1
                 end_episode = int(update_match.group(2))
                 episode_type = "集数范围"
-    
+                
         # 添加日志记录
         logging.debug(
             f"提取结果 - 标题: {title_text}, 分辨率: {resolution}, 开始集数: {start_episode}, "
             f"结束集数: {end_episode}, 集数类型: {episode_type}"
         )
-    
-        return {
+        
+        # 解析文件大小
+        details = {
             "resolution": resolution,
             "start_episode": start_episode,
             "end_episode": end_episode,
             "episode_type": episode_type
         }
+        
+        size_match = re.search(r'\[([\d.]+(?:GB|MB|TB))\]', title_text)
+        if size_match:
+            details["size"] = size_match.group(1)
+        else:
+            details["size"] = "未知大小"
+
+        return details
 
     def run(self):
         # 加载配置文件
