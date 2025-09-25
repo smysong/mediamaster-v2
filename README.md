@@ -31,6 +31,12 @@ CPU架构支持：x86_64 、 ARM64
 
 本项目Docker仓库： https://hub.docker.com/r/smysong/mediamaster-v2
 
+版本标签：
+
+稳定版：latest `docker pull smysong/mediamaster-v2:latest`
+
+测试版：beta `docker pull smysong/mediamaster-v2:beta`
+
 ## 配置文档
 
 使用帮助文档： http://wiki.songmy.top:8080/web/#/686311457
