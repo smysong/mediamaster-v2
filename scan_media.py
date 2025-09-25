@@ -31,57 +31,74 @@ def load_config(db_path):
 
 def scan_movies(path):
     movies = []
-
-    # 定义所有可能的媒体文件后缀
     media_extensions = ['.mkv', '.mp4', '.avi', '.mov', '.flv', '.wmv', '.iso']
+    
+    # 多种电影命名格式
+    movie_patterns = [
+        re.compile(r'^(.*?)\s*-\s*\((\d{4})\)'),     # Title - (Year)
+        re.compile(r'^(.*?)\s*\((\d{4})\)'),         # Title (Year)
+        re.compile(r'^(.*?)\s*\[([12]\d{3})\]'),     # Title [Year]
+        re.compile(r'^(.*?)\s*([12]\d{3})\s*-'),     # Title Year -
+        re.compile(r'^(.*?)\s*\.\s*([12]\d{3})\s*\.'), # Title.Year.
+    ]
 
     for root, _, files in os.walk(path):
-        # 先扫描媒体文件
         for file in files:
             if any(file.lower().endswith(ext) for ext in media_extensions):
-                # 匹配文件名格式：标题 - (年份) 其他信息.扩展名
-                match = re.match(r'^(.*?)\s*-\s*\((\d{4})\)', file)
-                if match:
-                    movie_name = match.group(1).strip()
-                    year = int(match.group(2))
-                    tmdb_id = None  # 默认 TMDB ID 为 None
+                matched = False
+                for pattern in movie_patterns:
+                    match = pattern.match(os.path.splitext(file)[0])
+                    if match:
+                        movie_name = match.group(1).strip()
+                        year = int(match.group(2))
+                        tmdb_id = None
+                        
+                        # 检查NFO文件
+                        media_file_name = os.path.splitext(file)[0]
+                        nfo_file_path = os.path.join(root, media_file_name + '.nfo')
+                        if os.path.exists(nfo_file_path):
+                            try:
+                                tree = ET.parse(nfo_file_path)
+                                root_element = tree.getroot()
+                                uniqueid_elements = root_element.findall('uniqueid')
+                                for uniqueid in uniqueid_elements:
+                                    if uniqueid.attrib.get('type') == 'tmdb':
+                                        tmdb_id = uniqueid.text.strip()
+                                        break
+                            except ET.ParseError:
+                                logging.warning(f"无法解析 NFO 文件: {nfo_file_path}")
 
-                    # 检查是否存在同名的 NFO 文件
-                    media_file_name = os.path.splitext(file)[0]  # 去掉扩展名
-                    nfo_file_path = os.path.join(root, media_file_name + '.nfo')
-                    if os.path.exists(nfo_file_path):
-                        try:
-                            tree = ET.parse(nfo_file_path)
-                            root_element = tree.getroot()
-
-                            # 提取 TMDB ID
-                            uniqueid_elements = root_element.findall('uniqueid')
-                            for uniqueid in uniqueid_elements:
-                                if uniqueid.attrib.get('type') == 'tmdb':
-                                    tmdb_id = uniqueid.text.strip()
-                                    break
-                        except ET.ParseError:
-                            logging.warning(f"无法解析 NFO 文件: {nfo_file_path}")
-
-                    # 添加电影信息到列表
-                    movies.append((movie_name, year, tmdb_id))
-                else:
+                        movies.append((movie_name, year, tmdb_id))
+                        matched = True
+                        break
+                
+                if not matched:
                     logging.warning(f"无法从文件名提取标题和年份: {file}")
 
     return movies
 
 def scan_episodes(path):
     episodes = {}
+    
+    # 多种季目录命名格式
+    season_patterns = [
+        re.compile(r'^Season\s+(\d+)$', re.IGNORECASE),    # Season 1
+        re.compile(r'^S(\d+)$', re.IGNORECASE),            # S01
+        re.compile(r'^Season\.?(\d+)$', re.IGNORECASE),    # Season1 or Season.1
+        re.compile(r'^第(\d+)季$', re.IGNORECASE),          # 第1季 (中文)
+    ]
+    
+    episode_pattern = re.compile(r'^(.*) - S(\d+)E(\d+) - (.*)$', re.IGNORECASE)
+    episode_pattern_alt = re.compile(r'^(.*)\.S(\d+)E(\d+)\.(.*)$', re.IGNORECASE)  # 支持点号分隔
 
     for root, dirs, files in os.walk(path):
-        # 检查是否存在 tvshow.nfo 文件
+        # 检查 tvshow.nfo
         if 'tvshow.nfo' in files:
             tvshow_nfo_path = os.path.join(root, 'tvshow.nfo')
             try:
                 tree = ET.parse(tvshow_nfo_path)
                 root_element = tree.getroot()
 
-                # 提取电视剧标题
                 title_element = root_element.find('title')
                 if title_element is not None:
                     show_name = title_element.text.strip()
@@ -89,7 +106,6 @@ def scan_episodes(path):
                     logging.warning(f"tvshow.nfo 文件中未找到标题元素: {tvshow_nfo_path}")
                     continue
 
-                # 提取 TMDB ID
                 tmdb_id = None
                 uniqueid_elements = root_element.findall('uniqueid')
                 for uniqueid in uniqueid_elements:
@@ -97,58 +113,55 @@ def scan_episodes(path):
                         tmdb_id = uniqueid.text.strip()
                         break
 
-                # 初始化电视剧信息
                 if show_name not in episodes:
                     episodes[show_name] = {'tmdb_id': tmdb_id, 'seasons': {}}
 
-                # 检查每个子目录（假设为 Season X）
+                # 支持多种季目录格式
                 for dir_name in dirs:
-                    if dir_name.lower().startswith('season '):
-                        season_number = int(dir_name.split(' ')[1])
+                    season_number = None
+                    for pattern in season_patterns:
+                        match = pattern.match(dir_name)
+                        if match:
+                            season_number = int(match.group(1))
+                            break
+                    
+                    if season_number is not None:
                         season_path = os.path.join(root, dir_name)
                         season_nfo_path = os.path.join(season_path, 'season.nfo')
 
+                        year = None
                         if os.path.exists(season_nfo_path):
                             try:
                                 season_tree = ET.parse(season_nfo_path)
                                 season_root = season_tree.getroot()
 
-                                # 提取季编号
                                 season_number_element = season_root.find('seasonnumber')
                                 if season_number_element is not None and season_number_element.text is not None:
                                     season_number = int(season_number_element.text.strip())
 
-                                # 提取年份
                                 year_element = season_root.find('year')
                                 if year_element is not None and year_element.text is not None:
                                     year = int(year_element.text.strip())
                                 else:
-                                    # 如果<year>标签无效，则通过<releasedate>标签提取年份
                                     releasedate_element = season_root.find('releasedate')
-                                    year = None
-                                    date_text = None
                                     if releasedate_element is not None and releasedate_element.text:
                                         date_text = releasedate_element.text.strip()
-                                    if date_text:
                                         match = re.match(r'(\d{4})', date_text)
                                         if match:
                                             year_str = match.group(1)
-                                            # 判断年份是否以000开头
-                                            if year_str.startswith('000'):
-                                                year = None
-                                            else:
+                                            if not year_str.startswith('000'):
                                                 year = int(year_str)
-                                    if year is None:
-                                        logging.warning(f"season.nfo 文件中未找到年份元素或年份为空: {season_nfo_path}")
 
-                                # 初始化季信息
                                 if season_number not in episodes[show_name]['seasons']:
                                     episodes[show_name]['seasons'][season_number] = {'year': year, 'episodes': []}
 
                                 # 扫描该季的媒体文件
                                 for file in os.listdir(season_path):
                                     if file.lower().endswith(('.mkv', '.mp4', '.avi', '.mov', '.flv', '.wmv', '.iso')):
-                                        episode_match = re.match(r'^(.*) - S(\d+)E(\d+) - (.*)\.(mkv|mp4|avi|mov|flv|wmv|iso)$', file, re.IGNORECASE)
+                                        episode_match = episode_pattern.match(os.path.splitext(file)[0])
+                                        if not episode_match:
+                                            episode_match = episode_pattern_alt.match(os.path.splitext(file)[0])
+                                        
                                         if episode_match:
                                             episode_number = int(episode_match.group(3))
                                             if episode_number not in episodes[show_name]['seasons'][season_number]['episodes']:
@@ -156,15 +169,18 @@ def scan_episodes(path):
                             except ET.ParseError:
                                 logging.warning(f"无法解析 season.nfo 文件: {season_nfo_path}")
                                 continue
+
             except ET.ParseError:
                 logging.warning(f"无法解析 tvshow.nfo 文件: {tvshow_nfo_path}")
                 continue
 
+        # 处理直接在根目录下的剧集文件
         for file in files:
-            # 将文件扩展名转换为小写
             if file.lower().endswith(('.mkv', '.mp4', '.avi', '.mov', '.flv', '.wmv', '.iso')):
-                # 匹配电视剧文件名模式
-                episode_match = re.match(r'^(.*) - S(\d+)E(\d+) - (.*)\.(mkv|mp4|avi|mov|flv|wmv|iso)$', file, re.IGNORECASE)
+                episode_match = episode_pattern.match(os.path.splitext(file)[0])
+                if not episode_match:
+                    episode_match = episode_pattern_alt.match(os.path.splitext(file)[0])
+                
                 if episode_match:
                     show_name = episode_match.group(1).strip()
                     season = int(episode_match.group(2))

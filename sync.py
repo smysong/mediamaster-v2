@@ -10,6 +10,13 @@ import subprocess
 from collections import defaultdict
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+
+# 新增：导入 guessit
+try:
+    import guessit
+except ImportError:
+    guessit = None
+
 # 新增：导入下载器API
 try:
     from transmission_rpc import Client as TransmissionClient
@@ -159,11 +166,26 @@ def get_tmdb_info(title, year, media_type, season=None):
             'language': language,
             'include_adult': 'false'
         }
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        return response.json().get('results', [])
+        
+        # 增加重试机制
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(url, params=params, timeout=10)
+                response.raise_for_status()
+                return response.json().get('results', [])
+            except requests.RequestException as e:
+                logging.warning(f"TMDB请求失败 (尝试 {attempt+1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    # 随机等待1-5秒后重试
+                    wait_time = random.randint(1, 5)
+                    logging.info(f"等待 {wait_time} 秒后重试...")
+                    time.sleep(wait_time)
+                else:
+                    raise e
 
     try:
+        import random
         cache_key = (title, year, season) if season else (title, year)
         if cache_key in cache[media_type]:
             tmdb_id, tmdb_title, tmdb_year = cache[media_type][cache_key]
@@ -227,94 +249,390 @@ def get_tmdb_info(title, year, media_type, season=None):
                 cache[media_type][(title, tmdb_year)] = (result['id'], tmdb_title, tmdb_year)
                 return result['id'], tmdb_title, tmdb_year
 
+        # 如果中文查询都没有结果，尝试用英文(en-US)查询
+        search_results_en = search_tmdb('en-US')
+        if search_results_en:
+            # 英文查询结果处理逻辑
+            # 1. 只有一个结果直接返回
+            if len(search_results_en) == 1:
+                result = search_results_en[0]
+                tmdb_title = result.get('title', '') if media_type == 'movie' else result.get('name', '')
+                tmdb_year = result.get('release_date', '')[:4] if media_type == 'movie' else result.get('first_air_date', '')[:4]
+                cache[media_type][(title, tmdb_year)] = (result['id'], tmdb_title, tmdb_year)
+                return result['id'], tmdb_title, tmdb_year
+
+            # 2. 多结果时，优先用标题和年份精确匹配
+            for result in search_results_en:
+                tmdb_title = result.get('title', '') if media_type == 'movie' else result.get('name', '')
+                tmdb_year = result.get('release_date', '')[:4] if media_type == 'movie' else result.get('first_air_date', '')[:4]
+                if tmdb_title.lower() == title.lower() and tmdb_year == str(year):
+                    cache[media_type][(title, tmdb_year)] = (result['id'], tmdb_title, tmdb_year)
+                    return result['id'], tmdb_title, tmdb_year
+
+            # 3. 只用名称匹配首个有年份的结果
+            for result in search_results_en:
+                tmdb_title = result.get('title', '') if media_type == 'movie' else result.get('name', '')
+                tmdb_year = result.get('release_date', '')[:4] if media_type == 'movie' else result.get('first_air_date', '')[:4]
+                if tmdb_title and tmdb_year == str(year):
+                    cache[media_type][(title, tmdb_year)] = (result['id'], tmdb_title, tmdb_year)
+                    return result['id'], tmdb_title, tmdb_year
+
     except requests.RequestException as e:
         logging.error(f"请求错误: {e}")
     return None, None, year
 
 def get_tv_episode_name(tmdb_id, season_number, episode_number):
-    try:
-        TMDB_API_KEY = config.get("tmdb_api_key", "")
-        TMDB_BASE_URL = config.get("tmdb_base_url", "")
-        url = f"{TMDB_BASE_URL}/3/tv/{tmdb_id}/season/{season_number}/episode/{episode_number}"
-        params = {
-            'api_key': TMDB_API_KEY,
-            'language': 'zh-CN'
-        }
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        episode_info = response.json()
-        return episode_info.get('name', f"第{episode_number}集")
-    except requests.RequestException as e:
-        logging.error(f"请求错误: {e}")
+    # 增加重试机制
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            TMDB_API_KEY = config.get("tmdb_api_key", "")
+            TMDB_BASE_URL = config.get("tmdb_base_url", "")
+            url = f"{TMDB_BASE_URL}/3/tv/{tmdb_id}/season/{season_number}/episode/{episode_number}"
+            params = {
+                'api_key': TMDB_API_KEY,
+                'language': 'zh-CN'
+            }
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            episode_info = response.json()
+            return episode_info.get('name', f"第{episode_number}集")
+        except requests.RequestException as e:
+            logging.warning(f"获取剧集名称失败 (尝试 {attempt+1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                # 随机等待1-5秒后重试
+                import random
+                wait_time = random.randint(1, 5)
+                logging.info(f"等待 {wait_time} 秒后重试...")
+                time.sleep(wait_time)
+            else:
+                logging.error(f"请求错误: {e}")
     return f"第{episode_number}集"
+
+def preprocess_filename(filename):
+    """
+    预处理文件名，移除广告、无效文字等
+    """
+    # 移除常见的广告关键词和域名
+    ad_patterns = [
+        r'UIndex', 
+        r'dygod\.org', 
+        r'阳光电影',
+        r'\.com', 
+        r'\.cn', 
+        r'\.net',
+        r'【更多', 
+        r'不太灵影视',
+        r'高清电影',
+        r'高清剧集',
+        r'BT影视',
+        r'www\.[a-zA-Z0-9]+\.[a-zA-Z]+',  # 通用域名格式 www.xxx.com
+        r'[a-zA-Z0-9]+\.(com|cn|net|org|cc|tk|ml|ga|cf)',  # 常见域名后缀
+        r'发布者', 
+        r'GM-Team',
+        r'国漫',
+        r'日漫',
+        r'动漫',
+        r'官方',
+        r'正版',
+        r'付费',
+        r'VIP',
+        r'会员'
+    ]
+    
+    processed_filename = filename
+    for pattern in ad_patterns:
+        processed_filename = re.sub(pattern, '', processed_filename, flags=re.IGNORECASE)
+    
+    # 只去除首尾空格，不清理中间的符号
+    processed_filename = processed_filename.strip()
+    
+    logging.debug(f"文件名预处理: '{filename}' -> '{processed_filename}'")
+    return processed_filename
+
+def preprocess_folder_name(folder_name):
+    """
+    预处理文件夹名称，移除广告、无效文字等
+    """
+    # 移除常见的广告关键词和域名
+    ad_patterns = [
+        r'UIndex', 
+        r'dygod\.org', 
+        r'阳光电影',
+        r'\.com', 
+        r'\.cn', 
+        r'\.net',
+        r'【更多', 
+        r'不太灵影视',
+        r'高清电影',
+        r'高清剧集',
+        r'BT影视',
+        r'www\.[a-zA-Z0-9]+\.[a-zA-Z]+',  # 通用域名格式 www.xxx.com
+        r'[a-zA-Z0-9]+\.(com|cn|net|org|cc|tk|ml|ga|cf)',  # 常见域名后缀
+        r'发布者', 
+        r'GM-Team',
+        r'国漫',
+        r'日漫',
+        r'动漫',
+        r'官方',
+        r'正版',
+        r'付费',
+        r'VIP',
+        r'会员'
+    ]
+    
+    processed_folder_name = folder_name
+    for pattern in ad_patterns:
+        processed_folder_name = re.sub(pattern, '', processed_folder_name, flags=re.IGNORECASE)
+    
+    # 只去除首尾空格，不清理中间的符号
+    processed_folder_name = processed_folder_name.strip()
+    
+    logging.debug(f"文件夹名预处理: '{folder_name}' -> '{processed_folder_name}'")
+    return processed_folder_name
+
+def extract_info_with_guessit(filename):
+    """
+    使用guessit库从文件名中提取信息，并进行优化处理
+    """
+    # 预处理文件名
+    processed_filename = preprocess_filename(filename)
+    
+    # 移除扩展名
+    filename_without_ext = '.'.join(processed_filename.split('.')[:-1]) if '.' in processed_filename else processed_filename
+    
+    # 使用guessit解析文件名
+    info = guessit.guessit(filename_without_ext)
+    
+    # 提取关键信息
+    title = info.get('title', '')
+    year = info.get('year')
+    media_type = 'tv' if info.get('type') == 'episode' else 'movie'
+    season = info.get('season')
+    episode = info.get('episode')
+    screen_size = info.get('screen_size')  # 视频质量信息
+    
+    # 对标题进行优化处理
+    if title:
+        # 处理中英文混合标题
+        if re.search(r'[\u4e00-\u9fff]', title) and re.search(r'[a-zA-Z]', title):
+            # 分离中英文标题
+            # 提取中文部分（包括中文标点）
+            chinese_part = re.findall(r'[\u4e00-\u9fff\·\：\-\_\！\？\，\。\、\；\“\”\‘\’\（\）]+', title)
+            chinese_part = ''.join(chinese_part).strip() if chinese_part else ''
+            
+            # 提取英文部分
+            english_part = re.findall(r'[a-zA-Z0-9\s\-\_\:]+', title)
+            english_part = ' '.join(english_part).strip() if english_part else ''
+            
+            # 清理英文标题中的多余符号和空格
+            english_part = re.sub(r'[\-\_\:]+', ' ', english_part)
+            english_part = re.sub(r'\s+', ' ', english_part).strip()
+            
+            # 如果中文部分不为空，优先使用中文标题
+            if chinese_part:
+                title = chinese_part
+            elif english_part:
+                title = english_part
+        else:
+            # 单一语言标题的清理
+            title = re.sub(r'\s+', ' ', title).strip()
+    
+    # 特殊处理：如果guessit提取的标题是通用词，尝试从原始文件名中提取更好的标题
+    if title.lower() in ['movie', 'the movie', 'film']:
+        # 尝试从原始文件名中提取更具体的标题
+        parts = filename_without_ext.split('.')
+        # 移除年份和质量信息
+        filtered_parts = [part for part in parts if not re.match(r'^(19|20)\d{2}$', part) 
+                          and not re.match(r'\d{3,4}[ip]', part.lower()) 
+                          and not part.lower() in ['bluray', 'webrip', 'webdl', 'hdtv', 'dvdrip']]
+        
+        if len(filtered_parts) > 1:
+            # 尝试组合前几个部分作为标题
+            potential_title = ' '.join(filtered_parts[:min(3, len(filtered_parts))])
+            # 如果这个标题包含更多具体信息，则使用它
+            if len(potential_title) > len(title):
+                title = potential_title
+    
+    # 清理标题中的多余空格
+    title = re.sub(r'\s+', ' ', title).strip()
+    
+    # 优化视频质量信息提取
+    quality = None
+    if screen_size:
+        # 将screen_size转换为标准格式
+        if isinstance(screen_size, str):
+            # 处理如"1080p"、"720p"等格式
+            quality_match = re.search(r'(\d{3,4})[pP]', screen_size)
+            if quality_match:
+                quality = quality_match.group(1) + 'p'
+        elif isinstance(screen_size, int):
+            # 处理如1080、720等数字格式
+            quality = str(screen_size) + 'p'
+    
+    # 优化季信息处理，避免年份被误认为季
+    if media_type == 'tv' and season:
+        # 如果季号看起来像年份（如2023, 2024, 2025），则认为是无效的，使用默认值
+        if isinstance(season, int) and season > 1900:
+            logging.debug(f"检测到季号 {season} 看起来像年份，将其视为无效")
+            season = 1  # 使用默认第一季
+        elif isinstance(season, list) and len(season) > 0:
+            # 处理列表形式的季号
+            first_season = season[0]
+            if isinstance(first_season, int) and first_season > 1900:
+                logging.debug(f"检测到季号 {first_season} 看起来像年份，将其视为无效")
+                season = 1  # 使用默认第一季
+    
+    return {
+        'title': title,
+        'year': year,
+        'media_type': media_type,
+        'season': season,
+        'episode': episode,
+        'screen_size': quality  # 使用处理后的质量信息
+    }
 
 def extract_info(filename, folder_name=None, label_info=None):
     """
     综合标签、文件夹名和文件名信息提取媒体信息。
+    使用 guessit 增强识别能力。
     标签只提供全局信息（如名称、年份、季、清晰度），集号和后缀等依然需从文件名解析。
     优化：如果文件名为纯数字，按电视剧处理，数字为集数，其他信息补全。
     """
+    # 预处理文件名和文件夹名
+    processed_filename = preprocess_filename(filename)
+    processed_folder_name = preprocess_folder_name(folder_name) if folder_name else folder_name
+    
+    # 如果 guessit 可用，先使用 guessit 解析
+    guessit_info = {}
+    if guessit:
+        try:
+            guessit_info = extract_info_with_guessit(filename)  # 使用原始文件名给guessit解析
+            logging.debug(f"Guessit 解析结果: {guessit_info}")
+        except Exception as e:
+            logging.warning(f"Guessit 解析失败: {e}")
+
     # 提取电影信息
     def extract_movie_info(filename, folder_name=None):
+        result = {}
+        
+        # 优先使用 guessit 的结果
+        if guessit_info:
+            result['名称'] = guessit_info.get('title')
+            result['发行年份'] = guessit_info.get('year')
+            result['视频质量'] = guessit_info.get('screen_size')  # 先获取guessit的视频质量
+            result['后缀名'] = os.path.splitext(filename)[1][1:]
+            
+            # 检查视频质量是否有效，如果无效则设为None以便后续补全
+            if result.get('视频质量'):
+                quality_str = str(result['视频质量']).lower()
+                if quality_str in ['none', 'null', '']:
+                    result['视频质量'] = None
+            else:
+                result['视频质量'] = None
+
+        # 原有逻辑作为备选方案
         chinese_name_pattern_filename = r'([\u4e00-\u9fa5A-Za-z0-9："“”·]+)(?=\.)'
         chinese_name_pattern_folder = r'】([\u4e00-\u9fa5A-Za-z0-9：$$(). ]+)'
         english_name_pattern = r'([A-Za-z0-9\.\s]+)(?=\.\d{4}(?:\.|$))'
         year_pattern = r'(19\d{2}|20\d{2})'
-        quality_pattern = r'(\d{1,4}[pPkK])'
+        # 统一的视频质量匹配正则表达式，支持更多格式
+        quality_pattern = r'(?:\b(?:HD)?(?:\d{3,4})[pP]?\b)|(?:\b(\d{3,4})[pP]\b)|(?:\b([Hh][Dd])\b)|(?:\b([Ff][Uu][Ll][Ll][Hh][Dd])\b)|(?:\b([Uu][Ll][Tt][Rr][Aa][Hh][Dd])\b)|(?:\b(4[Kk])\b)|(?:\b(8[Kk])\b)|(?:\b([Ww][Ee][Bb][Dd][Ll])\b)|(?:\b([Bb][Ll][Uu][Rr][Aa][Yy])\b)|(?:\b([Bb][Rr][Rr][Ii][Pp])\b)'
         suffix_pattern = r'\.(\w+)$'
 
-        chinese_name = re.search(chinese_name_pattern_filename, filename)
-        if chinese_name and re.search(r'[\u4e00-\u9fa5]', chinese_name.group(1)):
-            chinese_name = chinese_name.group(1)
-        else:
-            chinese_name = None
-
-        if not chinese_name and folder_name:
-            chinese_name = re.search(chinese_name_pattern_folder, folder_name)
+        if not result.get('名称'):
+            chinese_name = re.search(chinese_name_pattern_filename, processed_filename)  # 使用预处理后的文件名
             if chinese_name and re.search(r'[\u4e00-\u9fa5]', chinese_name.group(1)):
-                chinese_name = chinese_name.group(1)
+                result['名称'] = chinese_name.group(1)
+            elif folder_name:
+                # 使用预处理后的文件夹名
+                processed_folder = preprocess_folder_name(folder_name)
+                chinese_name = re.search(chinese_name_pattern_folder, processed_folder)
+                if chinese_name and re.search(r'[\u4e00-\u9fa5]', chinese_name.group(1)):
+                    result['名称'] = chinese_name.group(1)
+
+        if not result.get('名称'):
+            english_name = re.search(english_name_pattern, processed_filename)  # 使用预处理后的文件名
+            english_name = english_name.group(1).strip() if english_name else None
+            if english_name:
+                result['名称'] = english_name.replace('.', ' ').replace('-', ' ')
+
+        if not result.get('发行年份'):
+            years = re.findall(year_pattern, processed_filename)  # 使用预处理后的文件名
+            result['发行年份'] = years[-1] if years else None
+            if not result['发行年份'] and folder_name:
+                # 使用预处理后的文件夹名
+                processed_folder = preprocess_folder_name(folder_name)
+                folder_year = re.search(year_pattern, processed_folder)
+                if folder_year:
+                    result['发行年份'] = folder_year.group()
+
+        # 改进视频质量提取逻辑：只有当guessit没有提供有效质量信息时才使用默认值
+        video_quality = result.get('视频质量', '').lower() if result.get('视频质量') else ''  # 转为小写
+        if not video_quality or video_quality in ['none', 'null', '']:
+            quality_match = re.search(quality_pattern, processed_filename)  # 使用预处理后的文件名
+            if quality_match:
+                # 检查哪个组匹配到了
+                matched_groups = [group for group in quality_match.groups() if group]
+                if matched_groups:
+                    raw_quality = matched_groups[0]
+                    raw_quality = raw_quality.lower()
+                    
+                    # 处理特定关键词映射
+                    quality_map = {
+                        'fullhd': '1080p',
+                        'ultrahd': '2160p',
+                        '4k': '2160p',
+                        '8k': '4320p',
+                        'hd': '720p',
+                        'webdl': '1080p',
+                        'bluray': '1080p',
+                        'brrip': '1080p'
+                    }
+                    
+                    if raw_quality in quality_map:
+                        result['视频质量'] = quality_map[raw_quality]
+                    elif re.search(r'(?:hd)?(\d{3,4})p?', raw_quality, re.IGNORECASE):
+                        # 处理如 720p, 1080p, 2160p, hd1080, hd1080p 等格式
+                        resolution_match = re.search(r'(?:hd)?(\d{3,4})p?', raw_quality, re.IGNORECASE)
+                        if resolution_match:
+                            resolution = resolution_match.group(1)
+                            # 根据分辨率映射到标准格式
+                            resolution_map = {
+                                '720': '720p',
+                                '1080': '1080p',
+                                '1440': '1440p',
+                                '2160': '2160p',
+                                '4320': '4320p'
+                            }
+                            result['视频质量'] = resolution_map.get(resolution, resolution + 'p')
+                    else:
+                        result['视频质量'] = raw_quality
             else:
-                chinese_name = None
+                # 增强的视频质量匹配逻辑
+                # 支持HD2160P, HD1080P, HD720P等格式
+                enhanced_quality_patterns = [
+                    (r'hd\s*4k', '2160p'),
+                    (r'hd\s*2160\s*p?', '2160p'),
+                    (r'hd\s*1440\s*p?', '1440p'),
+                    (r'hd\s*1080\s*p?', '1080p'),
+                    (r'full\s*hd', '1080p'),
+                    (r'hd\s*720\s*p?', '720p'),
+                    (r'hd', '720p')
+                ]
+                
+                for pattern, quality_value in enhanced_quality_patterns:
+                    if re.search(pattern, processed_filename, re.IGNORECASE):  # 使用预处理后的文件名
+                        result['视频质量'] = quality_value
+                        break
 
-        english_name = re.search(english_name_pattern, filename)
-        english_name = english_name.group(1).strip() if english_name else None
-        if english_name:
-            english_name = english_name.replace('.', ' ').replace('-', ' ')
+        # 只有在完全没有获取到质量信息时才使用默认值
+        if not result.get('视频质量'):
+            result['视频质量'] = '1080p'  # 默认使用1080p
 
-        # 年份：匹配所有，取最后一个
-        years = re.findall(year_pattern, filename)
-        year = years[-1] if years else None
-
-        quality = re.search(quality_pattern, filename)
-        if quality:
-            raw_quality = quality.group()
-            raw_quality = raw_quality.lower()
-            if 'k' in raw_quality:
-                resolution_map = {
-                    '2k': '1440p',
-                    '4k': '2160p',
-                    '8k': '4320p'
-                }
-                k_value = ''.join(filter(str.isdigit, raw_quality)) + 'k'
-                raw_quality = resolution_map.get(k_value, raw_quality)
-            quality = raw_quality
-        else:
-            quality = None
-
-        suffix = re.search(suffix_pattern, filename)
-        suffix = suffix.group(1) if suffix else None
-
-        result = {
-            '名称': chinese_name if chinese_name else english_name,
-            '发行年份': year,
-            '视频质量': quality,
-            '后缀名': suffix
-        }
-
-        if not year and folder_name:
-            folder_year = re.search(year_pattern, folder_name)
-            if folder_year:
-                result['发行年份'] = folder_year.group()
+        if not result.get('后缀名'):
+            suffix = re.search(suffix_pattern, processed_filename)  # 使用预处理后的文件名
+            result['后缀名'] = suffix.group(1) if suffix else None
 
         return result
 
@@ -324,6 +642,47 @@ def extract_info(filename, folder_name=None, label_info=None):
         提取电视剧信息，支持文件名为纯数字（如01、02、1、2、3）时，将数字作为集数。
         其他信息（如名称、年份、季、清晰度）优先从文件夹名和下载任务标签获取。
         """
+        result = {}
+        
+        # 优先使用 guessit 的结果
+        if guessit_info:
+            result['名称'] = guessit_info.get('title')
+            result['发行年份'] = guessit_info.get('year')
+            result['视频质量'] = guessit_info.get('screen_size')  # 先获取guessit的视频质量
+            result['后缀名'] = os.path.splitext(filename)[1][1:]
+            
+            # 检查视频质量是否有效，如果无效则设为None以便后续补全
+            if result.get('视频质量'):
+                quality_str = str(result['视频质量']).lower()
+                if quality_str in ['none', 'null', '']:
+                    result['视频质量'] = None
+            else:
+                result['视频质量'] = None
+            
+            # 处理季信息
+            if guessit_info.get('season'):
+                season_value = guessit_info['season']
+                # 如果季号看起来像年份（如2023, 2024, 2025），则认为是无效的，使用默认值
+                if isinstance(season_value, int) and season_value > 1900:
+                    logging.debug(f"检测到季号 {season_value} 看起来像年份，将其视为无效")
+                    result['季'] = '01'  # 使用默认第一季
+                else:
+                    result['季'] = str(season_value).zfill(2) if isinstance(season_value, int) else season_value
+            else:
+                result['季'] = '01'  # 默认第一季
+            
+            # 处理集信息
+            if guessit_info.get('episode'):
+                episode_number = guessit_info['episode']
+                if isinstance(episode_number, list):
+                    # 处理多集情况，取第一集
+                    episode_number = episode_number[0]
+                result['集'] = str(episode_number).zfill(2) if isinstance(episode_number, int) else episode_number
+            
+            # 如果 guessit 提供了完整信息，直接返回
+            if result.get('名称') and result.get('集'):
+                return result
+
         chinese_name_pattern_filename = r'([\u4e00-\u9fa5A-Za-z0-9："“”·]+)(?=\.)'
         chinese_name_pattern_folder = r'】([\u4e00-\u9fa5A-Za-z0-9：$$(). ]+)'
         english_name_pattern = r'([A-Za-z0-9\.\s]+)(?=\.(?:S\d{1,2}|E\d{1,2}|EP\d{1,2}))'
@@ -331,20 +690,21 @@ def extract_info(filename, folder_name=None, label_info=None):
         episode_pattern = r'(?:E|EP)(\d{1,3})|第\s?(\d{1,3})\s?集|(?<!\d)(\d{1,3})集'
         # 年份只匹配19xx或20xx
         year_pattern = r'(19\d{2}|20\d{2})'
-        quality_pattern = r'(\d{1,4}[pPkK])'
+        # 统一的视频质量匹配正则表达式，支持更多格式
+        quality_pattern = r'(?:\b(?:HD)?(?:\d{3,4})[pP]?\b)|(?:\b(\d{3,4})[pP]\b)|(?:\b([Hh][Dd])\b)|(?:\b([Ff][Uu][Ll][Ll][Hh][Dd])\b)|(?:\b([Uu][Ll][Tt][Rr][Aa][Hh][Dd])\b)|(?:\b(4[Kk])\b)|(?:\b(8[Kk])\b)|(?:\b([Ww][Ee][Bb][Dd][Ll])\b)|(?:\b([Bb][Ll][Uu][Rr][Aa][Yy])\b)|(?:\b([Bb][Rr][Rr][Ii][Pp])\b)'
         suffix_pattern = r'\.(\w+)$'
-    
+
         # 检查是否为纯数字命名的文件（如01.mp4、2.mkv等）
         pure_number_pattern = r'^(\d{1,3})\.\w+$'
-        pure_number_match = re.match(pure_number_pattern, filename)
+        pure_number_match = re.match(pure_number_pattern, processed_filename)  # 使用预处理后的文件名
         episode_number = None
-    
+
         if pure_number_match:
             # 文件名为纯数字，直接作为集数
             episode_number = pure_number_match.group(1).zfill(2)
         else:
-            # 正常匹配E01、EP01、以及“第09集”“09集”“9集”
-            episode = re.search(episode_pattern, filename, re.IGNORECASE)
+            # 正常匹配E01、EP01、以及"第09集""09集""9集"
+            episode = re.search(episode_pattern, processed_filename, re.IGNORECASE)  # 使用预处理后的文件名
             if episode:
                 # 优先英文匹配，否则取中文匹配，否则取纯数字匹配
                 episode_number = episode.group(1) or episode.group(2) or episode.group(3)
@@ -352,88 +712,142 @@ def extract_info(filename, folder_name=None, label_info=None):
                     episode_number = episode_number.zfill(2)
             else:
                 episode_number = None
-    
+
         # 季号优先从文件名Sxx获取
-        season = re.search(season_pattern, filename)
+        season = re.search(season_pattern, processed_filename)  # 使用预处理后的文件名
         season_number = season.group(1) if season else None
-    
+        
+        # 验证季号，避免年份被误认为季
+        if season_number and int(season_number) > 1900:
+            logging.debug(f"检测到季号 {season_number} 看起来像年份，将其视为无效")
+            season_number = None
+
         # 其他信息
-        chinese_name = re.search(chinese_name_pattern_filename, filename)
-        if chinese_name and re.search(r'[\u4e00-\u9fa5]', chinese_name.group(1)):
-            chinese_name = chinese_name.group(1)
-        else:
-            chinese_name = None
-    
-        if not chinese_name and folder_name:
-            chinese_name = re.search(chinese_name_pattern_folder, folder_name)
+        if not result.get('名称'):
+            chinese_name = re.search(chinese_name_pattern_filename, processed_filename)  # 使用预处理后的文件名
             if chinese_name and re.search(r'[\u4e00-\u9fa5]', chinese_name.group(1)):
-                chinese_name = chinese_name.group(1)
-            else:
-                chinese_name = None
-    
-        english_name = re.search(english_name_pattern, filename)
-        english_name = english_name.group(1).strip() if english_name else None
-        if english_name:
-            english_name = english_name.replace('.', ' ').replace('-', ' ')
-    
+                result['名称'] = chinese_name.group(1)
+            elif folder_name:
+                # 使用预处理后的文件夹名
+                processed_folder = preprocess_folder_name(folder_name)
+                chinese_name = re.search(chinese_name_pattern_folder, processed_folder)
+                if chinese_name and re.search(r'[\u4e00-\u9fa5]', chinese_name.group(1)):
+                    result['名称'] = chinese_name.group(1)
+
+        if not result.get('名称'):
+            english_name = re.search(english_name_pattern, processed_filename)  # 使用预处理后的文件名
+            english_name = english_name.group(1).strip() if english_name else None
+            if english_name:
+                result['名称'] = english_name.replace('.', ' ').replace('-', ' ')
+
         # 匹配所有年份，取最后一个
-        years = re.findall(year_pattern, filename)
-        year = years[-1] if years else None
-    
-        quality = re.search(quality_pattern, filename)
-        if quality:
-            raw_quality = quality.group()
-            raw_quality = raw_quality.lower()
-            if 'k' in raw_quality:
-                resolution_map = {
-                    '2k': '1440p',
-                    '4k': '2160p',
-                    '8k': '4320p'
-                }
-                k_value = ''.join(filter(str.isdigit, raw_quality)) + 'k'
-                raw_quality = resolution_map.get(k_value, raw_quality)
-            quality = raw_quality
-        else:
-            quality = None
-    
-        suffix = re.search(suffix_pattern, filename)
-        suffix = suffix.group(1) if suffix else None
-    
-        result = {
-            '名称': chinese_name if chinese_name else english_name,
-            '发行年份': year,
-            '视频质量': quality,
-            '后缀名': suffix
-        }
-    
+        if not result.get('发行年份'):
+            years = re.findall(year_pattern, processed_filename)  # 使用预处理后的文件名
+            result['发行年份'] = years[-1] if years else None
+            if not result['发行年份'] and folder_name:
+                # 使用预处理后的文件夹名
+                processed_folder = preprocess_folder_name(folder_name)
+                folder_year = re.search(year_pattern, processed_folder)
+                if folder_year:
+                    result['发行年份'] = folder_year.group()
+
+        # 改进的视频质量提取：只有当guessit没有提供有效质量信息时才使用原有逻辑
+        video_quality = result.get('视频质量', '').lower() if result.get('视频质量') else ''  # 转为小写
+        if not video_quality or video_quality in ['none', 'null', '']:
+            quality_match = re.search(quality_pattern, processed_filename)  # 使用预处理后的文件名
+            if quality_match:
+                # 检查哪个组匹配到了
+                matched_groups = [group for group in quality_match.groups() if group]
+                if matched_groups:
+                    raw_quality = matched_groups[0]
+                    raw_quality = raw_quality.lower()
+                    
+                    # 处理特定关键词映射
+                    quality_map = {
+                        'fullhd': '1080p',
+                        'ultrahd': '2160p',
+                        '4k': '2160p',
+                        '8k': '4320p',
+                        'hd': '720p',
+                        'webdl': '1080p',
+                        'bluray': '1080p',
+                        'brrip': '1080p'
+                    }
+                    
+                    if raw_quality in quality_map:
+                        result['视频质量'] = quality_map[raw_quality]
+                    elif re.search(r'(?:hd)?(\d{3,4})p?', raw_quality, re.IGNORECASE):
+                        # 处理如 720p, 1080p, 2160p, hd1080, hd1080p 等格式
+                        resolution_match = re.search(r'(?:hd)?(\d{3,4})p?', raw_quality, re.IGNORECASE)
+                        if resolution_match:
+                            resolution = resolution_match.group(1)
+                            # 根据分辨率映射到标准格式
+                            resolution_map = {
+                                '720': '720p',
+                                '1080': '1080p',
+                                '1440': '1440p',
+                                '2160': '2160p',
+                                '4320': '4320p'
+                            }
+                            result['视频质量'] = resolution_map.get(resolution, resolution + 'p')
+                    else:
+                        result['视频质量'] = raw_quality
+            else:
+                # 增强的视频质量匹配逻辑
+                # 支持HD2160P, HD1080P, HD720P等格式
+                enhanced_quality_patterns = [
+                    (r'hd\s*4k', '2160p'),
+                    (r'hd\s*2160\s*p?', '2160p'),
+                    (r'hd\s*1440\s*p?', '1440p'),
+                    (r'hd\s*1080\s*p?', '1080p'),
+                    (r'full\s*hd', '1080p'),
+                    (r'hd\s*720\s*p?', '720p'),
+                    (r'hd', '720p')
+                ]
+                
+                for pattern, quality_value in enhanced_quality_patterns:
+                    if re.search(pattern, processed_filename, re.IGNORECASE):  # 使用预处理后的文件名
+                        result['视频质量'] = quality_value
+                        break
+
+        # 只有在完全没有获取到质量信息时才使用默认值
+        if not result.get('视频质量'):
+            result['视频质量'] = '1080p'  # 默认使用1080p
+
+        if not result.get('后缀名'):
+            suffix = re.search(suffix_pattern, processed_filename)  # 使用预处理后的文件名
+            result['后缀名'] = suffix.group(1) if suffix else None
+
         if episode_number:
-            if not season_number:
+            if not season_number and not result.get('季'):
                 # 尝试从文件夹名或标签补全季号，否则默认为01
                 folder_season = None
                 if folder_name:
-                    folder_season_match = re.search(r'S(\d{1,2})', folder_name, re.IGNORECASE)
+                    # 使用预处理后的文件夹名
+                    processed_folder = preprocess_folder_name(folder_name)
+                    folder_season_match = re.search(r'S(\d{1,2})', processed_folder, re.IGNORECASE)
                     if folder_season_match:
                         folder_season = folder_season_match.group(1)
-                season_number = folder_season if folder_season else '01'
-            result.update({
-                '季': season_number,
-                '集': episode_number
-            })
-
-        if not year and folder_name:
-            folder_year = re.search(year_pattern, folder_name)
-            if folder_year:
-                result['发行年份'] = folder_year.group()
+                result['季'] = folder_season if folder_season else '01'
+            elif season_number:
+                result['季'] = season_number.zfill(2) if isinstance(season_number, str) else season_number
+            result['集'] = episode_number
 
         return result
 
     # 判断是否为纯数字文件名（如01.mkv、2.mp4），此时强制按tv处理
     pure_number_pattern = r'^(\d{1,3})\.\w+$'
-    if re.match(pure_number_pattern, filename):
+    if re.match(pure_number_pattern, processed_filename):  # 使用预处理后的文件名
         raw_info = extract_tv_info(filename, folder_name)
     else:
         # 判断是电影还是电视剧
-        is_tv = re.search(r'(?:S\d{1,2}|E\d{1,2}|EP\d{1,2}|第\s?\d{1,3}\s?集|(?<!\d)\d{1,3}集)', filename, re.IGNORECASE)
+        is_tv = re.search(r'(?:S\d{1,2}|E\d{1,2}|EP\d{1,2}|第\s?\d{1,3}\s?集|(?<!\d)\d{1,3}集)', processed_filename, re.IGNORECASE)  # 使用预处理后的文件名
+        # 也参考 guessit 的判断
+        if guessit_info and guessit_info.get('media_type') == 'tv':
+            is_tv = True
+        elif guessit_info and guessit_info.get('media_type') == 'movie':
+            is_tv = False
+            
         raw_info = extract_tv_info(filename, folder_name) if is_tv else extract_movie_info(filename, folder_name)
 
     # 优先合并标签信息
@@ -444,13 +858,30 @@ def extract_info(filename, folder_name=None, label_info=None):
 
     # 如果名称依然为空，尝试从文件夹名补全
     if not raw_info.get('名称') and folder_name:
-        # 尝试从文件夹名提取“名称”和“年份”
+        # 使用预处理后的文件夹名
+        processed_folder = preprocess_folder_name(folder_name)
+        # 尝试从文件夹名提取"名称"和"年份"
         # 例如：黄雀-S1-2025、黄雀-2025、黄雀2025
-        folder_match = re.match(r'([\u4e00-\u9fa5A-Za-z0-9]+)(?:-S\d+)?-?(\d{4})?', folder_name)
+        folder_match = re.match(r'([\u4e00-\u9fa5A-Za-z0-9]+)(?:-S\d+)?-?(\d{4})?', processed_folder)
         if folder_match:
             raw_info['名称'] = folder_match.group(1)
             if not raw_info.get('发行年份') and folder_match.group(2):
                 raw_info['发行年份'] = folder_match.group(2)
+
+    # 新增：如果是纯数字文件名，且只有名称没有年份，则尝试通过TMDB查询年份
+    if re.match(pure_number_pattern, processed_filename) and raw_info.get('名称') and not raw_info.get('发行年份'):  # 使用预处理后的文件名
+        try:
+            # 确定媒体类型
+            media_type = 'tv'  # 纯数字文件名强制按电视剧处理
+            season = raw_info.get('季', '01')
+            
+            # 通过TMDB查询年份信息
+            tmdb_id, tmdb_name, tmdb_year = get_tmdb_info(raw_info['名称'], None, media_type, season)
+            if tmdb_year:
+                raw_info['发行年份'] = tmdb_year
+                logging.info(f"通过TMDB查询补全年份信息: {raw_info['名称']} -> {tmdb_year}")
+        except Exception as e:
+            logging.warning(f"通过TMDB查询年份信息失败: {e}")
 
     return raw_info
 
@@ -548,7 +979,7 @@ def process_file(file_path, processed_filenames):
     处理单个文件：
     1. 提取媒体信息，尝试获取 TMDB ID。
     2. 若同一文件夹下连续3次未能获取到 TMDB ID，则将该文件夹移动到 unknown_directory。
-    3. 若 result 字典关键字段（如“名称”）为 None，也直接转移文件夹。
+    3. 若 result 字典关键字段（如"名称"）为 None，也直接转移文件夹。
     4. 识别成功则清零计数。
     5. 其它原有逻辑保持不变。
     6. 优化：无论本地是否有年份，均尝试 TMDB 查询，并用 TMDB 年份覆盖本地年份（只要查到）。
@@ -663,7 +1094,7 @@ def process_file(file_path, processed_filenames):
                         logging.error(f"转移未识别文件失败: {e}")
                 return
 
-            # 新增：如果未能获取到 TMDB ID，且名称包含“第X季”，则去掉“第X季”再查一次
+            # 新增：如果未能获取到 TMDB ID，且名称包含"第X季"，则去掉"第X季"再查一次
             if not tmdb_id and media_type == 'tv' and result['名称']:
                 import re
                 new_title = re.sub(r'\s*第[一二三四五六七八九十1234567890]+季', '', result['名称'])
@@ -681,7 +1112,11 @@ def process_file(file_path, processed_filenames):
                 # 识别成功，清零该文件夹的未识别计数
                 unrecognized_count.pop(folder_name, None)
 
-                title = tmdb_name if tmdb_name else result['名称']
+                # 获取媒体的中文和英文信息
+                title_cn, title_en = get_media_titles_with_language(tmdb_id, media_type)
+                
+                # 优先使用中文标题，如果没有则使用英文标题
+                title = title_cn if title_cn else (title_en if title_en else result['名称'])
                 year = result['发行年份']
                 target_base_dir = os.path.join(target_directory, f"{title} ({year})")
 
@@ -699,7 +1134,10 @@ def process_file(file_path, processed_filenames):
                         os.makedirs(season_dir)
                         logging.info(f"创建目录: {season_dir}")
 
-                    episode_name = get_tv_episode_name(tmdb_id, season_number, episode_number)
+                    # 获取剧集中文名称
+                    episode_name_cn = get_tv_episode_name_with_language(tmdb_id, season_number, episode_number, 'zh-CN')
+                    # 如果没有中文名称，则获取英文名称
+                    episode_name = episode_name_cn if episode_name_cn else get_tv_episode_name(tmdb_id, season_number, episode_number)
                     new_filename = f"{title} - S{season_number_str}E{str(episode_number).zfill(2)} - {episode_name}.{result['后缀名']}"
                     target_file_path = os.path.join(season_dir, new_filename)
                 else:
@@ -719,7 +1157,7 @@ def process_file(file_path, processed_filenames):
                 if os.path.exists(nfo_file_path):
                     new_nfo_filename = f"{title} - S{season_number_str}E{str(episode_number).zfill(2)} - {episode_name}.nfo" if media_type == 'tv' else f"{title} - ({year}) {result['视频质量']}.nfo"
                     nfo_target_path = os.path.join(target_base_dir if media_type == 'movie' else season_dir, new_nfo_filename)
-                    move_or_copy_file(file_path, target_file_path, action, media_type)
+                    move_or_copy_file(nfo_file_path, nfo_target_path, action, media_type)
                     logging.info(f"转移NFO文件: {nfo_file_path} -> {nfo_target_path}")
 
                 send_notification(new_filename)
@@ -734,29 +1172,103 @@ def process_file(file_path, processed_filenames):
                 unrecognized_count[folder_name] = count
                 logging.warning(f"未能获取到 TMDB ID: {result['名称']} ({result['发行年份']})，累计失败次数: {count}")
 
-                # 超过1次则移动/复制当前文件到 unknown_directory 下以文件夹名为名的文件夹
-                if count >= 1 and unknown_directory:
-                    src_folder = os.path.dirname(file_path)
-                    dst_folder = os.path.join(unknown_directory, os.path.basename(src_folder))
-                    try:
-                        if not os.path.exists(dst_folder):
-                            os.makedirs(dst_folder)
-                        dst_file_path = os.path.join(dst_folder, filename)
-                        if action == 'copy':
-                            shutil.copy2(file_path, dst_file_path)
-                            logging.info(f"已将无法识别的文件复制到未识别目录: {dst_file_path}")
-                        else:
-                            shutil.move(file_path, dst_file_path)
-                            logging.info(f"已将无法识别的文件移动到未识别目录: {dst_file_path}")
-                        processed_filenames.add(filename)
-                        save_processed_files(processed_filenames)
-                        # 清零计数
-                        unrecognized_count.pop(folder_name, None)
-                    except Exception as e:
-                        logging.error(f"转移未识别文件失败: {e}")
+                # 超过3次则移动/复制当前文件到 unknown_directory 下以文件夹名为名的文件夹
+                # 或者如果这是单个文件（不是文件夹中的多个文件），即使失败1次也转移
+                should_move = count >= 3
+                
+                # 对于单个文件的情况，即使失败1次也应该移动
+                if unknown_directory:
+                    # 检查文件夹中是否还有其他视频文件
+                    folder_path = os.path.dirname(file_path)
+                    other_video_files = []
+                    if os.path.exists(folder_path):
+                        for f in os.listdir(folder_path):
+                            if is_common_video_file(f) and f != filename:
+                                other_video_files.append(f)
+                    
+                    # 如果文件夹中没有其他视频文件，则即使失败1次也应该移动
+                    if len(other_video_files) == 0:
+                        should_move = True
+                        logging.debug(f"文件夹中无其他视频文件，立即转移未识别文件")
+                    
+                    if should_move:
+                        src_folder = os.path.dirname(file_path)
+                        dst_folder = os.path.join(unknown_directory, os.path.basename(src_folder))
+                        try:
+                            if not os.path.exists(dst_folder):
+                                os.makedirs(dst_folder)
+                            dst_file_path = os.path.join(dst_folder, filename)
+                            if action == 'copy':
+                                shutil.copy2(file_path, dst_file_path)
+                                logging.info(f"已将无法识别的文件复制到未识别目录: {dst_file_path}")
+                            else:
+                                shutil.move(file_path, dst_file_path)
+                                logging.info(f"已将无法识别的文件移动到未识别目录: {dst_file_path}")
+                            processed_filenames.add(filename)
+                            save_processed_files(processed_filenames)
+                            # 清零计数
+                            unrecognized_count.pop(folder_name, None)
+                        except Exception as e:
+                            logging.error(f"转移未识别文件失败: {e}")
     except Exception as e:
         logging.error(f"处理文件时发生错误: {file_path}, 错误信息: {e}")
 
+# 新增函数：根据TMDB ID获取媒体的中英文标题
+def get_media_titles_with_language(tmdb_id, media_type):
+    """
+    根据TMDB ID获取媒体的中英文标题
+    返回: (中文标题, 英文标题)
+    """
+    try:
+        TMDB_API_KEY = config.get("tmdb_api_key", "")
+        TMDB_BASE_URL = config.get("tmdb_base_url", "")
+        
+        # 先尝试获取中文标题
+        url = f"{TMDB_BASE_URL}/3/{media_type}/{tmdb_id}"
+        params = {
+            'api_key': TMDB_API_KEY,
+            'language': 'zh-CN'
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        title_cn = data.get('title', '') if media_type == 'movie' else data.get('name', '')
+        
+        # 再获取英文标题
+        params['language'] = 'en-US'
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        title_en = data.get('title', '') if media_type == 'movie' else data.get('name', '')
+        
+        return title_cn, title_en
+    except Exception as e:
+        logging.warning(f"获取媒体标题失败: {e}")
+        return None, None
+
+# 新增函数：根据TMDB ID获取剧集的指定语言名称
+def get_tv_episode_name_with_language(tmdb_id, season_number, episode_number, language='zh-CN'):
+    """
+    根据TMDB ID获取剧集的指定语言名称
+    """
+    try:
+        TMDB_API_KEY = config.get("tmdb_api_key", "")
+        TMDB_BASE_URL = config.get("tmdb_base_url", "")
+        url = f"{TMDB_BASE_URL}/3/tv/{tmdb_id}/season/{season_number}/episode/{episode_number}"
+        params = {
+            'api_key': TMDB_API_KEY,
+            'language': language
+        }
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        episode_info = response.json()
+        return episode_info.get('name', '')
+    except Exception as e:
+        logging.warning(f"获取剧集{language}名称失败: {e}")
+        return ''
 def send_notification(title_text):
     # 通知功能
     try:

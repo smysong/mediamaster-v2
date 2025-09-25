@@ -2,6 +2,33 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.5.4] - beta  - 2025-09-25
+
+### ⚠️ 重要提示
+- ⚠️ v2.4.3及以下版本用户请重新拉取Docker镜像进行更新
+- ⚠️ 升级前请务必备份配置文件目录中所有数据
+- ⚠️ 本次更新涉及python库guessit安装，如在线升级失败，请拉取Docker镜像更新
+
+### 🚀 主要功能优化
+
+#### 系统仪表
+- 站点状态检测功能优化：跟随系统定时任务自动运行
+- 启动时自动检查并更新所有站点状态
+- 支持定时任务周期性检查和手动执行检查
+
+#### 媒体扫描
+- 重构媒体扫描模块，支持更广泛的命名规范
+- 增强不同目录结构兼容性，提高识别准确率
+
+#### 正在订阅
+- 优化剧集别名关联功能
+- 支持使用关联别名匹配并更新缺失集数信息
+
+#### 下载转移
+- 引入guessit库优化文件名解析识别
+- 提升文件名解析精度和入库成功率
+- 优化TMDB信息获取逻辑，提高搜索准确率
+
 ## [2.5.3] - 2025-09-19
 
 ### ⚠️ 重要提示
@@ -536,3 +563,4 @@
 [2.5.1]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.1
 [2.5.2]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.2
 [2.5.3]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.3
+[2.5.4]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.4

@@ -187,12 +187,6 @@ def check_site_status_and_save():
     except Exception as e:
         logging.error(f"站点状态检测失败: {e}")
 
-def site_status_thread():
-    """在后台线程中执行站点状态检测"""
-    logging.info("开始后台站点状态检测...")
-    check_site_status_and_save()
-    logging.info("后台站点状态检测完成")
-
 # 全局变量
 running = True
 app_pid = None
@@ -236,13 +230,15 @@ def main():
     app_pid = start_app()
     sync_pid = start_sync()
     start_chrome_monitor()  # 启动 Chrome 监控线程
-    
-    # 在后台线程中启动站点状态检测，不阻塞主程序
-    site_thread = threading.Thread(target=site_status_thread, daemon=True)
-    site_thread.start()
-    logging.info("站点状态检测已在后台启动")
 
     while running:
+        # 在主循环中定期执行站点状态检测
+        check_site_status_and_save()
+        logging.info("-" * 80)
+        logging.info("站点状态检测：已执行完毕，等待5秒...")
+        logging.info("-" * 80)
+        time.sleep(5)
+
         run_script('scan_media.py')
         logging.info("-" * 80)
         logging.info("扫描媒体库：已执行完毕，等待5秒...")
