@@ -138,6 +138,10 @@
                                     <div class="form-text">
                                         <i class="bi bi-info-circle me-1"></i> TMDB密钥用于获取媒体详细信息、文件转移、热门推荐；系统已内置API密钥，您也可以使用自己的API密钥。
                                     </div>
+                                    {% elif key == 'ocr_api_key' %}
+                                    <div class="form-text">
+                                        <i class="bi bi-info-circle me-1"></i> OCR API密钥用于识别站点图片验证码，需自行申请：<a target="_blank" href="https://ocr.space/ocrapi/freekey">免费申请</a>
+                                    </div>
                                     {% elif key == 'preferred_resolution' %}
                                     <div class="form-text">
                                         <i class="bi bi-info-circle me-1"></i> 首选、备选分辨率支持：720p、1080p、2160p等。以"p"（逐行扫描）为单位。

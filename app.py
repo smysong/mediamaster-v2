@@ -1700,6 +1700,9 @@ GROUP_MAPPING = {
         "tmdb_base_url": {"type": "text", "label": "TMDB API接口地址"},
         "tmdb_api_key": {"type": "password", "label": "TMDB API密钥"}
     },
+    "OCR接口": {
+        "ocr_api_key": {"type": "password", "label": "OCR API密钥"}
+    },
     "下载器管理": {
         "download_mgmt": {"type": "switch", "label": "下载器管理"},
         "download_type": {"type": "downloader", "label": "下载器", "options": ["transmission", "qbittorrent", "xunlei"]},
