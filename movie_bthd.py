@@ -14,6 +14,7 @@ import logging
 import os
 import re
 import argparse
+from captcha_handler import CaptchaHandler
 
 # 配置日志
 logging.basicConfig(
@@ -111,59 +112,27 @@ class MovieIndexer:
             exit(0)
 
     def site_captcha(self, url):
+        """
+        使用 CaptchaHandler 统一处理所有类型的验证码
+        """
         try:
-            self.driver.get(url)
-            try:
-                # 检查滑动验证码元素是否存在
-                captcha_prompt = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "p.ui-prompt"))
-                )
-                if captcha_prompt.text in ["滑动上面方块到右侧解锁", "Slide to Unlock"]:
-                    logging.info("检测到滑动验证码，开始验证")
-
-                    # 等待滑块元素出现
-                    handler = WebDriverWait(self.driver, 10).until(
-                        EC.presence_of_element_located((By.ID, "handler"))
-                    )
-
-                    # 等待目标位置元素出现
-                    target = WebDriverWait(self.driver, 10).until(
-                        EC.presence_of_element_located((By.ID, "handler-placeholder"))
-                    )
-
-                    # 获取滑块的初始位置
-                    handler_location = handler.location
-
-                    # 获取目标位置的初始位置
-                    target_location = target.location
-
-                    # 计算滑块需要移动的距离
-                    move_distance = target_location['x'] - handler_location['x']
-
-                    # 使用 ActionChains 模拟拖动滑块
-                    actions = ActionChains(self.driver)
-                    actions.click_and_hold(handler).move_by_offset(move_distance, 0).release().perform()
-
-                    logging.info("滑块已成功拖动到目标位置")
-
-                    # 等待页面跳转完成
-                    WebDriverWait(self.driver, 30).until(
-                        EC.url_changes(url)
-                    )
-
-                    logging.info("页面已成功跳转")
-                else:
-                    logging.info("未检测到滑动验证码")
-            except TimeoutException:
-                logging.info("未检测到滑动验证码")
+            # 创建 CaptchaHandler 实例
+            ocr_api_key = self.config.get("ocr_api_key", "")
+            captcha_handler = CaptchaHandler(self.driver, ocr_api_key)
+            
+            # 使用 CaptchaHandler 处理验证码
+            captcha_handler.handle_captcha(url)
+            
         except Exception as e:
-            logging.error(f"访问站点时出错: {e}")
-            logging.info("由于访问失败，程序将正常退出")
+            logging.error(f"验证码处理失败: {e}")
+            logging.info("由于验证码处理失败，程序将正常退出")
             self.driver.quit()
             exit(1)
 
     def login(self, url, username, password):
         try:
+            # 使用新的验证码处理方法
+            self.site_captcha(url)
             self.driver.get(url)
 
             # 检查是否已经自动登录
@@ -255,6 +224,8 @@ class MovieIndexer:
             
             try:
                 # 首先执行搜索
+                # 使用新的验证码处理方法
+                self.site_captcha(search_url)
                 self.driver.get(search_url)
                 search_box = WebDriverWait(self.driver, 10).until(
                     EC.presence_of_element_located((By.NAME, "srchtxt"))
@@ -470,12 +441,10 @@ class MovieIndexer:
         login_url = f"{bt_movie_base_url}/member.php?mod=logging&action=login"
         search_url = f"{bt_movie_base_url}/search.php?mod=forum"
     
-        # 登录操作前先检查滑动验证码
-        self.site_captcha(login_url)  # 检查并处理滑动验证码
+        # 登录操作
         self.login(login_url, self.config["bt_login_username"], self.config["bt_login_password"])
 
         # 搜索和建立索引
-        self.site_captcha(search_url)  # 检查并处理滑动验证码
         self.search(search_url, all_movie_info)
 
         # 清理工作，关闭浏览器
@@ -520,15 +489,13 @@ if __name__ == "__main__":
         login_url = f"{bt_movie_base_url}/member.php?mod=logging&action=login"
         search_url = f"{bt_movie_base_url}/search.php?mod=forum"
     
-        # 登录操作前先检查滑动验证码
-        indexer.site_captcha(login_url)  # 检查并处理滑动验证码
+        # 登录操作
         indexer.login(login_url, indexer.config["bt_login_username"], indexer.config["bt_login_password"])
     
         # 执行手动搜索
         if args.title:
             # 将单个电影信息封装为列表并调用 search 方法
             movie_info = [{"标题": args.title, "年份": str(args.year) if args.year else ""}]
-            indexer.site_captcha(search_url)  # 检查并处理滑动验证码
             indexer.search(search_url, movie_info)
         else:
             logging.error("手动搜索模式需要提供 --title 参数")

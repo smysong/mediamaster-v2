@@ -16,6 +16,9 @@ import time
 import argparse
 from urllib.parse import quote
 
+# 导入 CaptchaHandler 类
+from captcha_handler import CaptchaHandler
+
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,  # 设置日志级别为 INFO
@@ -112,60 +115,25 @@ class MediaIndexer:
             exit(0)
 
     def site_captcha(self, url):
+        """
+        使用 CaptchaHandler 统一处理所有类型的验证码
+        """
         try:
-            self.driver.get(url)
-            try:
-                # 检查新的验证码元素是否存在
-                captcha_prompt = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "div.container .title"))
-                )
-                if "请确认您不是机器人" in captcha_prompt.text:
-                    logging.info("检测到验证码，开始验证")
-        
-                    # 等待复选框元素出现
-                    checkbox = WebDriverWait(self.driver, 10).until(
-                        EC.presence_of_element_located((By.ID, "checkbox"))
-                    )
-        
-                    # 使用 ActionChains 模拟点击复选框
-                    actions = ActionChains(self.driver)
-                    actions.move_to_element(checkbox).click().perform()
-        
-                    logging.info("复选框已成功点击")
-        
-                    # 等待加载指示器消失，表示验证完成
-                    WebDriverWait(self.driver, 30).until_not(
-                        EC.presence_of_element_located((By.ID, "loading-indicator"))
-                    )
-        
-                    logging.info("验证码验证成功")
-        
-                    # 等待页面跳转完成
-                    WebDriverWait(self.driver, 30).until(
-                        EC.url_changes(url)
-                    )
-        
-                    logging.info("页面已成功跳转")
-                else:
-                    logging.info("未检测到验证码")
-            except TimeoutException:
-                logging.info("未检测到验证码")
+            # 创建 CaptchaHandler 实例
+            ocr_api_key = self.config.get("ocr_api_key", "")
+            captcha_handler = CaptchaHandler(self.driver, ocr_api_key)
+            
+            # 使用 CaptchaHandler 处理验证码
+            captcha_handler.handle_captcha(url)
+            
+            # 无论是否检测到验证码，都检查是否有提示框并点击"不再提醒"按钮
+            captcha_handler.close_popup_if_exists()
+            
         except Exception as e:
-            logging.error(f"访问站点时出错: {e}")
-            logging.info("由于访问失败，程序将正常退出")
+            logging.error(f"验证码处理失败: {e}")
+            logging.info("由于验证码处理失败，程序将正常退出")
             self.driver.quit()
             exit(1)
-    
-        # 无论是否检测到验证码，都检查是否有提示框并点击“不再提醒”按钮
-        try:
-            popup_close_button = WebDriverWait(self.driver, 5).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div.popup-footer button"))
-            )
-            actions = ActionChains(self.driver)
-            actions.move_to_element(popup_close_button).click().perform()
-            logging.info("成功点击“不再提醒”按钮")
-        except TimeoutException:
-            logging.info("未检测到提示框，无需操作")
 
     def is_logged_in_gy(self):
         try:
@@ -180,7 +148,7 @@ class MediaIndexer:
     def login_gy_site(self, username, password):
         login_url = self.gy_login_url
         user_info_url = self.gy_user_info_url
-        self.site_captcha(login_url)  # 调用 gy_site_captcha 方法
+        self.site_captcha(login_url)  # 调用新的验证码处理方法
         self.driver.get(login_url)
         try:
             # 检查是否已经自动登录

@@ -118,37 +118,55 @@ def create_soft_link(src, dst):
 def login():
     if request.method == 'POST':
         username = request.form['username']
-        logger.info(f"用户 {username} 尝试登录")
         password = request.form['password']
+        # 获取记住我选项
+        remember_me = request.form.get('remember') == 'on'  # 检查是否勾选了自动登录
+        
+        logger.info(f"用户 {username} 尝试登录，记住我: {remember_me}")
+        
         db = get_db()
         error = None
         user = db.execute('SELECT * FROM USERS WHERE USERNAME = ?', (username,)).fetchone()
-
+        
         if user is None:
-            error = '用户名或密码错误！'
+            error = '用户名或密码错误'
+            logger.warning(f"用户 {username} 登录失败: 用户不存在")
+        elif not bcrypt.checkpw(password.encode('utf-8'), user['PASSWORD'].encode('utf-8')):
+            error = '用户名或密码错误'
+            logger.warning(f"用户 {username} 登录失败: 密码错误")
         else:
-            hashed_password = user['PASSWORD']
-            if not isinstance(hashed_password, str):
-                hashed_password = hashed_password.decode('utf-8')
-
-            if not bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8')):
-                error = '用户名或密码错误！'
-
-        if error is None:
-            session.permanent = True
+            # 登录成功
             session.clear()
             session['user_id'] = user['ID']
             session['username'] = user['USERNAME']
             session['nickname'] = user['NICKNAME']
             session['avatar_url'] = user['AVATAR_URL']
-            session['_permanent'] = True
-            session.modified = True
-            logger.info(f"用户 {username} 登录成功")
-            return jsonify(success=True, message='登录成功。', redirect_url=url_for('dashboard'))
+            
+            # 根据是否勾选"自动登录"设置session过期时间
+            if remember_me:
+                # 勾选了自动登录，设置session为30天后过期
+                session.permanent = True
+                app.permanent_session_lifetime = timedelta(days=30)
+                logger.info(f"用户 {username} 登录成功，已启用自动登录(30天)")
+            else:
+                # 未勾选自动登录，设置为浏览器会话级别（关闭浏览器即失效）
+                session.permanent = False
+                logger.info(f"用户 {username} 登录成功，未启用自动登录(浏览器会话级别)")
 
-        logger.warning(f"用户 {username} 登录失败: {error}")
-        return jsonify(success=False, message=error)
+            # 返回JSON响应给前端
+            return jsonify({
+                'success': True,
+                'redirect_url': '/',
+                'message': '登录成功'
+            })
 
+        # 登录失败返回错误信息
+        return jsonify({
+            'success': False,
+            'message': error
+        })
+
+    # GET请求返回登录页面
     return render_template('login.html', version=APP_VERSION)
 
 @app.route('/logout')

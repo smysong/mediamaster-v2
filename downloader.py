@@ -16,6 +16,7 @@ import sqlite3
 import requests
 import argparse 
 import glob
+from captcha_handler import CaptchaHandler
 
 # 配置日志
 logging.basicConfig(
@@ -122,6 +123,7 @@ class MediaDownloader:
         except Exception as e:
             logging.error(f"WebDriver初始化失败: {e}")
             raise
+
     def load_config(self):
         """从数据库中加载配置"""
         try:
@@ -165,104 +167,22 @@ class MediaDownloader:
             logging.error(f"网络请求出现错误: {e}")
 
     def site_captcha(self, url):
-        self.driver.get(url)
+        """
+        使用 CaptchaHandler 统一处理所有类型的验证码
+        """
         try:
-            # 检查滑动验证码元素是否存在
-            captcha_prompt = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "p.ui-prompt"))
-            )
-            if captcha_prompt.text in ["滑动上面方块到右侧解锁", "Slide to Unlock"]:
-                logging.info("检测到滑动验证码，开始验证")
-
-                # 等待滑块元素出现
-                handler = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.ID, "handler"))
-                )
-
-                # 等待目标位置元素出现
-                target = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.ID, "handler-placeholder"))
-                )
-
-                # 获取滑块的初始位置
-                handler_location = handler.location
-
-                # 获取目标位置的初始位置
-                target_location = target.location
-
-                # 计算滑块需要移动的距离
-                move_distance = target_location['x'] - handler_location['x']
-
-                # 使用 ActionChains 模拟拖动滑块
-                actions = ActionChains(self.driver)
-                actions.click_and_hold(handler).move_by_offset(move_distance, 0).release().perform()
-
-                logging.info("滑块已成功拖动到目标位置")
-
-                # 等待页面跳转完成
-                WebDriverWait(self.driver, 30).until(
-                    EC.url_changes(url)
-                )
-
-                logging.info("页面已成功跳转")
-            else:
-                logging.info("未检测到滑动验证码")
-        except TimeoutException:
-            logging.info("未检测到滑动验证码")
+            # 创建 CaptchaHandler 实例
+            ocr_api_key = self.config.get("ocr_api_key", "")
+            captcha_handler = CaptchaHandler(self.driver, ocr_api_key)
+            
+            # 使用 CaptchaHandler 处理验证码
+            captcha_handler.handle_captcha(url)
+            
         except Exception as e:
-            logging.error(f"访问站点时出错: {e}")
-
-    def gy_site_captcha(self, url):
-        self.driver.get(url)
-        try:
-            # 检查新的验证码元素是否存在
-            captcha_prompt = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div.container .title"))
-            )
-            if "请确认您不是机器人" in captcha_prompt.text:
-                logging.info("检测到验证码，开始验证")
-    
-                # 等待复选框元素出现
-                checkbox = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.ID, "checkbox"))
-                )
-    
-                # 使用 ActionChains 模拟点击复选框
-                actions = ActionChains(self.driver)
-                actions.move_to_element(checkbox).click().perform()
-    
-                logging.info("复选框已成功点击")
-    
-                # 等待加载指示器消失，表示验证完成
-                WebDriverWait(self.driver, 30).until_not(
-                    EC.presence_of_element_located((By.ID, "loading-indicator"))
-                )
-    
-                logging.info("验证码验证成功")
-    
-                # 等待页面跳转完成
-                WebDriverWait(self.driver, 30).until(
-                    EC.url_changes(url)
-                )
-    
-                logging.info("页面已成功跳转")
-            else:
-                logging.info("未检测到验证码")
-        except TimeoutException:
-            logging.info("未检测到验证码")
-        except Exception as e:
-            logging.error(f"访问站点时出错: {e}")
-    
-        # 无论是否检测到验证码，都检查是否有提示框并点击“不再提醒”按钮
-        try:
-            popup_close_button = WebDriverWait(self.driver, 5).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div.popup-footer button"))
-            )
-            actions = ActionChains(self.driver)
-            actions.move_to_element(popup_close_button).click().perform()
-            logging.info("成功点击“不再提醒”按钮")
-        except TimeoutException:
-            logging.info("未检测到提示框，无需操作")
+            logging.error(f"验证码处理失败: {e}")
+            logging.info("由于验证码处理失败，程序将正常退出")
+            self.driver.quit()
+            exit(1)
 
     def is_logged_in(self):
         try:
@@ -304,7 +224,7 @@ class MediaDownloader:
 
     def login_bthd_site(self, username, password):
         login_url = self.movie_login_url
-        self.site_captcha(login_url)  # 调用 site_captcha 方法
+        self.site_captcha(login_url)  # 使用新的统一验证码处理方法
         self.driver.get(login_url)
         try:
             # 检查是否已经自动登录
@@ -338,7 +258,7 @@ class MediaDownloader:
 
     def login_hdtv_site(self, username, password):
         login_url = self.tv_login_url
-        self.site_captcha(login_url)  # 调用 site_captcha 方法
+        self.site_captcha(login_url)  # 使用新的统一验证码处理方法
         self.driver.get(login_url)
         try:
             # 检查是否已经自动登录
@@ -373,7 +293,7 @@ class MediaDownloader:
     def login_gy_site(self, username, password):
         login_url = self.gy_login_url
         user_info_url = self.gy_user_info_url
-        self.gy_site_captcha(login_url)  # 调用 gy_site_captcha 方法
+        self.site_captcha(login_url)  # 使用新的统一验证码处理方法
         self.driver.get(login_url)
         try:
             # 检查是否已经自动登录
@@ -465,7 +385,7 @@ class MediaDownloader:
         try:
             self.login_bthd_site(self.config["bt_login_username"], self.config["bt_login_password"])
             # 检查页面是否有验证码
-            self.site_captcha(result['link'])  # 调用 site_captcha 方法
+            self.site_captcha(result['link'])  # 使用新的统一验证码处理方法
             self.driver.get(result['link'])
             logging.info(f"进入：{title_text} 详情页面...")
             logging.info(f"开始查找种子文件下载链接...")
@@ -532,7 +452,7 @@ class MediaDownloader:
         try:
             self.login_hdtv_site(self.config["bt_login_username"], self.config["bt_login_password"])
             # 检查页面是否有验证码
-            self.site_captcha(result['link'])  # 调用 site_captcha 方法
+            self.site_captcha(result['link'])  # 使用新的统一验证码处理方法
             self.driver.get(result['link'])
             logging.info(f"进入：{title_text} 详情页面...")
             logging.info(f"开始查找种子文件下载链接...")
@@ -601,7 +521,7 @@ class MediaDownloader:
     def btys_download_torrent(self, result, title_text, year=None, season=None, episode_range=None, resolution=None, title=None):
         """BT影视解析并下载种子文件"""
         try:
-            self.site_captcha(result['link'])  # 调用 site_captcha 方法
+            self.site_captcha(result['link'])  # 使用新的统一验证码处理方法
             self.driver.get(result['link'])
             logging.info(f"进入：{title_text} 详情页面...")
             logging.info(f"开始查找种子文件下载页面按钮...")
@@ -692,7 +612,7 @@ class MediaDownloader:
     def bt0_download_torrent(self, result, title_text, year=None, season=None, episode_range=None, resolution=None, title=None):
         """不太灵影视解析并下载种子文件"""
         try:
-            self.site_captcha(result['link'])  # 调用 site_captcha 方法
+            self.site_captcha(result['link'])  # 使用新的统一验证码处理方法
             self.driver.get(result['link'])
             logging.info(f"进入：{title_text} 详情页面...")
             logging.info(f"开始查找种子文件下载链接...")

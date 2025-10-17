@@ -526,14 +526,15 @@ def extract_info(filename, folder_name=None, label_info=None):
             # 检查视频质量是否有效，如果无效则设为None以便后续补全
             if result.get('视频质量'):
                 quality_str = str(result['视频质量']).lower()
-                if quality_str in ['none', 'null', '']:
+                if quality_str in ['none', 'null', ''] or not quality_str:
                     result['视频质量'] = None
             else:
                 result['视频质量'] = None
 
         # 原有逻辑作为备选方案
-        chinese_name_pattern_filename = r'([\u4e00-\u9fa5A-Za-z0-9："“”·]+)(?=\.)'
-        chinese_name_pattern_folder = r'】([\u4e00-\u9fa5A-Za-z0-9：$$(). ]+)'
+        # 修改中文标题匹配正则表达式，更好地处理包含特殊符号的标题
+        chinese_name_pattern_filename = r'([\u4e00-\u9fa5A-Za-z0-9\u3000-\u303f\uff00-\uffef："“”·\-·\s]+?)(?=\[|\.)'
+        chinese_name_pattern_folder = r'】([\u4e00-\u9fa5A-Za-z0-9\u3000-\u303f\uff00-\uffef：$$().\-\s· ]+)'
         english_name_pattern = r'([A-Za-z0-9\.\s]+)(?=\.\d{4}(?:\.|$))'
         year_pattern = r'(19\d{2}|20\d{2})'
         # 统一的视频质量匹配正则表达式，支持更多格式
@@ -543,13 +544,13 @@ def extract_info(filename, folder_name=None, label_info=None):
         if not result.get('名称'):
             chinese_name = re.search(chinese_name_pattern_filename, processed_filename)  # 使用预处理后的文件名
             if chinese_name and re.search(r'[\u4e00-\u9fa5]', chinese_name.group(1)):
-                result['名称'] = chinese_name.group(1)
+                result['名称'] = chinese_name.group(1).strip()  # 去除首尾空格
             elif folder_name:
                 # 使用预处理后的文件夹名
                 processed_folder = preprocess_folder_name(folder_name)
                 chinese_name = re.search(chinese_name_pattern_folder, processed_folder)
                 if chinese_name and re.search(r'[\u4e00-\u9fa5]', chinese_name.group(1)):
-                    result['名称'] = chinese_name.group(1)
+                    result['名称'] = chinese_name.group(1).strip()  # 去除首尾空格
 
         if not result.get('名称'):
             english_name = re.search(english_name_pattern, processed_filename)  # 使用预处理后的文件名
@@ -569,7 +570,7 @@ def extract_info(filename, folder_name=None, label_info=None):
 
         # 改进视频质量提取逻辑：只有当guessit没有提供有效质量信息时才使用默认值
         video_quality = result.get('视频质量', '').lower() if result.get('视频质量') else ''  # 转为小写
-        if not video_quality or video_quality in ['none', 'null', '']:
+        if not video_quality or video_quality in ['none', 'null', ''] or not video_quality:
             quality_match = re.search(quality_pattern, processed_filename)  # 使用预处理后的文件名
             if quality_match:
                 # 检查哪个组匹配到了
@@ -654,7 +655,7 @@ def extract_info(filename, folder_name=None, label_info=None):
             # 检查视频质量是否有效，如果无效则设为None以便后续补全
             if result.get('视频质量'):
                 quality_str = str(result['视频质量']).lower()
-                if quality_str in ['none', 'null', '']:
+                if quality_str in ['none', 'null', ''] or not quality_str:
                     result['视频质量'] = None
             else:
                 result['视频质量'] = None
@@ -683,8 +684,9 @@ def extract_info(filename, folder_name=None, label_info=None):
             if result.get('名称') and result.get('集'):
                 return result
 
-        chinese_name_pattern_filename = r'([\u4e00-\u9fa5A-Za-z0-9："“”·]+)(?=\.)'
-        chinese_name_pattern_folder = r'】([\u4e00-\u9fa5A-Za-z0-9：$$(). ]+)'
+        # 修改中文标题匹配正则表达式，更好地处理包含特殊符号的标题
+        chinese_name_pattern_filename = r'([\u4e00-\u9fa5A-Za-z0-9\u3000-\u303f\uff00-\uffef："“”·\-·\s]+?)(?=\[|\.)'
+        chinese_name_pattern_folder = r'】([\u4e00-\u9fa5A-Za-z0-9\u3000-\u303f\uff00-\uffef：$$().\-\s· ]+)'
         english_name_pattern = r'([A-Za-z0-9\.\s]+)(?=\.(?:S\d{1,2}|E\d{1,2}|EP\d{1,2}))'
         season_pattern = r'S(\d{1,2})'
         episode_pattern = r'(?:E|EP)(\d{1,3})|第\s?(\d{1,3})\s?集|(?<!\d)(\d{1,3})集'
@@ -726,13 +728,13 @@ def extract_info(filename, folder_name=None, label_info=None):
         if not result.get('名称'):
             chinese_name = re.search(chinese_name_pattern_filename, processed_filename)  # 使用预处理后的文件名
             if chinese_name and re.search(r'[\u4e00-\u9fa5]', chinese_name.group(1)):
-                result['名称'] = chinese_name.group(1)
+                result['名称'] = chinese_name.group(1).strip()  # 去除首尾空格
             elif folder_name:
                 # 使用预处理后的文件夹名
                 processed_folder = preprocess_folder_name(folder_name)
                 chinese_name = re.search(chinese_name_pattern_folder, processed_folder)
                 if chinese_name and re.search(r'[\u4e00-\u9fa5]', chinese_name.group(1)):
-                    result['名称'] = chinese_name.group(1)
+                    result['名称'] = chinese_name.group(1).strip()  # 去除首尾空格
 
         if not result.get('名称'):
             english_name = re.search(english_name_pattern, processed_filename)  # 使用预处理后的文件名
@@ -753,7 +755,7 @@ def extract_info(filename, folder_name=None, label_info=None):
 
         # 改进的视频质量提取：只有当guessit没有提供有效质量信息时才使用原有逻辑
         video_quality = result.get('视频质量', '').lower() if result.get('视频质量') else ''  # 转为小写
-        if not video_quality or video_quality in ['none', 'null', '']:
+        if not video_quality or video_quality in ['none', 'null', ''] or not video_quality:
             quality_match = re.search(quality_pattern, processed_filename)  # 使用预处理后的文件名
             if quality_match:
                 # 检查哪个组匹配到了
@@ -862,9 +864,9 @@ def extract_info(filename, folder_name=None, label_info=None):
         processed_folder = preprocess_folder_name(folder_name)
         # 尝试从文件夹名提取"名称"和"年份"
         # 例如：黄雀-S1-2025、黄雀-2025、黄雀2025
-        folder_match = re.match(r'([\u4e00-\u9fa5A-Za-z0-9]+)(?:-S\d+)?-?(\d{4})?', processed_folder)
+        folder_match = re.match(r'([\u4e00-\u9fa5A-Za-z0-9\u3000-\u303f\uff00-\uffef·]+)(?:-S\d+)?-?(\d{4})?', processed_folder)
         if folder_match:
-            raw_info['名称'] = folder_match.group(1)
+            raw_info['名称'] = folder_match.group(1).strip()  # 去除首尾空格
             if not raw_info.get('发行年份') and folder_match.group(2):
                 raw_info['发行年份'] = folder_match.group(2)
 
@@ -983,6 +985,7 @@ def process_file(file_path, processed_filenames):
     4. 识别成功则清零计数。
     5. 其它原有逻辑保持不变。
     6. 优化：无论本地是否有年份，均尝试 TMDB 查询，并用 TMDB 年份覆盖本地年份（只要查到）。
+    7. 优化：避免使用根下载目录名作为媒体标题
     """
     try:
         excluded_filenames = config.get("download_excluded_filenames", "").split(',')
@@ -990,9 +993,13 @@ def process_file(file_path, processed_filenames):
         movie_directory = config.get("movies_path", "")
         episode_directory = config.get("episodes_path", "")
         unknown_directory = config.get("unknown_path", "")
+        download_directory = config.get("download_dir", "")  # 获取下载根目录
 
         filename = os.path.basename(file_path)
         folder_name = os.path.basename(os.path.dirname(file_path))
+        
+        # 检查文件是否直接位于下载根目录下
+        is_in_root_directory = os.path.dirname(file_path) == download_directory
 
         # 跳过未完成下载的文件
         if is_unfinished_download_file(filename):
@@ -1022,7 +1029,9 @@ def process_file(file_path, processed_filenames):
         label_info = extract_info_from_label(task_label) if task_label else None
 
         # 将标签解析结果传递给 extract_info 进行辅助提取
-        result = extract_info(filename, folder_name, label_info=label_info)
+        # 如果文件在根目录，传递None作为folder_name以避免使用目录名作为标题
+        effective_folder_name = None if is_in_root_directory else folder_name
+        result = extract_info(filename, effective_folder_name, label_info=label_info)
 
         # 新增：指定关系替换逻辑
         if result and result.get('名称'):
