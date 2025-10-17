@@ -605,3 +605,4 @@
 [2.5.3]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.3
 [2.5.4]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.4
 [2.5.5]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.5
+[2.5.6]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.6
