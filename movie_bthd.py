@@ -82,7 +82,7 @@ class MovieIndexer:
             "download.directory_upgrade": True,
             "safebrowsing.enabled": True,
             "intl.accept_languages": "zh-CN",
-            "profile.managed_default_content_settings.images": 2
+            "profile.managed_default_content_settings.images": 1
         }
         options.add_experimental_option("prefs", prefs)
 

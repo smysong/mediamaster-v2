@@ -62,6 +62,7 @@ services:
       - UID=1000
       - GID=100
       - GIDLIST=100
+      - TZ=Asia/Shanghai #设置中国时区
     volumes:
       - /vol1/1000/Downloads:/Downloads
       - /vol1/1000/Torrent:/Torrent #可选配置qBittorrent或Transmission已经支持通过API接口直接添加下载任务，迅雷远程设备通过专用程序监听，无需配置种子监听目录。如使用其他下载器监听种子文件需配置
@@ -95,6 +96,7 @@ services:
       - UID=1000
       - GID=100
       - GIDLIST=100
+      - TZ=Asia/Shanghai #设置中国时区
     volumes:
       - /vol1/1000/Downloads:/Downloads
       - /vol1/1000/Docker/mediamaster:/config
@@ -111,7 +113,7 @@ services:
     environment:
       - PUID=1000
       - PGID=1000
-      - TZ=Etc/UTC
+      - TZ=Asia/Shanghai #设置中国时区
     volumes:
       - /vol1/1000/Docker/transmission:/config
       - /vol1/1000/Downloads:/downloads

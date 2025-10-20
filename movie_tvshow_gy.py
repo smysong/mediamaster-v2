@@ -85,7 +85,7 @@ class MediaIndexer:
             "download.directory_upgrade": True,
             "safebrowsing.enabled": True,
             "intl.accept_languages": "zh-CN",
-            "profile.managed_default_content_settings.images": 2
+            "profile.managed_default_content_settings.images": 1
         }
         options.add_experimental_option("prefs", prefs)
 
@@ -143,6 +143,22 @@ class MediaIndexer:
             )
             return True
         except TimeoutException:
+            try:
+                # 访问用户账户页面检查是否已登录
+                self.driver.get(self.gy_user_info_url)
+                # 检查是否存在账户设置相关的元素
+                WebDriverWait(self.driver, 5).until(
+                    EC.presence_of_element_located((By.XPATH, "//h2[contains(text(), '账户设置')]"))
+                )
+                # 检查用户名输入框是否存在且被禁用（表明已登录）
+                username_input = self.driver.find_element(By.NAME, "username")
+                if username_input.get_attribute("disabled") == "true":
+                    logging.info("通过账户设置页面确认用户已登录")
+                    return True
+            except TimeoutException:
+                pass
+            except Exception as e:
+                logging.warning(f"检查登录状态时发生错误: {e}")
             return False
 
     def login_gy_site(self, username, password):

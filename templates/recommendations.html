@@ -459,12 +459,39 @@
                 </div>
             </section>
 
+            <section id="top-rated">
+                <h2>高分佳作</h2>
+                <div class="carousel-container">
+                    <button class="carousel-arrow prev" onclick="scrollCarousel('top-rated-list', -1)">&#10094;</button>
+                    <div class="movie-list" id="top-rated-list"></div>
+                    <button class="carousel-arrow next" onclick="scrollCarousel('top-rated-list', 1)">&#10095;</button>
+                </div>
+            </section>
+
             <section id="now-playing">
-                <h2>影院热映</h2>
+                <h2>院线热映</h2>
                 <div class="carousel-container">
                     <button class="carousel-arrow prev" onclick="scrollCarousel('now-playing-list', -1)">&#10094;</button>
                     <div class="movie-list" id="now-playing-list"></div>
                     <button class="carousel-arrow next" onclick="scrollCarousel('now-playing-list', 1)">&#10095;</button>
+                </div>
+            </section>
+
+            <section id="china-movies">
+                <h2>国产新片</h2>
+                <div class="carousel-container">
+                    <button class="carousel-arrow prev" onclick="scrollCarousel('china-movies-list', -1)">&#10094;</button>
+                    <div class="movie-list" id="china-movies-list"></div>
+                    <button class="carousel-arrow next" onclick="scrollCarousel('china-movies-list', 1)">&#10095;</button>
+                </div>
+            </section>
+
+            <section id="china-tv-shows">
+                <h2>国产新剧</h2>
+                <div class="carousel-container">
+                    <button class="carousel-arrow prev" onclick="scrollCarousel('china-tv-shows-list', -1)">&#10094;</button>
+                    <div class="tv-list" id="china-tv-shows-list"></div>
+                    <button class="carousel-arrow next" onclick="scrollCarousel('china-tv-shows-list', 1)">&#10095;</button>
                 </div>
             </section>
 
@@ -478,14 +505,13 @@
             </section>
 
             <section id="today-tv-shows">
-                <h2>热门剧集</h2>
+                <h2>热播剧集</h2>
                 <div class="carousel-container">
                     <button class="carousel-arrow prev" onclick="scrollCarousel('today-tv-shows-list', -1)">&#10094;</button>
                     <div class="tv-list" id="today-tv-shows-list"></div>
                     <button class="carousel-arrow next" onclick="scrollCarousel('today-tv-shows-list', 1)">&#10095;</button>
                 </div>
             </section>
-        </div>
         
         <!-- Modal -->
         <div id="mediaDetailsModal" class="modal fade" tabindex="-1" aria-labelledby="InfoCardLabel">
@@ -551,6 +577,9 @@
         document.getElementById('now-playing').style.display = 'none';
         document.getElementById('today-movies').style.display = 'none';
         document.getElementById('today-tv-shows').style.display = 'none';
+        document.getElementById('china-movies').style.display = 'none';
+        document.getElementById('china-tv-shows').style.display = 'none';
+        document.getElementById('top-rated').style.display = 'none';
         // 显示搜索结果区
         document.getElementById('search-results-section').style.display = '';
         // 显示加载动画
@@ -623,6 +652,9 @@
         document.getElementById('now-playing').style.display = '';
         document.getElementById('today-movies').style.display = '';
         document.getElementById('today-tv-shows').style.display = '';
+        document.getElementById('china-movies').style.display = '';
+        document.getElementById('china-tv-shows').style.display = '';
+        document.getElementById('top-rated').style.display = '';
         document.getElementById('search-results-section').style.display = 'none';
     }
 
@@ -650,21 +682,97 @@
             });
     }
 
-    // 使用API Key获取影院热映推荐
+    // 使用API Key获取影院热映推荐（国内外电影综合显示）
     function fetchNowPlayingMovies(apiKey) {
-        const url = `https://api.tmdb.org/3/movie/now_playing?api_key=${apiKey}&language=zh-CN`;
-
-        return fetch(url)
-            .then(response => response.json())
-            .then(data => {
-                console.log('影院热映推荐数据:', data.results); // 添加日志
-                displayRecommendations(data.results, 'now-playing-list');
-                return data.results;
-            })
-            .catch(error => {
-                console.error('获取影院热映推荐时出错:', error);
-                return []; // 返回空数组以避免 undefined
+        // 获取全球正在上映的电影
+        const globalUrl = `https://api.tmdb.org/3/movie/now_playing?api_key=${apiKey}&language=zh-CN&page=1`;
+        // 获取中国地区正在上映的电影
+        const chinaUrl = `https://api.tmdb.org/3/movie/now_playing?api_key=${apiKey}&language=zh-CN&region=CN&page=1`;
+        
+        // 并行获取全球和中国地区的热映电影
+        return Promise.all([
+            fetch(globalUrl).then(response => response.json()),
+            fetch(chinaUrl).then(response => response.json())
+        ])
+        .then(([globalData, chinaData]) => {
+            // 分别从国内和全球电影中随机选择10部
+            const seenIds = new Set();
+            const combinedResults = [];
+            
+            // 从中国电影中随机选择10部（如果不足10部则选择所有）
+            const chinaMovies = chinaData.results
+                .filter(movie => movie.poster_path) // 确保有海报
+                .sort(() => 0.5 - Math.random()) // 随机排序
+                .slice(0, 10); // 取前10部
+            
+            // 添加中国电影并记录ID
+            chinaMovies.forEach(movie => {
+                if (!seenIds.has(movie.id)) {
+                    seenIds.add(movie.id);
+                    combinedResults.push(movie);
+                }
             });
+            
+            // 从全球电影中随机选择10部（如果不足10部则选择所有）
+            // 需要排除已经添加的中国电影
+            const globalMovies = globalData.results
+                .filter(movie => movie.poster_path && !seenIds.has(movie.id)) // 有海报且未重复
+                .sort(() => 0.5 - Math.random()) // 随机排序
+                .slice(0, 10); // 取前10部
+            
+            // 添加全球电影
+            globalMovies.forEach(movie => {
+                if (!seenIds.has(movie.id)) {
+                    seenIds.add(movie.id);
+                    combinedResults.push(movie);
+                }
+            });
+            
+            // 如果总数不足20部，从全球电影中补充
+            if (combinedResults.length < 20) {
+                const additionalMovies = globalData.results
+                    .filter(movie => movie.poster_path && !seenIds.has(movie.id)) // 有海报且未重复
+                    .sort(() => 0.5 - Math.random()) // 随机排序
+                    .slice(0, 20 - combinedResults.length); // 补足到20部
+                
+                additionalMovies.forEach(movie => {
+                    combinedResults.push(movie);
+                });
+            }
+            
+            // 最终随机排序，避免国内和国际影片扎堆出现
+            const shuffledResults = combinedResults
+                .map(item => ({ item, sort: Math.random() }))
+                .sort((a, b) => a.sort - b.sort)
+                .map(({ item }) => item);
+            
+            console.log('影院热映推荐数据（国内外综合）:', shuffledResults);
+            displayRecommendations(shuffledResults, 'now-playing-list');
+            return shuffledResults;
+        })
+        .catch(error => {
+            console.error('获取影院热映推荐时出错:', error);
+            // 出错时回退到原始方法
+            return fetch(`https://api.tmdb.org/3/movie/now_playing?api_key=${apiKey}&language=zh-CN`)
+                .then(response => response.json())
+                .then(data => {
+                    console.log('影院热映推荐数据（回退方案）:', data.results);
+                    const filteredResults = data.results.filter(movie => 
+                        movie.poster_path && movie.vote_average > 0
+                    ).slice(0, 20);
+                    // 随机排序回退结果
+                    const shuffledResults = filteredResults
+                        .map(item => ({ item, sort: Math.random() }))
+                        .sort((a, b) => a.sort - b.sort)
+                        .map(({ item }) => item);
+                    displayRecommendations(shuffledResults, 'now-playing-list');
+                    return shuffledResults;
+                })
+                .catch(fallbackError => {
+                    console.error('获取影院热映推荐回退方案也失败:', fallbackError);
+                    return [];
+                });
+        });
     }
 
     // 使用API Key获取热门剧集推荐
@@ -684,6 +792,114 @@
             });
     }
 
+    // 获取国内最新电影
+    function fetchChinaMovies(apiKey) {
+        // 使用 Discover API 并设置地区为中国 (CN)
+        // 添加更多筛选条件：
+        // 1. 限定发布日期范围为最近1年
+        // 2. 要求有评分和投票数
+        // 3. 限定语言为中文或英语（避免纯地区筛选问题）
+        const endDate = new Date().toISOString().split('T')[0];
+        const startDate = new Date();
+        startDate.setFullYear(startDate.getFullYear() - 1);
+        const startDateStr = startDate.toISOString().split('T')[0];
+        
+        const url = `https://api.tmdb.org/3/discover/movie?api_key=${apiKey}&language=zh-CN&sort_by=release_date.desc&primary_release_date.gte=${startDateStr}&primary_release_date.lte=${endDate}&with_origin_country=CN&vote_count.gte=10`;
+        
+        return fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                console.log('国内最新电影数据:', data.results);
+                // 过滤掉没有海报或评分过低的电影
+                const filteredResults = data.results.filter(movie => 
+                    movie.poster_path && 
+                    movie.vote_average > 0 && 
+                    movie.vote_count > 0 &&
+                    movie.release_date &&
+                    movie.release_date <= endDate
+                ).slice(0, 20); // 只取前20个结果
+                displayRecommendations(filteredResults, 'china-movies-list');
+                return filteredResults;
+            })
+            .catch(error => {
+                console.error('获取国内最新电影时出错:', error);
+                return [];
+            });
+    }
+
+    // 获取中国国内最新剧集（包括正在播出和完结的剧集）
+    function fetchChinaTVShows(apiKey) {
+        // 使用 Discover API 并设置更多筛选条件
+        const endDate = new Date().toISOString().split('T')[0];
+        const startDate = new Date();
+        startDate.setMonth(startDate.getMonth() - 6);
+        const startDateStr = startDate.toISOString().split('T')[0];
+        
+        // 添加更多筛选条件：
+        // 1. 限定首播日期范围为最近3个月
+        // 2. 要求有评分和投票数
+        // 3. 限定原始语言为中文
+        // 4. 可以添加 with_origin_country=CN 或使用 region=CN
+        const url = `https://api.tmdb.org/3/discover/tv?api_key=${apiKey}&language=zh-CN&sort_by=first_air_date.desc&first_air_date.gte=${startDateStr}&first_air_date.lte=${endDate}&with_original_language=zh&vote_count.gte=1&vote_average=4&page=1`;
+        
+        return fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                console.log('国内最新剧集数据:', data.results);
+                // 过滤掉没有海报或评分过低的剧集
+                const filteredResults = data.results.filter(show => 
+                    show.poster_path && 
+                    show.vote_average > 0 && 
+                    show.vote_count > 0 &&
+                    show.first_air_date &&
+                    show.first_air_date <= endDate
+                ).slice(0, 20); // 只取前20个结果
+                displayRecommendations(filteredResults, 'china-tv-shows-list');
+                return filteredResults;
+            })
+            .catch(error => {
+                console.error('获取国内最新剧集时出错:', error);
+                return [];
+            });
+    }
+
+    // 获取高分推荐 (电影和电视剧综合)
+    function fetchTopRated(apiKey) {
+        // 先获取高分电影
+        const movieUrl = `https://api.tmdb.org/3/movie/top_rated?api_key=${apiKey}&language=zh-CN`;
+        
+        return fetch(movieUrl)
+            .then(response => response.json())
+            .then(data => {
+                // 从高分电影中随机取10个
+                const shuffledMovies = data.results.sort(() => 0.5 - Math.random());
+                const topMovies = shuffledMovies.slice(0, 10);
+                
+                // 再获取高分电视剧
+                const tvUrl = `https://api.tmdb.org/3/tv/top_rated?api_key=${apiKey}&language=zh-CN`;
+                return fetch(tvUrl)
+                    .then(response => response.json())
+                    .then(tvData => {
+                        // 从高分电视剧中随机取10个
+                        const shuffledTVShows = tvData.results.sort(() => 0.5 - Math.random());
+                        const topTVShows = shuffledTVShows.slice(0, 10);
+                        
+                        // 合并电影和电视剧并随机排序
+                        const allTopRated = [...topMovies, ...topTVShows]
+                            .sort(() => 0.5 - Math.random()) // 随机排序
+                            .slice(0, 20); // 取前20个
+                        
+                        console.log('高分推荐数据:', allTopRated);
+                        displayRecommendations(allTopRated, 'top-rated-list');
+                        return allTopRated;
+                    });
+            })
+            .catch(error => {
+                console.error('获取高分推荐时出错:', error);
+                return [];
+            });
+    }
+
     // 显示推荐资源
     function displayRecommendations(recommendations, listId) {
         const listElement = document.getElementById(listId);
@@ -694,7 +910,7 @@
                 const listItem = document.createElement('div');
                 listItem.className = listId.includes('tv') ? 'tv-item' : 'movie-item';
 
-                // 海报图片，优先显示默认图片，加载成功后再显示 TMDB 图片
+                // 海报图片，优先显示默认图片，加载成功后再显示 TMDB 图
                 const posterElement = document.createElement('img');
                 posterElement.src = '/static/img/no-image.png';
                 if (item.poster_path) {
@@ -711,8 +927,10 @@
                 posterElement.alt = item.title || item.name || '无标题';
 
                 // 添加点击事件，显示模态框
+                // 修复：正确识别媒体类型，电影使用movie，电视剧使用tv
+                const mediaType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
                 posterElement.addEventListener('click', () => {
-                    showMovieDetails(item.id, item.media_type || (listId.includes('tv') ? 'tv' : 'movie'));
+                    showMovieDetails(item.id, mediaType);
                 });
 
                 // 评分
@@ -762,26 +980,33 @@
     }
 
     // Banner推荐区，优先显示默认banner，加载成功后再显示TMDB图片
-    function populateBanner(trendingMovies, nowPlayingMovies, trendingTVShows) {
+    function populateBanner(trendingMovies, nowPlayingMovies, trendingTVShows, chinaMovies, chinaTVShows, topRated) {
         const bannerListElement = document.querySelector('.banner-list');
         const bannerElement = document.getElementById('banner');
         bannerListElement.innerHTML = ''; // 清空原有内容
 
-        // 从每个分类中选择两个 popularity 指数最高的推荐项
-        const selectedMovies = trendingMovies
-            .sort((a, b) => b.popularity - a.popularity)
-            .slice(0, 2);
+        // 从每个分类中随机选择两个推荐项
+        const getRandomItems = (array, count) => {
+            const shuffled = array.sort(() => 0.5 - Math.random());
+            return shuffled.slice(0, count);
+        };
 
-        const selectedNowPlaying = nowPlayingMovies
-            .sort((a, b) => b.popularity - a.popularity)
-            .slice(0, 2);
-
-        const selectedTVShows = trendingTVShows
-            .sort((a, b) => b.popularity - a.popularity)
-            .slice(0, 2);
+        const selectedTrendingMovies = getRandomItems(trendingMovies, 2);
+        const selectedNowPlaying = getRandomItems(nowPlayingMovies, 2);
+        const selectedTrendingTVShows = getRandomItems(trendingTVShows, 2);
+        const selectedChinaMovies = getRandomItems(chinaMovies, 2);
+        const selectedChinaTVShows = getRandomItems(chinaTVShows, 2);
+        const selectedTopRated = getRandomItems(topRated, 2);
 
         // 合并所有推荐项
-        const allRecommendations = [...selectedMovies, ...selectedNowPlaying, ...selectedTVShows];
+        const allRecommendations = [
+            ...selectedTrendingMovies, 
+            ...selectedNowPlaying, 
+            ...selectedTrendingTVShows,
+            ...selectedChinaMovies,
+            ...selectedChinaTVShows,
+            ...selectedTopRated
+        ];
 
         // 去重逻辑：使用 tmdbId 或 title 作为唯一标识
         const uniqueRecommendations = [];
@@ -795,8 +1020,31 @@
             }
         });
 
-        // 确保最终只有 6 个推荐项
-        const selectedRecommendations = uniqueRecommendations.slice(0, 6);
+        // 确保最终有12个推荐项（如果去重后不足12个，则从原数据中补充）
+        let selectedRecommendations = uniqueRecommendations.slice(0, 12);
+        
+        // 如果去重后不足12个，从所有分类中补充
+        if (selectedRecommendations.length < 12) {
+            const allItems = [
+                ...trendingMovies, 
+                ...nowPlayingMovies, 
+                ...trendingTVShows,
+                ...chinaMovies,
+                ...chinaTVShows,
+                ...topRated
+            ];
+            
+            // 补充不足的部分
+            for (let i = 0; i < allItems.length && selectedRecommendations.length < 12; i++) {
+                const item = allItems[i];
+                const uniqueKey = item.id || item.title;
+                if (!seenIds.has(uniqueKey)) {
+                    seenIds.add(uniqueKey);
+                    selectedRecommendations.push(item);
+                }
+            }
+        }
+
         console.log('选择的推荐项:', selectedRecommendations);
 
         let currentIndex = 0;
@@ -817,7 +1065,8 @@
         function showNextBannerItem() {
             const item = selectedRecommendations[currentIndex];
             if (item) {
-                const mediaType = item.media_type || 'movie'; // 默认类型为 movie
+                // 正确识别媒体类型
+                const mediaType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
                 fetchMovieDetails(item.id, mediaType, tmdbApiKey).then(movieDetails => {
                     if (movieDetails) {
                         const bannerItem = document.createElement('div');
@@ -933,11 +1182,14 @@
             Promise.all([
                 fetchTrendingMovies(tmdbApiKey),
                 fetchNowPlayingMovies(tmdbApiKey),
-                fetchTrendingTVShows(tmdbApiKey)
+                fetchTrendingTVShows(tmdbApiKey),
+                fetchChinaMovies(tmdbApiKey),
+                fetchChinaTVShows(tmdbApiKey),
+                fetchTopRated(tmdbApiKey)
             ]).then(results => {
-                const [trendingMovies, nowPlayingMovies, trendingTVShows] = results;
-                // 正确传递三个分类的数据
-                populateBanner(trendingMovies, nowPlayingMovies, trendingTVShows);
+                const [trendingMovies, nowPlayingMovies, trendingTVShows, chinaMovies, chinaTVShows, topRated] = results;
+                // 正确传递所有分类的数据
+                populateBanner(trendingMovies, nowPlayingMovies, trendingTVShows, chinaMovies, chinaTVShows, topRated);
                 hideLoading(); // 隐藏加载动画
             }).catch(error => {
                 console.error('获取推荐内容时出错:', error);
