@@ -104,6 +104,8 @@
                                         <select class="form-select" name="{{ key }}" id="{{ key }}">
                                             <option value="move" {% if field.value == 'move' %}selected{% endif %}>移动</option>
                                             <option value="copy" {% if field.value == 'copy' %}selected{% endif %}>复制</option>
+                                            <option value="softlink" {% if field.value == 'softlink' %}selected{% endif %}>软链接</option>
+                                            <option value="hardlink" {% if field.value == 'hardlink' %}selected{% endif %}>硬链接</option>
                                         </select>
                                     {% elif field.type == 'downloader' %}
                                         <select class="form-select" name="{{ key }}" id="{{ key }}">
@@ -128,7 +130,7 @@
                                         </div>
                                         {% if ',' in field.value %}
                                         <div class="form-text">
-                                            <i class="bi bi-info-circle me-1"></i> 多个值可以用逗号分隔
+                                            <i class="bi bi-info-circle me-1"></i> 多个值可以用,逗号分隔
                                         </div>
                                         {% endif %}
                                     {% endif %}
@@ -169,6 +171,10 @@
                                     {% elif key == 'douban_cookie' %}
                                     <div class="form-text">
                                         <i class="bi bi-info-circle me-1"></i> 豆瓣cookie非必要选项，保持系统默认即可。
+                                    </div>
+                                    {% elif key == 'douban_user_ids' %}
+                                    <div class="form-text text-danger">
+                                        <i class="bi bi-exclamation-triangle me-1"></i> 必填项：豆瓣账号ID，用于获取豆瓣想看数据并添加订阅。<a target="_blank" href="http://wiki.songmy.top:8080/web/#/686311457/102215711">使用帮助</a>
                                     </div>
                                     {% elif key == 'douban_rss_url' %}
                                     <div class="form-text text-danger">

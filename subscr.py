@@ -41,7 +41,7 @@ class DouBanRSSParser:
     def __init__(self):
         self.load_config()
         self.cookie = self.config.get("douban_cookie", "")
-        self.rss_url = self.config.get("douban_rss_url", "")
+        self.douban_user_ids = self.config.get("douban_user_ids", "your_douban_id")  # 修改为读取用户ID列表
         self.db_path = '/config/data.db'
         self.pcheaders = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36 Edg/105.0.1343.27",
@@ -73,45 +73,65 @@ class DouBanRSSParser:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
         }
-        try:
-            response = requests.get(self.rss_url, headers=headers, timeout=10)
-            if response.status_code == 200:
-                logging.info("成功获取豆瓣想看数据")
-                return response.text
-            else:
-                logging.error(f"获取豆瓣想看数据失败，状态码: {response.status_code}")
-                return None
-        except requests.RequestException as e:
-            logging.error(f"请求豆瓣想看数据时发生错误: {e}")
-            return None
+        
+        # 解析多个用户ID
+        user_ids = [uid.strip() for uid in self.douban_user_ids.split(',') if uid.strip() and uid.strip() != "your_douban_id"]
+        all_rss_data = []
+        
+        for user_id in user_ids:
+            rss_url = f"https://www.douban.com/feed/people/{user_id}/interests"
+            try:
+                response = requests.get(rss_url, headers=headers, timeout=10)
+                if response.status_code == 200:
+                    logging.info(f"成功获取豆瓣用户 {user_id} 的想看数据")
+                    all_rss_data.append(response.text)
+                else:
+                    logging.error(f"获取豆瓣用户 {user_id} 的想看数据失败，状态码: {response.status_code}")
+            except requests.RequestException as e:
+                logging.error(f"请求豆瓣用户 {user_id} 的想看数据时发生错误: {e}")
+        
+        return all_rss_data
 
-    def parse_rss_data(self, rss_data):
-        if not rss_data:
-            return []
+    def parse_rss_data(self, rss_data_list):
+        # 如果传入的是单个字符串而非列表，则转换为列表
+        if isinstance(rss_data_list, str):
+            rss_data_list = [rss_data_list]
+            
+        all_parsed_items = []
+        seen_douban_ids = set()  # 用于跟踪已处理的豆瓣ID
+        
+        for rss_data in rss_data_list:
+            if not rss_data:
+                continue
 
-        try:
-            root = ET.fromstring(rss_data)
-            items = root.findall('.//item')
-            parsed_items = []
-            for item in items:
-                title = item.find('title').text
-                link = item.find('link').text
-                
-                # 提取豆瓣ID
-                parsed_url = urlparse(link)
-                path_segments = parsed_url.path.split('/')
-                douban_id = path_segments[-2] if path_segments[-1] == '' else path_segments[-1]
-                douban_id = int(douban_id)  # 将豆瓣ID转换为int类型
+            try:
+                root = ET.fromstring(rss_data)
+                items = root.findall('.//item')
+                for item in items:
+                    title = item.find('title').text
+                    link = item.find('link').text
+                    
+                    # 提取豆瓣ID
+                    parsed_url = urlparse(link)
+                    path_segments = parsed_url.path.split('/')
+                    douban_id = path_segments[-2] if path_segments[-1] == '' else path_segments[-1]
+                    douban_id = int(douban_id)  # 将豆瓣ID转换为int类型
 
-                # 移除标题开头的“想看”（如果有的话）
-                title = title.replace('想看', '', 1) if title.startswith('想看') else title
+                    # 移除标题开头的"想看"（如果有的话）
+                    title = title.replace('想看', '', 1) if title.startswith('想看') else title
 
-                parsed_items.append((title, douban_id))
-            logging.info("成功解析豆瓣想看数据")
-            return parsed_items
-        except ET.ParseError as e:
-            logging.error(f"解析豆瓣想看数据时发生错误: {e}")
-            return []
+                    # 检查是否已经处理过这个豆瓣ID，避免重复
+                    if douban_id not in seen_douban_ids:
+                        seen_douban_ids.add(douban_id)
+                        all_parsed_items.append((title, douban_id))
+                    else:
+                        logging.info(f"多用户重复想看: {title}（豆瓣ID: {douban_id}）将忽略并保留一份有效订阅")
+                        
+                logging.info("成功解析豆瓣想看数据")
+            except ET.ParseError as e:
+                logging.error(f"解析豆瓣想看数据时发生错误: {e}")
+        
+        return all_parsed_items
 
     def fetch_existing_douban_ids(self):
         cursor = self.db_connection.cursor()
@@ -157,7 +177,7 @@ class DouBanRSSParser:
                                     season = int(season_str)
                                 else:
                                     season = chinese_to_int(season_str)
-                                # 去除标题中的“第X季”
+                                # 去除标题中的"第X季"
                                 title = re.sub(r'第\d+季|第零季|第一季|第二季|第三季|第四季|第五季|第六季|第七季|第八季|第九季|第十季|第十一季|第十二季|第十三季|第十四季|第十五季|第十六季|第十七季|第十八季|第十九季|第二十季|第二十一季|第二十二季|第二十三季|第二十四季|第二十五季|第二十六季|第二十七季|第二十八季|第二十九季|第三十季', '', title)
                             else:
                                 season = 1
@@ -354,9 +374,9 @@ class DouBanRSSParser:
             logging.error(f"处理{media_type} '{local_title}' 时发生未知错误: {e}")
 
     def run(self):
-        rss_data = self.fetch_rss_data()
-        if rss_data:
-            items = self.parse_rss_data(rss_data)
+        rss_data_list = self.fetch_rss_data()  # 获取所有用户的RSS数据
+        if rss_data_list:
+            items = self.parse_rss_data(rss_data_list)  # 解析所有数据
             if items:
                 # 获取数据库中已存在的豆瓣ID
                 existing_douban_ids = self.fetch_existing_douban_ids()

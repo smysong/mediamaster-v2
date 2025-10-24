@@ -915,6 +915,12 @@ def move_or_copy_file(src, dst, action, media_type):
         elif action == 'copy':
             shutil.copy2(src, dst)
             logging.info(f"文件已复制: {src} -> {dst}")
+        elif action == 'softlink':
+            os.symlink(src, dst)
+            logging.info(f"已创建软链接: {src} -> {dst}")
+        elif action == 'hardlink':
+            os.link(src, dst)
+            logging.info(f"已创建硬链接: {src} -> {dst}")
         else:
             logging.error(f"未知操作: {action}")
     except Exception as e:
@@ -1058,7 +1064,13 @@ def process_file(file_path, processed_filenames):
                     if action == 'copy':
                         shutil.copy2(file_path, dst_file_path)
                         logging.info(f"已将无法识别的文件复制到未识别目录: {dst_file_path}")
-                    else:
+                    elif action == 'softlink':
+                        os.symlink(file_path, dst_file_path)
+                        logging.info(f"已将无法识别的文件创建软链接到未识别目录: {dst_file_path}")
+                    elif action == 'hardlink':
+                        os.link(file_path, dst_file_path)
+                        logging.info(f"已将无法识别的文件创建硬链接到未识别目录: {dst_file_path}")
+                    else:  # move
                         shutil.move(file_path, dst_file_path)
                         logging.info(f"已将无法识别的文件移动到未识别目录: {dst_file_path}")
                     processed_filenames.add(filename)
@@ -1094,7 +1106,13 @@ def process_file(file_path, processed_filenames):
                         if action == 'copy':
                             shutil.copy2(file_path, dst_file_path)
                             logging.info(f"已将无法识别的文件复制到未识别目录: {dst_file_path}")
-                        else:
+                        elif action == 'softlink':
+                            os.symlink(file_path, dst_file_path)
+                            logging.info(f"已将无法识别的文件创建软链接到未识别目录: {dst_file_path}")
+                        elif action == 'hardlink':
+                            os.link(file_path, dst_file_path)
+                            logging.info(f"已将无法识别的文件创建硬链接到未识别目录: {dst_file_path}")
+                        else:  # move
                             shutil.move(file_path, dst_file_path)
                             logging.info(f"已将无法识别的文件移动到未识别目录: {dst_file_path}")
                         processed_filenames.add(filename)
@@ -1210,7 +1228,13 @@ def process_file(file_path, processed_filenames):
                             if action == 'copy':
                                 shutil.copy2(file_path, dst_file_path)
                                 logging.info(f"已将无法识别的文件复制到未识别目录: {dst_file_path}")
-                            else:
+                            elif action == 'softlink':
+                                os.symlink(file_path, dst_file_path)
+                                logging.info(f"已将无法识别的文件创建软链接到未识别目录: {dst_file_path}")
+                            elif action == 'hardlink':
+                                os.link(file_path, dst_file_path)
+                                logging.info(f"已将无法识别的文件创建硬链接到未识别目录: {dst_file_path}")
+                            else:  # move
                                 shutil.move(file_path, dst_file_path)
                                 logging.info(f"已将无法识别的文件移动到未识别目录: {dst_file_path}")
                             processed_filenames.add(filename)

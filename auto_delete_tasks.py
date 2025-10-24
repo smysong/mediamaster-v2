@@ -41,6 +41,9 @@ download_port = int(config.get('download_port', 9091))
 download_username = config.get('download_username', '')
 download_password = config.get('download_password', '')
 
+# 获取文件转移方式配置
+transfer_type = config.get('download_action', '')
+
 # Torrent目录路径
 TORRENT_DIR = '/Torrent'
 
@@ -177,6 +180,11 @@ def check_and_delete_torrent_files():
 # 主流程
 if download_mgmt:
     logging.info("下载管理功能已启用，开始执行主流程")
+    
+    # 检查转移方式，如果是软链接或硬链接，则不执行自动删除
+    if transfer_type in ['softlink', 'hardlink']:
+        logging.info(f"当前文件转移方式为 {transfer_type}，保留源文件，跳过自动删除任务")
+        exit(0)
     
     if download_type == 'xunlei':
         logging.info("当前下载器为：迅雷。无需执行自动删除已完成任务，程序退出。")

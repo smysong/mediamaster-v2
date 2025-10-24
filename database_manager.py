@@ -2,6 +2,7 @@ import os
 import sqlite3
 import logging
 import bcrypt
+import re
 
 # 配置日志
 logging.basicConfig(
@@ -199,11 +200,11 @@ def create_tables():
         ("episodes_path", "/Media/Episodes"),
         ("unknown_path", "/Media/Unknown"),
         ("download_dir", "/Downloads"),
-        ("download_action", "copy"),
+        ("download_action", "move"),  # 修改默认值为move
         ("download_excluded_filenames", "【更多"),
         ("douban_api_key", "0ac44ae016490db2204ce0a042db2916"),
         ("douban_cookie", "your_douban_cookie_here"),
-        ("douban_rss_url", "https://www.douban.com/feed/people/your_douban_id/interests"),
+        ("douban_user_ids", "your_douban_id"),  # 修改为新的配置项
         ("tmdb_base_url", "https://api.tmdb.org"),
         ("tmdb_api_key", "d3485673d99d293743c74df52fd70e28"),
         ("ocr_api_key", "your_ocr_api_key"),
@@ -213,6 +214,7 @@ def create_tables():
         ("download_password", "password"),
         ("download_host", "127.0.0.1"),
         ("download_port", "9091"),
+        ("delete_with_files", "False"),
         ("xunlei_device_name", "设备名称"),
         ("xunlei_dir", "下载目录"),
         ("bt_login_username", "username"),
@@ -227,7 +229,7 @@ def create_tables():
         ("resources_prefer_keywords", "60帧,高码版"),
         ("bt_movie_base_url", "https://10001.baidubaidu.win"),
         ("bt_tv_base_url", "https://10002.baidubaidu.win"),
-        ("bt0_base_url", "https://web.mukaku.com"),
+        ("bt0_base_url", "https://web2.mukaku.com"),
         ("btys_base_url", "https://www.btbtla.com"),
         ("gy_base_url", "https://www.gyg.si"),
         ("bthd_enabled", "False"),
@@ -328,6 +330,65 @@ def migrate_miss_tvs_table():
     conn.commit()
     conn.close()
 
+def migrate_douban_config():
+    """
+    迁移豆瓣配置项，从 douban_rss_url 迁移到 douban_user_ids
+    """
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # 检查是否存在旧的 douban_rss_url 配置项
+    cursor.execute("SELECT VALUE FROM CONFIG WHERE OPTION = 'douban_rss_url'")
+    row = cursor.fetchone()
+    
+    if row:
+        old_rss_url = row[0]
+        logging.info(f"检测到旧版豆瓣RSS URL配置: {old_rss_url}")
+        
+        # 从URL中提取用户ID
+        user_ids = extract_douban_user_ids(old_rss_url)
+        
+        # 更新或插入新的 douban_user_ids 配置项
+        cursor.execute("SELECT COUNT(*) FROM CONFIG WHERE OPTION = 'douban_user_ids'")
+        if cursor.fetchone()[0] > 0:
+            cursor.execute("UPDATE CONFIG SET VALUE = ? WHERE OPTION = 'douban_user_ids'", (user_ids,))
+        else:
+            cursor.execute("INSERT INTO CONFIG (OPTION, VALUE) VALUES (?, ?)", ("douban_user_ids", user_ids))
+        
+        # 删除旧的 douban_rss_url 配置项
+        cursor.execute("DELETE FROM CONFIG WHERE OPTION = 'douban_rss_url'")
+        logging.info(f"已迁移豆瓣配置项，用户ID: {user_ids}")
+    
+    conn.commit()
+    conn.close()
+
+def extract_douban_user_ids(rss_url):
+    """
+    从豆瓣RSS URL中提取用户ID，支持多个URL
+    """
+    if not rss_url:
+        return "your_douban_id"
+    
+    # 匹配豆瓣用户ID的正则表达式
+    pattern = r'people/(\d+)/interests'
+    user_ids = []
+    
+    # 如果是多个URL（用逗号分隔），分割处理
+    urls = rss_url.split(',')
+    for url in urls:
+        url = url.strip()
+        match = re.search(pattern, url)
+        if match:
+            user_id = match.group(1)
+            if user_id not in user_ids:
+                user_ids.append(user_id)
+    
+    # 如果没有找到任何用户ID，返回默认值
+    if not user_ids:
+        return "your_douban_id"
+    
+    return ",".join(user_ids)
+
 def check_and_update_tables():
     """
     检查表是否存在，如果不存在则创建。
@@ -350,6 +411,9 @@ def check_and_update_tables():
 
     # 检查并迁移 MISS_TVS 表以确保兼容性
     migrate_miss_tvs_table()
+    
+    # 迁移豆瓣配置项
+    migrate_douban_config()
 
     conn.close()
 
@@ -360,7 +424,7 @@ def ensure_all_configs_exist():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    # 默认配置项
+    # 默认配置项 (移除了 douban_rss_url，添加了 douban_user_ids)
     default_configs = [
         ("notification", "False"),
         ("notification_api_key", "your_api_key"),
@@ -375,11 +439,11 @@ def ensure_all_configs_exist():
         ("episodes_path", "/Media/Episodes"),
         ("unknown_path", "/Media/Unknown"),
         ("download_dir", "/Downloads"),
-        ("download_action", "copy"),
+        ("download_action", "move"),  # 修改默认值为move
         ("download_excluded_filenames", "【更多"),
         ("douban_api_key", "0ac44ae016490db2204ce0a042db2916"),
         ("douban_cookie", "your_douban_cookie_here"),
-        ("douban_rss_url", "https://www.douban.com/feed/people/your_douban_id/interests"),
+        ("douban_user_ids", "your_douban_id"),  # 新的配置项
         ("tmdb_base_url", "https://api.tmdb.org"),
         ("tmdb_api_key", "d3485673d99d293743c74df52fd70e28"),
         ("ocr_api_key", "your_ocr_api_key"),
@@ -389,6 +453,7 @@ def ensure_all_configs_exist():
         ("download_password", "password"),
         ("download_host", "127.0.0.1"),
         ("download_port", "9091"),
+        ("delete_with_files", "False"),
         ("xunlei_device_name", "设备名称"),
         ("xunlei_dir", "下载目录"),
         ("bt_login_username", "username"),
@@ -403,7 +468,7 @@ def ensure_all_configs_exist():
         ("resources_prefer_keywords", "60帧,高码版"),
         ("bt_movie_base_url", "https://10001.baidubaidu.win"),
         ("bt_tv_base_url", "https://10002.baidubaidu.win"),
-        ("bt0_base_url", "https://web.mukaku.com"),
+        ("bt0_base_url", "https://web2.mukaku.com"),
         ("btys_base_url", "https://www.btbtla.com"),
         ("gy_base_url", "https://www.gyg.si"),
         ("bthd_enabled", "False"),
@@ -442,11 +507,11 @@ def check_config_data():
         "episodes_path": "/Media/Episodes",
         "unknown_path": "/Media/Unknown",
         "download_dir": "/Downloads",
-        "download_action": "copy",
+        "download_action": "move",  # 修改默认值为move
         "download_excluded_filenames": "【更多",
         "douban_api_key": "0ac44ae016490db2204ce0a042db2916",
         "douban_cookie": "your_douban_cookie_here",
-        "douban_rss_url": "https://www.douban.com/feed/people/your_douban_id/interests",
+        "douban_user_ids": "your_douban_id",  # 更新为新的配置项
         "tmdb_base_url": "https://api.tmdb.org",
         "tmdb_api_key": "d3485673d99d293743c74df52fd70e28",
         "ocr_api_key": "your_ocr_api_key",
@@ -459,6 +524,7 @@ def check_config_data():
         "download_password": "password",
         "download_host": "127.0.0.1",
         "download_port": "9091",
+        "delete_with_files": "False",
         "xunlei_device_name": "设备名称",
         "xunlei_dir": "下载目录",
         "bt_login_username": "username",
@@ -473,7 +539,7 @@ def check_config_data():
         "resources_prefer_keywords": "60帧,高码版",
         "bt_movie_base_url": "https://10001.baidubaidu.win",
         "bt_tv_base_url": "https://10002.baidubaidu.win",
-        "bt0_base_url": "https://web.mukaku.com",
+        "bt0_base_url": "https://web2.mukaku.com",
         "btys_base_url": "https://www.btbtla.com",
         "gy_base_url": "https://www.gyg.si",
         "bthd_enabled": "False",

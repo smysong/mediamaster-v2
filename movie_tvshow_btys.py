@@ -259,7 +259,8 @@ class MediaIndexer:
                                 }
                                 preferred_resolution = self.config.get('preferred_resolution', "未知分辨率")
                                 fallback_resolution = self.config.get('fallback_resolution', "未知分辨率")
-                                exclude_keywords = self.config.get("resources_exclude_keywords", "").split(',')
+                                exclude_keywords_str = self.config.get("resources_exclude_keywords", "")
+                                exclude_keywords = [kw.strip() for kw in exclude_keywords_str.split(',') if kw.strip()] if exclude_keywords_str else []
 
                                 # 获取所有分辨率tab，排除“网盘”
                                 tab_items = self.driver.find_elements(By.CSS_SELECTOR, ".module-tab-item.downtab-item")
@@ -463,7 +464,8 @@ class MediaIndexer:
                                 }
                                 preferred_resolution = self.config.get('preferred_resolution', "未知分辨率")
                                 fallback_resolution = self.config.get('fallback_resolution', "未知分辨率")
-                                exclude_keywords = self.config.get("resources_exclude_keywords", "").split(',')
+                                exclude_keywords_str = self.config.get("resources_exclude_keywords", "")
+                                exclude_keywords = [kw.strip() for kw in exclude_keywords_str.split(',') if kw.strip()] if exclude_keywords_str else []
 
                                 # 获取所有分辨率tab，排除"网盘"
                                 tab_items = self.driver.find_elements(By.CSS_SELECTOR, ".module-tab-item.downtab-item")

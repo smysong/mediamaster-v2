@@ -1561,12 +1561,12 @@ def api_search_media():
 
     return Response(stream_with_context(generate()), mimetype='text/plain')
 
-# 下载进度API
+# 资源下载进度API
 @app.route('/api/download_progress/<task_id>')
 @login_required
 def download_progress(task_id):
     """
-    获取指定任务的下载进度信息
+    获取指定资源下载任务的下载进度信息
     """
     global download_progress_messages
     try:
@@ -1702,7 +1702,7 @@ GROUP_MAPPING = {
     },
     "资源下载设置": {
         "download_dir": {"type": "text", "label": "下载目录"},
-        "download_action": {"type": "select", "label": "下载文件转移方式", "options": ["移动", "复制"]},
+        "download_action": {"type": "select", "label": "下载文件转移方式", "options": ["移动", "复制", "软链接", "硬链接"]},
         "download_excluded_filenames": {"type": "text", "label": "下载转移排除的文件名"},
         "preferred_resolution": {"type": "text", "label": "资源下载首选分辨率"},
         "fallback_resolution": {"type": "text", "label": "资源下载备选分辨率"},
@@ -1712,6 +1712,7 @@ GROUP_MAPPING = {
     "豆瓣设置": {
         "douban_api_key": {"type": "password", "label": "豆瓣API密钥"},
         "douban_cookie": {"type": "text", "label": "豆瓣COOKIE"},
+        "douban_user_ids": {"type": "text", "label": "豆瓣订阅用户ID"},
         "douban_rss_url": {"type": "text", "label": "豆瓣订阅地址"}
     },
     "TMDB接口": {
@@ -1964,6 +1965,16 @@ def download_mgmt_page():
     # 获取 download_type 配置
     download_type_config = db.execute('SELECT VALUE FROM CONFIG WHERE OPTION = ?', ('download_type',)).fetchone()
     download_type = download_type_config['VALUE'] if download_type_config else None
+    
+    # 获取 delete_with_files 配置
+    delete_with_files_config = db.execute('SELECT VALUE FROM CONFIG WHERE OPTION = ?', ('delete_with_files',)).fetchone()
+    if not delete_with_files_config:
+        # 如果配置项不存在，创建默认配置
+        db.execute('INSERT INTO CONFIG (OPTION, VALUE) VALUES (?, ?)', ('delete_with_files', 'False'))
+        db.commit()
+        delete_with_files = False
+    else:
+        delete_with_files = delete_with_files_config['VALUE'] == 'True'
 
     # 从会话中获取用户昵称和头像
     nickname = session.get('nickname')
@@ -1976,7 +1987,7 @@ def download_mgmt_page():
         template_name = 'download_mgmt.html'
 
     # 将信息传递给模板
-    return render_template(template_name, nickname=nickname, avatar_url=avatar_url, download_mgmt=download_mgmt_config, version=APP_VERSION)
+    return render_template(template_name, nickname=nickname, avatar_url=avatar_url, download_mgmt=download_mgmt_config, delete_with_files=delete_with_files, version=APP_VERSION)
 
 
 # 获取下载器客户端
@@ -2090,7 +2101,7 @@ def add_torrent():
         logger.error(f"添加任务失败: {e}")
         return jsonify({"error": str(e)}), 500
 
-# 批量操作（启动、暂停、删除）
+# 批量操作（启动、暂停、删除）的API
 @app.route('/api/download/<action>', methods=['POST'])
 @login_required
 def bulk_action(action):
@@ -2100,39 +2111,80 @@ def bulk_action(action):
 
         # 获取任务 ID 列表
         task_ids = data.get("ids", [])
+        logger.info(f"执行操作 {action}，任务ID列表: {task_ids}")
+        
         if not task_ids:
             return jsonify({"error": "任务 ID 列表为空"}), 400
 
-        # 根据下载器类型处理任务 ID
-        if isinstance(client, TransmissionClient):
-            # Transmission 使用整数 ID
-            task_ids = [int(task_id) for task_id in task_ids]
-        else:
-            # qBittorrent 使用 SHA-1 哈希值
-            task_ids = [str(task_id) for task_id in task_ids]
+        # 获取 delete_with_files 配置（仅在删除操作时使用）
+        delete_with_files = False
+        if action == "delete":
+            db = get_db()
+            delete_with_files_config = db.execute('SELECT VALUE FROM CONFIG WHERE OPTION = ?', ('delete_with_files',)).fetchone()
+            delete_with_files = delete_with_files_config and delete_with_files_config['VALUE'] == 'True'
+            logger.info(f"delete_with_files 配置: {delete_with_files}")
 
         # 执行批量操作
         if action == "start":
             if isinstance(client, TransmissionClient):
-                client.start_torrent(task_ids)
+                client.start_torrent([int(task_id) for task_id in task_ids])
             else:
-                client.torrents_resume(hashes=task_ids)
+                # 对于qBittorrent，逐个处理任务以确保所有任务都被正确处理
+                for task_id in task_ids:
+                    try:
+                        client.torrents_resume(hashes=task_id)
+                        logger.info(f"已启动任务: {task_id}")
+                    except Exception as e:
+                        logger.error(f"启动任务 {task_id} 失败: {e}")
         elif action == "pause":
             if isinstance(client, TransmissionClient):
-                client.stop_torrent(task_ids)
+                client.stop_torrent([int(task_id) for task_id in task_ids])
             else:
-                client.torrents_pause(hashes=task_ids)
+                # 对于qBittorrent，逐个处理任务
+                for task_id in task_ids:
+                    try:
+                        client.torrents_pause(hashes=task_id)
+                        logger.info(f"已暂停任务: {task_id}")
+                    except Exception as e:
+                        logger.error(f"暂停任务 {task_id} 失败: {e}")
         elif action == "delete":
             if isinstance(client, TransmissionClient):
-                client.remove_torrent(task_ids, delete_data=True)
+                client.remove_torrent([int(task_id) for task_id in task_ids], delete_data=delete_with_files)
             else:
-                client.torrents_delete(delete_files=True, hashes=task_ids)
+                # 对于qBittorrent，逐个处理任务
+                for task_id in task_ids:
+                    try:
+                        client.torrents_delete(delete_files=delete_with_files, hashes=task_id)
+                        logger.info(f"已删除任务: {task_id}")
+                    except Exception as e:
+                        logger.error(f"删除任务 {task_id} 失败: {e}")
         else:
             return jsonify({"error": "无效的操作"}), 400
 
+        logger.info(f"{action} 操作成功完成")
         return jsonify({"message": f"{action} 成功"})
     except Exception as e:
-        logger.error(f"批量操作失败: {e}")
+        logger.error(f"批量操作失败: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+# 用于切换 delete_with_files 设置
+@app.route('/api/download/toggle_delete_with_files', methods=['POST'])
+@login_required
+def toggle_delete_with_files():
+    try:
+        data = request.json
+        enabled = data.get("enabled", False)
+        
+        db = get_db()
+        # 更新配置
+        db.execute('UPDATE CONFIG SET VALUE = ? WHERE OPTION = ?', 
+                  ('True' if enabled else 'False', 'delete_with_files'))
+        db.commit()
+        
+        logger.info(f"删除任务时同时删除本地文件设置已更新为: {enabled}")
+        return jsonify({"message": "设置已更新"})
+    except Exception as e:
+        logger.error(f"更新设置失败: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/download/get-magnet-links', methods=['POST'])
@@ -2717,4 +2769,17 @@ if __name__ == '__main__':
     src_dir = '/config/avatars'
     dst_dir = '/app/static/uploads/avatars'
     create_soft_link(src_dir, dst_dir)
-    app.run(host='0.0.0.0', port=8888, debug=False)
+    
+    # 支持通过环境变量设置端口，默认为8888
+    port = 8888
+    try:
+        port_env = os.environ.get('PORT')
+        if port_env:
+            port = int(port_env)
+            logger.info(f"使用自定义端口: {port}")
+        else:
+            logger.info("使用默认端口: 8888")
+    except (ValueError, TypeError):
+        logger.warning(f"环境变量PORT值无效，使用默认端口: 8888")
+    
+    app.run(host='0.0.0.0', port=port, debug=False)

@@ -288,7 +288,8 @@ class MediaIndexer:
                             # 获取配置中的首选和备选分辨率
                             preferred_resolution = self.config.get('preferred_resolution', "未知分辨率")
                             fallback_resolution = self.config.get('fallback_resolution', "未知分辨率")
-                            exclude_keywords = self.config.get("resources_exclude_keywords", "").split(',')
+                            exclude_keywords_str = self.config.get("resources_exclude_keywords", "")
+                            exclude_keywords = [kw.strip() for kw in exclude_keywords_str.split(',') if kw.strip()] if exclude_keywords_str else []
 
                             # 处理所有分页
                             page = 1
@@ -514,7 +515,8 @@ class MediaIndexer:
                             # 获取配置中的首选和备选分辨率
                             preferred_resolution = self.config.get('preferred_resolution', "未知分辨率")
                             fallback_resolution = self.config.get('fallback_resolution', "未知分辨率")
-                            exclude_keywords = self.config.get("resources_exclude_keywords", "").split(',')
+                            exclude_keywords_str = self.config.get("resources_exclude_keywords", "")
+                            exclude_keywords = [kw.strip() for kw in exclude_keywords_str.split(',') if kw.strip()] if exclude_keywords_str else []
 
                             # 处理所有分页
                             page = 1
