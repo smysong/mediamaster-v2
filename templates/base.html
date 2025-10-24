@@ -897,7 +897,13 @@
                 </div>
                 <div class="modal-body">
                     <div id="version-info">
-                        <p>使用帮助：<a href="http://wiki.songmy.top:8080/" target="_blank" rel="noopener noreferrer" style="color: #007bff; text-decoration: none;">配置文档及问题反馈</a></p>
+                        <p>使用帮助：<a href="http://wiki.songmy.top:8080/" target="_blank" rel="noopener noreferrer" style="color: #007bff; text-decoration: none;">配置文档</a></p>
+                        <p id="wechat-container" style="position: relative; cursor: pointer;">
+                            微信公众号：MediaMaster
+                            <img id="wechat-qr" src="/static/img/wechat_qr.jpg" 
+                                style="display: none; position: absolute; top: -120px; left: 0; width: 120px; height: 120px; border: 1px solid #ccc; box-shadow: 0 4px 8px rgba(0,0,0,0.2); z-index: 1000;"
+                                alt="微信公众号二维码">
+                        </p>
                         <p>当前版本：<span id="current-version">{{ version }}</span></p>
                         <p>最新稳定版：<span id="latest-version">检查中...</span></p>
                         <p>预发布测试版：<span id="prerelease-version">检查中...</span></p>
@@ -1284,6 +1290,21 @@
             return false; // 忽略错误，返回未启动状态
         }
     }
+    // 微信公众号二维码显示
+    document.addEventListener('DOMContentLoaded', function () {
+        const wechatContainer = document.getElementById('wechat-container');
+        const wechatQR = document.getElementById('wechat-qr');
+        
+        if (wechatContainer && wechatQR) {
+            wechatContainer.addEventListener('mouseenter', function() {
+                wechatQR.style.display = 'block';
+            });
+            
+            wechatContainer.addEventListener('mouseleave', function() {
+                wechatQR.style.display = 'none';
+            });
+        }
+    });
 </script>
 </body>
 </html>
