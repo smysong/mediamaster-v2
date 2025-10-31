@@ -774,66 +774,21 @@ class MediaDownloader:
             WebDriverWait(self.driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "alert-info0")))
             logging.info("页面加载完成")
 
-            attachment_urls = []
-            max_retries = 5
-            retries = 0
+            # 检查是哪种形式：普通 torrent 形式还是 folder 形式
+            is_folder_form = False
+            try:
+                self.driver.find_element(By.CSS_SELECTOR, ".down321")
+                is_folder_form = True
+                logging.info("检测到 folder 形式页面")
+            except:
+                logging.info("检测到普通 torrent 形式页面")
 
-            while not attachment_urls and retries < max_retries:
-                WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".down123 li a"))
-                )
-                # 查找所有下载链接
-                links = self.driver.find_elements(By.CSS_SELECTOR, ".down123 li a")
-                
-                for link in links:
-                    link_text = link.text.strip()
-                    if "种子下载" in link_text:
-                        attachment_url = link.get_attribute('href')
-                        if attachment_url:
-                            attachment_urls.append(attachment_url)
-                            logging.info(f"找到种子下载链接: {attachment_url}")
-
-                if not attachment_urls:
-                    logging.warning(f"没有找到种子文件下载链接，重试中... ({retries + 1}/{max_retries})")
-                    time.sleep(2)
-                    retries += 1
-
-            if attachment_urls:
-                gy_base_url = self.config.get("gy_base_url", "")
-                for attachment_url in attachment_urls:
-                    # 如果是相对路径，需要拼接完整URL
-                    if attachment_url.startswith('/'):
-                        attachment_url = gy_base_url + attachment_url
-                    
-                    logging.info(f"找到种子文件下载链接: {attachment_url}")
-                    self.driver.get(attachment_url)
-                    logging.info("开始下载种子文件...")
-                    time.sleep(10)
-                    # 新增：重命名种子文件
-                    latest_torrent = get_latest_torrent_file()
-                    if latest_torrent:
-                        # 判断是否为手动模式（通过title参数与title_text相同来判断）
-                        if title and title == title_text:
-                            # 手动模式下只使用标题命名
-                            new_name = f"{title}.torrent"
-                        else:
-                            # 自动模式下使用完整命名
-                            if not resolution:
-                                resolution = "未知分辨率"
-                            if not year:
-                                year = ""
-                            if not title:
-                                title = title_text
-                            # 判断是否为电视剧命名
-                            if season and episode_range:
-                                new_name = f"{title} ({year})-S{season}-[{episode_range}]-{resolution}.torrent"
-                            else:
-                                new_name = f"{title} ({year})-{resolution}.torrent"
-                        rename_torrent_file(latest_torrent, new_name)
-                    else:
-                        raise Exception("未能找到下载的种子文件")
+            if is_folder_form:
+                # 处理 folder 形式
+                self._handle_gy_folder_form(title_text, year, season, episode_range, resolution)  # 传递 title_text
             else:
-                raise Exception("经过多次重试后仍未找到种子文件下载链接")
+                # 处理普通 torrent 形式，传递title参数用于命名
+                self._handle_gy_normal_form(title_text, year, season, episode_range, resolution)  # 传递 title_text
 
         except TimeoutException:
             logging.error("种子文件下载链接加载超时")
@@ -842,6 +797,129 @@ class MediaDownloader:
             logging.error(f"下载种子文件过程中出错: {e}")
             raise
 
+    def _handle_gy_folder_form(self, title_text, year, season, episode_range, resolution):
+        """处理观影网站的 folder 形式下载"""
+        gy_base_url = self.config.get("gy_base_url", "")
+        
+        # 获取所有子资源项
+        folder_items = WebDriverWait(self.driver, 10).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".down321 li"))
+        )
+        
+        logging.info(f"找到 {len(folder_items)} 个子资源项")
+        
+        # 预先收集所有子资源的信息，避免在循环中因页面跳转导致元素失效
+        items_info = []
+        for idx in range(len(folder_items)):
+            try:
+                # 重新获取所有子资源项以避免 stale element reference
+                folder_items = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".down321 li"))
+                )
+                item = folder_items[idx]
+                
+                # 提取资源标题
+                title_element = item.find_element(By.CSS_SELECTOR, "div:first-child")
+                folder_title = title_element.text.strip()
+                
+                # 查找包含"种子下载"文本的链接
+                seed_links = item.find_elements(By.CSS_SELECTOR, ".right span a")
+                attachment_url = None
+                
+                for link in seed_links:
+                    link_text = link.text.strip()
+                    if "种子下载" in link_text:
+                        attachment_url = link.get_attribute('href')
+                        break
+                
+                if attachment_url:
+                    # 如果是相对路径，需要拼接完整URL
+                    if attachment_url.startswith('/'):
+                        attachment_url = gy_base_url + attachment_url
+                    
+                    items_info.append({
+                        'title': folder_title,
+                        'url': attachment_url
+                    })
+                    logging.info(f"收集到种子文件下载链接: {attachment_url}")
+                else:
+                    logging.warning(f"未找到种子下载链接 for item {idx}")
+            except Exception as e:
+                logging.error(f"收集子资源信息时出错: {e}")
+                continue
+        
+        # 处理每个子资源的下载
+        for item_info in items_info:
+            try:
+                folder_title = item_info['title']
+                attachment_url = item_info['url']
+                
+                logging.info(f"开始下载种子文件: {folder_title}")
+                self.driver.get(attachment_url)
+                time.sleep(10)
+                
+                # 重命名种子文件
+                latest_torrent = get_latest_torrent_file()
+                if latest_torrent:
+                    new_name = f"{folder_title}.torrent"
+                    rename_torrent_file(latest_torrent, new_name)
+                else:
+                    logging.error(f"未能找到下载的种子文件: {folder_title}")
+            except Exception as e:
+                logging.error(f"处理子资源时出错: {e}")
+                continue
+
+    def _handle_gy_normal_form(self, title_text, year, season, episode_range, resolution):
+        """处理观影网站的普通 torrent 形式下载"""
+        attachment_urls = []
+        max_retries = 5
+        retries = 0
+
+        while not attachment_urls and retries < max_retries:
+            try:
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".down123 li a"))
+                )
+                # 查找所有下载链接
+                links = self.driver.find_elements(By.CSS_SELECTOR, ".down123 li a")
+                
+                for link in links:
+                    link_text = link.text.strip()
+                    # 精确查找包含"种子下载"文本的链接
+                    if "种子下载" in link_text:
+                        attachment_url = link.get_attribute('href')
+                        if attachment_url:
+                            attachment_urls.append(attachment_url)
+                            logging.info(f"找到种子下载链接: {attachment_url}")
+            except TimeoutException:
+                pass
+
+            if not attachment_urls:
+                logging.warning(f"没有找到种子文件下载链接，重试中... ({retries + 1}/{max_retries})")
+                time.sleep(2)
+                retries += 1
+
+        if attachment_urls:
+            gy_base_url = self.config.get("gy_base_url", "")
+            for attachment_url in attachment_urls:
+                # 如果是相对路径，需要拼接完整URL
+                if attachment_url.startswith('/'):
+                    attachment_url = gy_base_url + attachment_url
+                self.driver.get(attachment_url)
+                logging.info("开始下载种子文件...")
+                time.sleep(10)
+                # 新增：重命名种子文件
+                latest_torrent = get_latest_torrent_file()
+                if latest_torrent:
+                    # 判断是否为手动模式（通过title_text参数与传入的title_text相同来判断）
+                    # 在普通下载中，使用title_text作为文件名
+                    new_name = f"{title_text}.torrent"
+                    rename_torrent_file(latest_torrent, new_name)
+                else:
+                    raise Exception("未能找到下载的种子文件")
+        else:
+            raise Exception("经过多次重试后仍未找到种子文件下载链接")
+        
     def process_movie_downloads(self):
         """处理电影下载任务"""
         # 读取订阅的电影信息

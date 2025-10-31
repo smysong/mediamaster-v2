@@ -131,10 +131,25 @@ def login():
         if user is None:
             error = '用户名或密码错误'
             logger.warning(f"用户 {username} 登录失败: 用户不存在")
-        elif not bcrypt.checkpw(password.encode('utf-8'), user['PASSWORD'].encode('utf-8')):
-            error = '用户名或密码错误'
-            logger.warning(f"用户 {username} 登录失败: 密码错误")
         else:
+            # 检查并处理密码字段类型兼容性问题
+            stored_password = user['PASSWORD']
+            if isinstance(stored_password, str):
+                stored_password = stored_password.encode('utf-8')
+            elif not isinstance(stored_password, bytes):
+                error = '用户数据格式异常，请重置密码！'
+                logger.error(f"用户 {username} 登录失败: 用户数据格式异常，请重置密码！")
+            else:
+                # stored_password 已经是 bytes 类型
+                pass
+            
+            # 如果没有前面的错误，继续验证密码
+            if error is None:
+                if not bcrypt.checkpw(password.encode('utf-8'), stored_password):
+                    error = '用户名或密码错误'
+                    logger.warning(f"用户 {username} 登录失败: 密码错误")
+        
+        if error is None:
             # 登录成功
             session.clear()
             session['user_id'] = user['ID']

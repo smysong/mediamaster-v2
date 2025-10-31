@@ -729,9 +729,9 @@ class MediaIndexer:
 
                     for resource in resource_items:
                         try:
-                            # 提取资源标题
+                            # 提取资源标题，使用通用定位方法，使其能够同时处理 torrent 和 folder 类的元素
                             try:
-                                title_element = resource.find_element(By.CSS_SELECTOR, "td a.torrent")
+                                title_element = resource.find_element(By.CSS_SELECTOR, "td a[title]")
                                 resource_title = title_element.get_attribute("title")
                             except Exception as e:
                                 logging.warning(f"无法找到资源标题元素: {e}")
