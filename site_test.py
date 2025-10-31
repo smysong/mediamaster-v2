@@ -88,11 +88,13 @@ class SiteTester:
                 sites_config = {
                     "BTHD": {
                         "url": "bt_movie_base_url",
-                        "keyword": "高清影视"
+                        "keyword": "高清影视",
+                        "use_login_url": True  # 标记使用登录URL
                     },
                     "HDTV": {
                         "url": "bt_tv_base_url",
-                        "keyword": "高清剧集"
+                        "keyword": "高清剧集",
+                        "use_login_url": True  # 标记使用登录URL
                     },
                     "BT0": {
                         "url": "bt0_base_url",
@@ -113,10 +115,18 @@ class SiteTester:
                     cursor.execute('SELECT VALUE FROM CONFIG WHERE OPTION = ?', (config["url"],))
                     result = cursor.fetchone()
                     if result and result[0]:
-                        self.sites[site_name] = {
-                            "base_url": result[0],
+                        base_url = result[0]
+                        site_info = {
+                            "base_url": base_url,
                             "keyword": config["keyword"]
                         }
+                        
+                        # 对于BTHD和HDTV，添加登录URL
+                        if config.get("use_login_url", False):
+                            login_url = f"{base_url}/member.php?mod=logging&action=login"
+                            site_info["login_url"] = login_url
+                        
+                        self.sites[site_name] = site_info
                     else:
                         logging.warning(f"未找到站点 {site_name} 的配置")
                 
@@ -138,15 +148,25 @@ class SiteTester:
 
     def test_site(self, site_name, site_config):
         """测试单个站点"""
-        base_url = site_config["base_url"]
+        # 对于BTHD和HDTV使用登录URL，其他站点使用基础URL
+        if "login_url" in site_config:
+            url = site_config["login_url"]
+            url_type = "登录"
+        else:
+            url = site_config["base_url"]
+            url_type = "基础"
+        
         keyword = site_config["keyword"]
         
         try:
-            logging.info(f"开始测试站点 {site_name}: {base_url}")
+            logging.info(f"开始测试站点 {site_name}: {url} (使用{url_type}URL)")
             
             # 使用统一的验证码处理方法
             self.captcha_handler = CaptchaHandler(self.driver, self.ocr_api_key)
-            self.captcha_handler.handle_captcha(base_url)
+            self.captcha_handler.handle_captcha(url)
+            
+            # 访问相应URL
+            self.driver.get(url)
             
             # 等待页面加载完成
             WebDriverWait(self.driver, 15).until(

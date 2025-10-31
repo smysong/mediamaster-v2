@@ -381,6 +381,48 @@
     width: 100%;
     height: 100%;
 }
+
+/* 热度和文件大小显示样式 */
+.info-badge {
+    display: inline-block;
+    padding: 0.25em 0.4em;
+    font-size: 75%;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
+    vertical-align: baseline;
+    border-radius: 0.25rem;
+    color: #fff;
+    margin: 2px;
+}
+
+.popularity-badge {
+    background-color: #6c757d;
+}
+
+.popularity-high {
+    background-color: #28a745; /* 绿色 */
+}
+
+.popularity-medium {
+    background-color: #ffc107; /* 黄色 */
+    color: #212529;
+}
+
+.popularity-low {
+    background-color: #dc3545; /* 红色 */
+}
+
+.size-badge {
+    background-color: #0d6efd; /* 蓝色 */
+}
+
+/* 信息列样式 */
+.info-col {
+    text-align: center;
+    vertical-align: middle;
+}
 </style>
 
 <main class="container mt-1">
@@ -427,7 +469,6 @@
 </div>
 
 <script>
-
     // 日志变量声明
     let logWindow = null;
     let progressInterval = null;
@@ -439,13 +480,16 @@
     document.addEventListener('DOMContentLoaded', function() {
         // 检查URL参数并自动执行搜索
         const urlParams = new URLSearchParams(window.location.search);
-        const title = urlParams.get('title');
+        let title = urlParams.get('title');
         const year = urlParams.get('year');
         const type = urlParams.get('type');
         const tmdbId = urlParams.get('tmdb_id');
         const season = urlParams.get('season');
         
         if (title && year && type && tmdbId) {
+            // 清理标题中的所有空格
+            title = title.replace(/\s+/g, '');
+            
             // 填充搜索表单
             document.getElementById('keyword').value = title;
             
@@ -570,7 +614,15 @@
         // 显示加载指示器
         showLoader();
 
-        const keyword = document.getElementById('keyword').value;
+        // 清理关键词中的所有空格：去除首尾空格，并移除中间的所有空格
+        let keyword = document.getElementById('keyword').value.replace(/\s+/g, '');
+
+        // 如果关键词为空则不继续执行
+        if (!keyword) {
+            showToast('请输入有效的搜索关键词');
+            hideLoader();
+            return;
+        }
 
         // 直接使用从模板传递的 TMDB API 密钥
         if (!tmdbApiKey) {
@@ -823,6 +875,9 @@
 
     // 调用资源搜索接口（流式版本）
     function searchResources(title, year, type, tmdbId, season = null, forceRefresh = false) {
+        // 清理标题中的所有空格
+        title = title.replace(/\s+/g, '');
+        
         showLoader(); // 显示加载指示器
 
         const apiUrl = '/api/search_media';
@@ -1088,11 +1143,15 @@
                         <table class="table table-sm resource-table">
                             <thead>
                                 <tr>
-                                    <th scope="col" style="width: 80%; word-break: break-all;" class="sortable" data-sort="title">
+                                    <th scope="col" style="width: 70%; word-break: break-all;" class="sortable" data-sort="title">
                                         标题
                                         <span class="sort-indicator"></span>
                                     </th>
-                                    <th scope="col" style="width: 20%; word-break: break-all;" class="sortable" data-sort="site">
+                                    <th scope="col" style="width: 15%; word-break: break-all;" class="sortable" data-sort="info">
+                                        信息
+                                        <span class="sort-indicator"></span>
+                                    </th>
+                                    <th scope="col" style="width: 15%; word-break: break-all;" class="sortable" data-sort="site">
                                         操作
                                         <span class="sort-indicator"></span>
                                     </th>
@@ -1122,8 +1181,11 @@
 
     // 格式化资源标题，移除文件大小等冗余信息
     function formatResourceTitle(title) {
-        // 移除常见的文件大小格式，如 [1.2GB], [1024MB] 等
-        return title.replace(/\[\d+\.?\d*\s*[MG]B\]/gi, '').replace(/\[([^\]]*?)\]$/g, '').trim();
+        // 移除常见的文件大小格式，如 [1.2GB], [1024MB] 等，以及结尾处的文件大小如 3.90GB
+        return title.replace(/\[\d+\.?\d*\s*[MG]B\]/gi, '')  // 移除 [1.2GB] 或 [1024MB] 格式
+                    .replace(/\[([^\]]*?)\]$/g, '')         // 移除结尾的方括号内容
+                    .replace(/\s*\d+\.?\d*\s*[MG]B$/gi, '') // 移除结尾处的文件大小信息，如 3.90GB
+                    .trim();
     }
 
     // 显示结果
@@ -1257,8 +1319,27 @@
             row.setAttribute('data-resolution', item.resolution || '');
             row.setAttribute('data-container-id', containerId);
             
+            // 根据热度值设置样式类
+            let popularityBadge = '';
+            if (item.popularity !== undefined) {
+                let popularityClass = 'popularity-low';
+                if (item.popularity >= 100) {
+                    popularityClass = 'popularity-high';
+                } else if (item.popularity >= 30) {
+                    popularityClass = 'popularity-medium';
+                }
+                popularityBadge = `<span class="info-badge popularity-badge ${popularityClass}" title="热度: ${item.popularity}">${item.popularity}</span>`;
+            }
+            
+            // 文件大小徽章
+            let sizeBadge = '';
+            if (item.size) {
+                sizeBadge = `<span class="info-badge size-badge" title="文件大小: ${item.size}">${item.size}</span>`;
+            }
+            
             row.innerHTML = `
-                <td class="search_titles" style="text-align:left;"><a href="${item.link}" target="_blank">${formatResourceTitle(item.title)}</a> [${item.size}]</td>
+                <td class="search_titles" style="text-align:left;"><a href="${item.link}" target="_blank">${formatResourceTitle(item.title)}</a></td>
+                <td class="info-col">${sizeBadge}${popularityBadge}</td>
                 <td><button class="btn btn-sm btn-primary download-button" data-link="${item.link}" data-title="${item.title}" data-site="${item.site}">下载</button></td>
             `;
             resourceTbody.appendChild(row);
@@ -1549,6 +1630,10 @@
                     if (sortKey === 'title') {
                         aValue = a.querySelector('.search_titles').textContent.trim();
                         bValue = b.querySelector('.search_titles').textContent.trim();
+                    } else if (sortKey === 'info') {
+                        // 获取信息列中的文本内容进行排序
+                        aValue = a.querySelector('.info-col').textContent.trim();
+                        bValue = b.querySelector('.info-col').textContent.trim();
                     } else if (sortKey === 'site') {
                         aValue = a.querySelector('.download-button').getAttribute('data-site');
                         bValue = b.querySelector('.download-button').getAttribute('data-site');

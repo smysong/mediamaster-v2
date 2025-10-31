@@ -202,6 +202,45 @@ class MediaIndexer:
         logging.debug("读取订阅电视节目信息和缺失的集数信息完成")
         return all_tv_info    
 
+    def normalize_title_for_matching(self, title):
+        """
+        标准化标题用于匹配比较
+        移除多余空格并将所有空白字符标准化
+        """
+        if not title:
+            return ""
+        # 移除首尾空格并标准化内部空格
+        normalized = re.sub(r'\s+', ' ', title.strip())
+        return normalized
+
+    def is_title_match(self, db_title, page_title):
+        """
+        改进的标题匹配函数，支持更灵活的匹配规则
+        """
+        # 标准化所有标题
+        clean_db_title = self.normalize_title_for_matching(db_title)
+        clean_page_title = self.normalize_title_for_matching(page_title)
+        
+        # 创建无空格版本用于额外匹配
+        no_space_db = clean_db_title.replace(' ', '')
+        no_space_page = clean_page_title.replace(' ', '')
+        
+        # 检查基本匹配条件
+        basic_match = (
+            clean_db_title == clean_page_title or
+            clean_page_title.startswith(clean_db_title) or
+            clean_db_title.startswith(clean_page_title)
+        )
+        
+        # 无空格匹配条件
+        no_space_match = (
+            no_space_db == no_space_page or
+            no_space_page.startswith(no_space_db) or
+            no_space_db.startswith(no_space_page)
+        )
+        
+        return basic_match or no_space_match
+
     def search_movie(self, search_url, all_movie_info):
         """搜索电影并保存索引"""
         for item in all_movie_info:
@@ -241,14 +280,18 @@ class MediaIndexer:
                             continue
 
                         # 从悬停卡片中提取标题和年份信息
-                        hover_overlay = card.find_element(By.CLASS_NAME, "card-hover-overlay")
-                        hover_title = hover_overlay.find_element(By.CLASS_NAME, "overlay-title").text
-                        hover_year = hover_overlay.find_element(By.CLASS_NAME, "overlay-meta span").text
+                        try:
+                            hover_overlay = card.find_element(By.CLASS_NAME, "card-hover-overlay")
+                            hover_title = hover_overlay.find_element(By.CLASS_NAME, "overlay-title").text
+                            hover_year = hover_overlay.find_element(By.CSS_SELECTOR, ".overlay-meta span").text
+                        except Exception as e:
+                            logging.warning(f"提取悬停信息时出错: {e}")
+                            continue
 
                         logging.debug(f"悬停提取的标题: {hover_title}, 年份: {hover_year}")
 
                         # 检查标题和年份是否与搜索匹配
-                        if item['标题'] == hover_title and str(item['年份']) == hover_year:
+                        if self.is_title_match(item['标题'], hover_title) and str(item['年份']) == hover_year:
                             logging.info(f"找到匹配的电影卡片: {hover_title} ({hover_year})")
                             found_match = True  # 找到匹配的卡片
                             
@@ -452,18 +495,21 @@ class MediaIndexer:
                             logging.debug(f"检测到电影类型卡片，跳过电视节目搜索: {card.find_element(By.CLASS_NAME, 'card-title').text}")
                             continue
 
-                        # 替换原有的提取标题和年份信息部分
                         # 从悬停卡片中提取标题和年份信息
-                        hover_overlay = card.find_element(By.CLASS_NAME, "card-hover-overlay")
-                        hover_title = hover_overlay.find_element(By.CLASS_NAME, "overlay-title").text
-                        hover_year = hover_overlay.find_element(By.CLASS_NAME, "overlay-meta span").text
+                        try:
+                            hover_overlay = card.find_element(By.CLASS_NAME, "card-hover-overlay")
+                            hover_title = hover_overlay.find_element(By.CLASS_NAME, "overlay-title").text
+                            hover_year = hover_overlay.find_element(By.CSS_SELECTOR, ".overlay-meta span").text
+                        except Exception as e:
+                            logging.warning(f"提取悬停信息时出错: {e}")
+                            continue
 
                         # 清理电视节目标题，移除季相关字样
                         cleaned_hover_title = self._clean_tv_title(hover_title)
                         logging.debug(f"原始标题: {hover_title}, 清理后标题: {cleaned_hover_title}, 年份: {hover_year}")
 
                         # 检查标题和年份是否与搜索匹配
-                        if item['剧集'] == cleaned_hover_title and str(item['年份']) == hover_year:
+                        if self.is_title_match(item['剧集'], cleaned_hover_title) and str(item['年份']) == hover_year:
                             logging.info(f"找到匹配的电视节目卡片: {hover_title} ({hover_year})")
                             found_match = True  # 找到匹配的卡片
 

@@ -394,14 +394,61 @@ class CaptchaHandler:
 
     def close_popup_if_exists(self):
         """
-        关闭可能存在的提示框
+        关闭观影站点可能出现的提示框
+        处理多种类型的弹窗，包括：
+        1. 带有"14天内不再提醒"按钮的弹窗
+        2. 带有右上角关闭按钮的弹窗
         """
         try:
-            popup_close_button = WebDriverWait(self.driver, 5).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div.popup-footer button"))
+            # 首先尝试查找并点击"14天内不再提醒"按钮
+            popup_footer_button = WebDriverWait(self.driver, 3).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, ".popup-footer button"))
             )
-            actions = ActionChains(self.driver)
-            actions.move_to_element(popup_close_button).click().perform()
-            logging.info("成功点击'不再提醒'按钮")
+            popup_footer_button.click()
+            logging.info("成功点击'14天内不再提醒'按钮关闭弹窗")
+            
+            # 等待弹窗消失
+            WebDriverWait(self.driver, 5).until(
+                EC.invisibility_of_element_located((By.CLASS_NAME, "popup-wrapper"))
+            )
+            return
+        except TimeoutException:
+            pass  # 继续尝试其他关闭方式
+        except Exception as e:
+            logging.warning(f"尝试点击'14天内不再提醒'按钮时出错: {e}")
+        
+        try:
+            # 如果上面的方法失败，尝试点击右上角的关闭按钮
+            popup_close_button = WebDriverWait(self.driver, 3).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, ".popup-close"))
+            )
+            popup_close_button.click()
+            logging.info("成功点击右上角关闭按钮关闭弹窗")
+            
+            # 等待弹窗消失
+            WebDriverWait(self.driver, 5).until(
+                EC.invisibility_of_element_located((By.CLASS_NAME, "popup-wrapper"))
+            )
+            return
+        except TimeoutException:
+            pass  # 继续尝试其他关闭方式
+        except Exception as e:
+            logging.warning(f"尝试点击右上角关闭按钮时出错: {e}")
+        
+        try:
+            # 如果上面的方法都失败，使用JavaScript隐藏弹窗
+            popup_wrapper = WebDriverWait(self.driver, 3).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "popup-wrapper"))
+            )
+            self.driver.execute_script("""
+                var popupWrapper = document.querySelector('.popup-wrapper');
+                if (popupWrapper) {
+                    popupWrapper.style.display = 'none';
+                }
+            """)
+            logging.info("使用JavaScript隐藏弹窗")
+            return
         except TimeoutException:
             logging.info("未检测到提示框，无需操作")
+        except Exception as e:
+            logging.warning(f"尝试使用JavaScript隐藏弹窗时出错: {e}")

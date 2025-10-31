@@ -254,15 +254,27 @@ class TvshowIndexer:
                         EC.presence_of_element_located((By.ID, "threadlist"))
                     )
                     
-                    # 查找当前页面搜索结果中的链接
-                    results = self.driver.find_elements(By.CSS_SELECTOR, "#threadlist li.pbw h3.xs3 a")
+                    # 查找当前页面搜索结果中的链接和热度数据
+                    results = self.driver.find_elements(By.CSS_SELECTOR, "#threadlist li.pbw")
                     for result in results:
-                        title_text = result.text
-                        link = result.get_attribute('href')
-                        search_results.append({
-                            "title": title_text,
-                            "link": link
-                        })
+                        try:
+                            # 提取标题和链接
+                            title_link = result.find_element(By.CSS_SELECTOR, "h3.xs3 a")
+                            title_text = title_link.text
+                            link = title_link.get_attribute('href')
+                            
+                            # 提取查看次数（热度数据）
+                            view_count_text = result.find_element(By.CSS_SELECTOR, "p.xg1").text
+                            popularity = self.extract_popularity(view_count_text)
+                            
+                            search_results.append({
+                                "title": title_text,
+                                "link": link,
+                                "popularity": popularity
+                            })
+                        except Exception as e:
+                            logging.warning(f"解析搜索结果项时出错: {e}")
+                            continue
 
                     logging.debug(f"第 {page} 页找到 {len(results)} 个资源项")
                     
@@ -341,7 +353,8 @@ class TvshowIndexer:
                             "resolution": details['resolution'],
                             "start_episode": details['start_episode'],
                             "end_episode": details['end_episode'],
-                            "size": details['size']
+                            "size": details['size'],
+                            "popularity": result['popularity']  # 添加热度数据
                         })
                     elif resolution == fallback_resolution:
                         categorized_results["备选分辨率"][episode_type].append({
@@ -350,7 +363,8 @@ class TvshowIndexer:
                             "resolution": details['resolution'],
                             "start_episode": details['start_episode'],
                             "end_episode": details['end_episode'],
-                            "size": details['size']
+                            "size": details['size'],
+                            "popularity": result['popularity']  # 添加热度数据
                         })
                     else:
                         categorized_results["其他分辨率"][episode_type].append({
@@ -359,7 +373,8 @@ class TvshowIndexer:
                             "resolution": details['resolution'],
                             "start_episode": details['start_episode'],
                             "end_episode": details['end_episode'],
-                            "size": details['size']
+                            "size": details['size'],
+                            "popularity": result['popularity']  # 添加热度数据
                         })
 
                 # 保存结果到 JSON 文件
@@ -369,6 +384,22 @@ class TvshowIndexer:
                 logging.error("搜索结果为空或加载超时")
             except Exception as e:
                 logging.error(f"搜索过程中出错: {e}")
+
+    def extract_popularity(self, text):
+        """
+        从文本中提取热度数据（查看次数）
+        文本格式类似: "0 个回复 - 38 次查看"
+        """
+        try:
+            # 使用正则表达式提取查看次数
+            match = re.search(r'(\d+)\s*次查看', text)
+            if match:
+                return int(match.group(1))
+            else:
+                return 0
+        except Exception as e:
+            logging.warning(f"提取热度数据时出错: {e}")
+            return 0
     
     def save_results_to_json(self, title, season, year, categorized_results):
         """将结果保存到 JSON 文件"""

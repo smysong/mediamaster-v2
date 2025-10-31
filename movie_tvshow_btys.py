@@ -181,6 +181,45 @@ class MediaIndexer:
         logging.debug("读取订阅电视节目信息和缺失的集数信息完成")
         return all_tv_info    
 
+    def normalize_title_for_matching(self, title):
+        """
+        标准化标题用于匹配比较
+        移除多余空格并将所有空白字符标准化
+        """
+        if not title:
+            return ""
+        # 移除首尾空格并标准化内部空格
+        normalized = re.sub(r'\s+', ' ', title.strip())
+        return normalized
+
+    def is_title_match(self, db_title, page_title):
+        """
+        改进的标题匹配函数，支持更灵活的匹配规则
+        """
+        # 标准化所有标题
+        clean_db_title = self.normalize_title_for_matching(db_title)
+        clean_page_title = self.normalize_title_for_matching(page_title)
+        
+        # 创建无空格版本用于额外匹配
+        no_space_db = clean_db_title.replace(' ', '')
+        no_space_page = clean_page_title.replace(' ', '')
+        
+        # 检查基本匹配条件
+        basic_match = (
+            clean_db_title == clean_page_title or
+            clean_page_title.startswith(clean_db_title) or
+            clean_db_title.startswith(clean_page_title)
+        )
+        
+        # 无空格匹配条件
+        no_space_match = (
+            no_space_db == no_space_page or
+            no_space_page.startswith(no_space_db) or
+            no_space_db.startswith(no_space_page)
+        )
+        
+        return basic_match or no_space_match
+
     def search_movie(self, search_url, all_movie_info):
         """搜索电影并保存索引"""
         for item in all_movie_info:
@@ -213,7 +252,7 @@ class MediaIndexer:
                             logging.debug(f"卡片提取的标题: {card_title}, 年份: {card_year}")
 
                             # 检查标题和年份是否与搜索匹配
-                            if item['标题'] == card_title and str(item['年份']) == card_year:
+                            if self.is_title_match(item['标题'], card_title) and str(item['年份']) == card_year:
                                 logging.info(f"找到匹配的电影卡片: {card_title} ({card_year})")
                                 found_match = True  # 找到匹配的卡片
                                 page_found_match = True
@@ -291,13 +330,18 @@ class MediaIndexer:
                                             except:
                                                 resource_title = a_tag.get_attribute("title")
                                             resource_link = a_tag.get_attribute("href")
+                                            
+                                            # 提取热度数据
+                                            popularity = self.extract_popularity(info)
+                                            
                                             # 检查是否包含排除关键词
                                             if any(keyword.strip() in resource_title for keyword in exclude_keywords):
                                                 logging.debug(f"跳过包含排除关键词的资源: {resource_title}")
                                                 continue
                                             all_resources.append({
                                                 "title": resource_title,
-                                                "link": resource_link
+                                                "link": resource_link,
+                                                "popularity": popularity
                                             })
                                         except Exception as e:
                                             logging.warning(f"解析资源项时出错: {e}")
@@ -315,7 +359,8 @@ class MediaIndexer:
                                             "resolution": resolution,
                                             "audio_tracks": details["audio_tracks"],
                                             "subtitles": details["subtitles"],
-                                            "size": details.get("size", "未知大小")
+                                            "size": details.get("size", "未知大小"),
+                                            "popularity": res["popularity"]  # 添加热度数据
                                         })
                                     elif resolution == fallback_resolution:
                                         categorized_results["备选分辨率"].append({
@@ -324,7 +369,8 @@ class MediaIndexer:
                                             "resolution": resolution,
                                             "audio_tracks": details["audio_tracks"],
                                             "subtitles": details["subtitles"],
-                                            "size": details.get("size", "未知大小")
+                                            "size": details.get("size", "未知大小"),
+                                            "popularity": res["popularity"]  # 添加热度数据
                                         })
                                     else:
                                         categorized_results["其他分辨率"].append({
@@ -333,7 +379,8 @@ class MediaIndexer:
                                             "resolution": resolution,
                                             "audio_tracks": details["audio_tracks"],
                                             "subtitles": details["subtitles"],
-                                            "size": details.get("size", "未知大小")
+                                            "size": details.get("size", "未知大小"),
+                                            "popularity": res["popularity"]  # 添加热度数据
                                         })
 
                                 # 保存结果到 JSON 文件
@@ -407,7 +454,7 @@ class MediaIndexer:
                             logging.debug(f"原始标题: {card_title}, 清理后标题: {cleaned_card_title}, 年份: {card_year}")
 
                             # 检查标题和年份是否与搜索匹配
-                            if item['剧集'] == cleaned_card_title and str(item['年份']) == card_year:
+                            if self.is_title_match(item['剧集'], cleaned_card_title) and str(item['年份']) == card_year:
                                 logging.info(f"找到匹配的电视节目卡片: {card_title} ({card_year})")
                                 found_match = True  # 找到匹配的卡片
                                 page_found_match = True
@@ -496,13 +543,18 @@ class MediaIndexer:
                                             except:
                                                 resource_title = a_tag.get_attribute("title")
                                             resource_link = a_tag.get_attribute("href")
+                                            
+                                            # 提取热度数据
+                                            popularity = self.extract_popularity(info)
+                                            
                                             # 检查是否包含排除关键词
                                             if any(keyword.strip() in resource_title for keyword in exclude_keywords):
                                                 logging.debug(f"跳过包含排除关键词的资源: {resource_title}")
                                                 continue
                                             all_resources.append({
                                                 "title": resource_title,
-                                                "link": resource_link
+                                                "link": resource_link,
+                                                "popularity": popularity
                                             })
                                         except Exception as e:
                                             logging.warning(f"解析资源项时出错: {e}")
@@ -524,7 +576,8 @@ class MediaIndexer:
                                             "resolution": resolution,
                                             "start_episode": details["start_episode"],
                                             "end_episode": details["end_episode"],
-                                            "size": details.get("size", "未知大小")
+                                            "size": details.get("size", "未知大小"),
+                                            "popularity": res["popularity"]  # 添加热度数据
                                         })
                                     elif resolution == fallback_resolution:
                                         categorized_results["备选分辨率"][episode_type].append({
@@ -533,7 +586,8 @@ class MediaIndexer:
                                             "resolution": resolution,
                                             "start_episode": details["start_episode"],
                                             "end_episode": details["end_episode"],
-                                            "size": details.get("size", "未知大小")
+                                            "size": details.get("size", "未知大小"),
+                                            "popularity": res["popularity"]  # 添加热度数据
                                         })
                                     else:
                                         categorized_results["其他分辨率"][episode_type].append({
@@ -542,7 +596,8 @@ class MediaIndexer:
                                             "resolution": resolution,
                                             "start_episode": details["start_episode"],
                                             "end_episode": details["end_episode"],
-                                            "size": details.get("size", "未知大小")
+                                            "size": details.get("size", "未知大小"),
+                                            "popularity": res["popularity"]  # 添加热度数据
                                         })
 
                                 # 保存结果到 JSON 文件
@@ -574,6 +629,27 @@ class MediaIndexer:
                             
             except Exception as e:
                 logging.error(f"搜索过程中出错: {e}")
+
+    def extract_popularity(self, resource_info_element):
+        """
+        从资源信息元素中提取热度数据
+        """
+        try:
+            # 使用已知有效的XPath表达式定位热度元素
+            popularity_element = resource_info_element.find_element(
+                By.XPATH, ".//a[contains(@class, 'btn-down')]/span")
+            
+            # 使用 get_attribute('textContent') 获取元素文本内容
+            popularity_text = popularity_element.get_attribute('textContent').strip()
+            logging.debug(f"提取到的热度文本: '{popularity_text}'")
+            
+            # 转换为整数值
+            popularity_value = int(popularity_text) if popularity_text.isdigit() else 0
+            logging.debug(f"转换后的热度值: {popularity_value}")
+            return popularity_value
+        except Exception as e:
+            logging.warning(f"提取热度数据时出错: {e}")
+            return 0
 
     def _clean_tv_title(self, title):
         """

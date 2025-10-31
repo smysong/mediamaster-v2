@@ -1471,7 +1471,8 @@
                             searchUrl += `&season=${movieDetails.number_of_seasons}`;
                         }
                         
-                        window.location.href = searchUrl;
+                        // 在新标签页中打开搜索页面
+                        window.open(searchUrl, '_blank');
                     }
                 };
 

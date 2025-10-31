@@ -184,6 +184,67 @@ class MediaDownloader:
             self.driver.quit()
             exit(1)
 
+    def close_popup_if_exists(self):
+        """
+        关闭观影站点可能出现的提示框
+        处理多种类型的弹窗，包括：
+        1. 带有"14天内不再提醒"按钮的弹窗
+        2. 带有右上角关闭按钮的弹窗
+        """
+        try:
+            # 首先尝试查找并点击"14天内不再提醒"按钮
+            popup_footer_button = WebDriverWait(self.driver, 3).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, ".popup-footer button"))
+            )
+            popup_footer_button.click()
+            logging.info("成功点击'14天内不再提醒'按钮关闭弹窗")
+            
+            # 等待弹窗消失
+            WebDriverWait(self.driver, 5).until(
+                EC.invisibility_of_element_located((By.CLASS_NAME, "popup-wrapper"))
+            )
+            return
+        except TimeoutException:
+            pass  # 继续尝试其他关闭方式
+        except Exception as e:
+            logging.warning(f"尝试点击'14天内不再提醒'按钮时出错: {e}")
+        
+        try:
+            # 如果上面的方法失败，尝试点击右上角的关闭按钮
+            popup_close_button = WebDriverWait(self.driver, 3).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, ".popup-close"))
+            )
+            popup_close_button.click()
+            logging.info("成功点击右上角关闭按钮关闭弹窗")
+            
+            # 等待弹窗消失
+            WebDriverWait(self.driver, 5).until(
+                EC.invisibility_of_element_located((By.CLASS_NAME, "popup-wrapper"))
+            )
+            return
+        except TimeoutException:
+            pass  # 继续尝试其他关闭方式
+        except Exception as e:
+            logging.warning(f"尝试点击右上角关闭按钮时出错: {e}")
+        
+        try:
+            # 如果上面的方法都失败，使用JavaScript隐藏弹窗
+            popup_wrapper = WebDriverWait(self.driver, 3).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "popup-wrapper"))
+            )
+            self.driver.execute_script("""
+                var popupWrapper = document.querySelector('.popup-wrapper');
+                if (popupWrapper) {
+                    popupWrapper.style.display = 'none';
+                }
+            """)
+            logging.info("使用JavaScript隐藏弹窗")
+            return
+        except TimeoutException:
+            logging.info("未检测到提示框，无需操作")
+        except Exception as e:
+            logging.warning(f"尝试使用JavaScript隐藏弹窗时出错: {e}")
+
     def is_logged_in(self):
         try:
             # 检查页面中是否存在特定的提示文本
@@ -231,6 +292,8 @@ class MediaDownloader:
                 username_input = self.driver.find_element(By.NAME, "username")
                 if username_input.get_attribute("disabled") == "true":
                     logging.info("通过账户设置页面确认用户已登录")
+                    # 关闭可能存在的提示框
+                    self.close_popup_if_exists()
                     return True
             except TimeoutException:
                 pass
@@ -321,6 +384,8 @@ class MediaDownloader:
                 EC.presence_of_element_located((By.NAME, "username"))
             )
             logging.info("观影站点登录页面加载完成")
+            # 在输入用户名和密码之前，先关闭可能存在的弹窗
+            self.close_popup_if_exists()
             username_input = self.driver.find_element(By.NAME, 'username')
             password_input = self.driver.find_element(By.NAME, 'password')
             username_input.send_keys(username)
@@ -341,6 +406,8 @@ class MediaDownloader:
                 EC.presence_of_element_located((By.XPATH, "//h2[contains(text(), '账户设置')]"))
             )
             logging.info("观影站点登录成功！")
+            # 关闭可能存在的提示框
+            self.close_popup_if_exists()
         except TimeoutException:
             logging.error("观影站点登录失败或页面未正确加载，未找到预期元素！")
             self.close_driver()
@@ -700,9 +767,11 @@ class MediaDownloader:
             self.login_gy_site(self.config["gy_login_username"], self.config["gy_login_password"])
             self.driver.get(result['link'])
             logging.info(f"进入：{title_text} 详情页面...")
+            # 关闭可能存在的提示框
+            self.close_popup_if_exists()
             logging.info(f"开始查找种子文件下载链接...")
 
-            WebDriverWait(self.driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "alert-info")))
+            WebDriverWait(self.driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "alert-info0")))
             logging.info("页面加载完成")
 
             attachment_urls = []
@@ -711,24 +780,18 @@ class MediaDownloader:
 
             while not attachment_urls and retries < max_retries:
                 WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_all_elements_located((By.CLASS_NAME, "alert-info"))
+                    EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".down123 li a"))
                 )
-                links_case1 = self.driver.find_elements(By.CSS_SELECTOR, ".down123 li")
-                links_case2 = self.driver.find_elements(By.CSS_SELECTOR, ".down321 .right span")
-
-                for link in links_case1:
+                # 查找所有下载链接
+                links = self.driver.find_elements(By.CSS_SELECTOR, ".down123 li a")
+                
+                for link in links:
                     link_text = link.text.strip()
                     if "种子下载" in link_text:
-                        attachment_url = link.get_attribute('data-clipboard-text')
+                        attachment_url = link.get_attribute('href')
                         if attachment_url:
                             attachment_urls.append(attachment_url)
-
-                for link in links_case2:
-                    link_text = link.text.strip()
-                    if "种子下载" in link_text:
-                        attachment_url = link.get_attribute('data-clipboard-text')
-                        if attachment_url:
-                            attachment_urls.append(attachment_url)
+                            logging.info(f"找到种子下载链接: {attachment_url}")
 
                 if not attachment_urls:
                     logging.warning(f"没有找到种子文件下载链接，重试中... ({retries + 1}/{max_retries})")
@@ -738,7 +801,10 @@ class MediaDownloader:
             if attachment_urls:
                 gy_base_url = self.config.get("gy_base_url", "")
                 for attachment_url in attachment_urls:
-                    attachment_url = attachment_url.replace("#host#", gy_base_url)
+                    # 如果是相对路径，需要拼接完整URL
+                    if attachment_url.startswith('/'):
+                        attachment_url = gy_base_url + attachment_url
+                    
                     logging.info(f"找到种子文件下载链接: {attachment_url}")
                     self.driver.get(attachment_url)
                     logging.info("开始下载种子文件...")
@@ -823,17 +889,23 @@ class MediaDownloader:
                 if index_data.get("其他分辨率"):
                     all_download_results.extend([(result, "其他分辨率") for result in index_data["其他分辨率"]])
 
-                # 根据优先关键词对下载结果进行排序
-                if prefer_keywords_list:
-                    def keyword_priority(result_tuple):
-                        result, _ = result_tuple
+                # 根据优先关键词和热度对下载结果进行排序
+                def sort_key(result_tuple):
+                    result, _ = result_tuple
+                    # 关键词匹配优先级
+                    keyword_score = 0
+                    if prefer_keywords_list:
                         title_text = result.get("title", "").lower()
-                        # 计算匹配的优先关键词数量，匹配越多优先级越高
-                        match_count = sum(1 for kw in prefer_keywords_list if kw.lower() in title_text)
-                        # 返回负值，因为匹配越多优先级越高，而sort是升序排列
-                        return -match_count
+                        keyword_score = sum(1 for kw in prefer_keywords_list if kw.lower() in title_text)
                     
-                    all_download_results.sort(key=keyword_priority)
+                    # 热度值优先级（如果存在）
+                    popularity = result.get("popularity", 0)
+                    
+                    # 排序规则：首先按关键词匹配数降序，然后按热度降序
+                    # 负号是因为sort是升序排列，而我们需要降序
+                    return (-keyword_score, -popularity)
+
+                all_download_results.sort(key=sort_key)
 
                 # 遍历所有可能的下载结果
                 for download_result, resolution_type in all_download_results:
@@ -979,28 +1051,27 @@ class MediaDownloader:
                             if item.get("start_episode") is not None and int(item["start_episode"]) == episode:
                                 all_download_options.append((item, source, resolution_priority, "单集"))
 
-                    # 根据优先关键词对下载选项进行排序
-                    if prefer_keywords_list:
-                        def keyword_priority(option_tuple):
-                            item, _, _, _ = option_tuple
+                    # 根据优先关键词和热度对下载选项进行排序
+                    def sort_key(option_tuple):
+                        item, _, resolution_priority, item_type = option_tuple
+                        # 关键词匹配优先级
+                        keyword_score = 0
+                        if prefer_keywords_list:
                             title_text = item.get("title", "").lower()
-                            # 计算匹配的优先关键词数量，匹配越多优先级越高
-                            match_count = sum(1 for kw in prefer_keywords_list if kw.lower() in title_text)
-                            # 返回负值，因为匹配越多优先级越高，而sort是升序排列
-                            return -match_count
+                            keyword_score = sum(1 for kw in prefer_keywords_list if kw.lower() in title_text)
                         
-                        # 先按类型和分辨率排序，再按关键词优先级排序
-                        all_download_options.sort(key=lambda x: (
-                            item_type_priority.get(x[3], 99),  # x[3] 是 item_type
-                            resolution_priorities.index(x[2]),  # x[2] 是 resolution_priority
-                            keyword_priority(x)  # 关键词优先级
-                        ))
-                    else:
-                        # 按照类型优先级、分辨率优先级对下载选项进行排序
-                        all_download_options.sort(key=lambda x: (
-                            item_type_priority.get(x[3], 99),  # x[3] 是 item_type
-                            resolution_priorities.index(x[2])  # x[2] 是 resolution_priority
-                        ))
+                        # 热度值优先级（如果存在）
+                        popularity = item.get("popularity", 0)
+                        
+                        # 排序规则：首先按类型优先级，然后按分辨率优先级，再按关键词匹配数降序，最后按热度降序
+                        return (
+                            item_type_priority.get(item_type, 99),
+                            resolution_priorities.index(resolution_priority),
+                            -keyword_score,
+                            -popularity
+                        )
+
+                    all_download_options.sort(key=sort_key)
                     
                     # 遍历所有可能的下载选项（已按优先级排序）
                     for download_result, result_source, resolution_priority, item_type in all_download_options:

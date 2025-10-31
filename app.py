@@ -1355,21 +1355,29 @@ def api_search_media():
                                             for category_key in ["单集", "集数范围", "全集"]:
                                                 if category_key in data[resolution_key]:
                                                     for item in data[resolution_key][category_key]:
-                                                        all_results[site].append({
+                                                        result_item = {
                                                             "title": item.get("title"),
                                                             "size": item.get("size"),
                                                             "link": item.get("link"),
                                                             "resolution": item.get("resolution")
-                                                        })
+                                                        }
+                                                        # 添加热度数据（如果存在）
+                                                        if "popularity" in item:
+                                                            result_item["popularity"] = item.get("popularity")
+                                                        all_results[site].append(result_item)
                                         else:
                                             # 针对 电影 数据
                                             for item in data[resolution_key]:
-                                                all_results[site].append({
+                                                result_item = {
                                                     "title": item.get("title"),
                                                     "size": item.get("size"),
                                                     "link": item.get("link"),
                                                     "resolution": item.get("resolution")
-                                                })
+                                                }
+                                                # 添加热度数据（如果存在）
+                                                if "popularity" in item:
+                                                    result_item["popularity"] = item.get("popularity")
+                                                all_results[site].append(result_item)
                             
                             # 发送单个站点的结果
                             yield f"data: {json.dumps({'status': 'result', 'site': site, 'data': all_results[site]})}\n\n"
@@ -1528,21 +1536,29 @@ def api_search_media():
                                             for category_key in ["单集", "集数范围", "全集"]:
                                                 if category_key in data[resolution_key]:
                                                     for item in data[resolution_key][category_key]:
-                                                        all_results[site].append({
+                                                        result_item = {
                                                             "title": item.get("title"),
                                                             "size": item.get("size"),
                                                             "link": item.get("link"),
                                                             "resolution": item.get("resolution")
-                                                        })
+                                                        }
+                                                        # 添加热度数据（如果存在）
+                                                        if "popularity" in item:
+                                                            result_item["popularity"] = item.get("popularity")
+                                                        all_results[site].append(result_item)
                                         else:
                                             # 针对 电影 数据
                                             for item in data[resolution_key]:
-                                                all_results[site].append({
+                                                result_item = {
                                                     "title": item.get("title"),
                                                     "size": item.get("size"),
                                                     "link": item.get("link"),
                                                     "resolution": item.get("resolution")
-                                                })
+                                                }
+                                                # 添加热度数据（如果存在）
+                                                if "popularity" in item:
+                                                    result_item["popularity"] = item.get("popularity")
+                                                all_results[site].append(result_item)
                                 
                                 # 发送单个站点的结果
                                 yield f"data: {json.dumps({'status': 'result', 'site': site, 'data': all_results[site]})}\n\n"
@@ -2294,7 +2310,7 @@ def get_fastest_proxy(original_url):
         "https://gh-proxy.net/",
         "https://gitproxy.click/",
         "https://github-proxy.lixxing.top/",
-        "https://github.acmsz.top/"
+        "https://tvv.tw/"
     ]
     response_times = {}
 

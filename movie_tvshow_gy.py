@@ -135,6 +135,67 @@ class MediaIndexer:
             self.driver.quit()
             exit(1)
 
+    def close_popup_if_exists(self):
+        """
+        关闭观影站点可能出现的提示框
+        处理多种类型的弹窗，包括：
+        1. 带有"14天内不再提醒"按钮的弹窗
+        2. 带有右上角关闭按钮的弹窗
+        """
+        try:
+            # 首先尝试查找并点击"14天内不再提醒"按钮
+            popup_footer_button = WebDriverWait(self.driver, 3).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, ".popup-footer button"))
+            )
+            popup_footer_button.click()
+            logging.info("成功点击'14天内不再提醒'按钮关闭弹窗")
+            
+            # 等待弹窗消失
+            WebDriverWait(self.driver, 5).until(
+                EC.invisibility_of_element_located((By.CLASS_NAME, "popup-wrapper"))
+            )
+            return
+        except TimeoutException:
+            pass  # 继续尝试其他关闭方式
+        except Exception as e:
+            logging.warning(f"尝试点击'14天内不再提醒'按钮时出错: {e}")
+        
+        try:
+            # 如果上面的方法失败，尝试点击右上角的关闭按钮
+            popup_close_button = WebDriverWait(self.driver, 3).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, ".popup-close"))
+            )
+            popup_close_button.click()
+            logging.info("成功点击右上角关闭按钮关闭弹窗")
+            
+            # 等待弹窗消失
+            WebDriverWait(self.driver, 5).until(
+                EC.invisibility_of_element_located((By.CLASS_NAME, "popup-wrapper"))
+            )
+            return
+        except TimeoutException:
+            pass  # 继续尝试其他关闭方式
+        except Exception as e:
+            logging.warning(f"尝试点击右上角关闭按钮时出错: {e}")
+        
+        try:
+            # 如果上面的方法都失败，使用JavaScript隐藏弹窗
+            popup_wrapper = WebDriverWait(self.driver, 3).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "popup-wrapper"))
+            )
+            self.driver.execute_script("""
+                var popupWrapper = document.querySelector('.popup-wrapper');
+                if (popupWrapper) {
+                    popupWrapper.style.display = 'none';
+                }
+            """)
+            logging.info("使用JavaScript隐藏弹窗")
+            return
+        except TimeoutException:
+            logging.info("未检测到提示框，无需操作")
+        except Exception as e:
+            logging.warning(f"尝试使用JavaScript隐藏弹窗时出错: {e}")
+
     def is_logged_in_gy(self):
         try:
             # 检查页面中是否存在特定的提示文本
@@ -154,6 +215,8 @@ class MediaIndexer:
                 username_input = self.driver.find_element(By.NAME, "username")
                 if username_input.get_attribute("disabled") == "true":
                     logging.info("通过账户设置页面确认用户已登录")
+                    # 关闭可能存在的提示框
+                    self.close_popup_if_exists()
                     return True
             except TimeoutException:
                 pass
@@ -176,6 +239,8 @@ class MediaIndexer:
                 EC.presence_of_element_located((By.NAME, "username"))
             )
             logging.info("观影站点登录页面加载完成")
+            # 在输入用户名和密码之前，先关闭可能存在的弹窗
+            self.close_popup_if_exists()
             username_input = self.driver.find_element(By.NAME, 'username')
             password_input = self.driver.find_element(By.NAME, 'password')
             username_input.send_keys(username)
@@ -196,6 +261,8 @@ class MediaIndexer:
                 EC.presence_of_element_located((By.XPATH, "//h2[contains(text(), '账户设置')]"))
             )
             logging.info("观影站点登录成功！")
+            # 关闭可能存在的提示框
+            self.close_popup_if_exists()
         except TimeoutException:
             logging.error("观影站点登录失败或页面未正确加载，未找到预期元素！")
             self.close_driver()
@@ -250,6 +317,49 @@ class MediaIndexer:
         
         logging.debug("读取订阅电视节目信息和缺失的集数信息完成")
         return all_tv_info    
+
+    def normalize_title_for_matching(self, title):
+        """
+        标准化标题用于匹配比较
+        移除多余空格并将所有空白字符标准化
+        """
+        if not title:
+            return ""
+        # 移除首尾空格并标准化内部空格
+        normalized = re.sub(r'\s+', ' ', title.strip())
+        return normalized
+
+    def is_title_match(self, db_title, page_title, chinese_title=""):
+        """
+        改进的标题匹配函数，支持更灵活的匹配规则
+        """
+        # 标准化所有标题
+        clean_db_title = self.normalize_title_for_matching(db_title)
+        clean_page_title = self.normalize_title_for_matching(page_title)
+        clean_chinese_title = self.normalize_title_for_matching(chinese_title)
+        
+        # 创建无空格版本用于额外匹配
+        no_space_db = clean_db_title.replace(' ', '')
+        no_space_page = clean_page_title.replace(' ', '')
+        no_space_chinese = clean_chinese_title.replace(' ', '') if clean_chinese_title else ''
+        
+        # 基本匹配条件
+        basic_match = (
+            clean_db_title == clean_page_title or
+            clean_db_title == clean_chinese_title or
+            clean_page_title.startswith(clean_db_title) or
+            clean_chinese_title.startswith(clean_db_title)
+        )
+        
+        # 无空格匹配条件
+        no_space_match = (
+            no_space_db == no_space_page or
+            no_space_db == no_space_chinese or
+            no_space_page.startswith(no_space_db) or
+            no_space_chinese.startswith(no_space_db)
+        )
+        
+        return basic_match or no_space_match
 
     def search_movie(self, search_url, all_movie_info):
         """搜索电影并保存索引"""
@@ -318,10 +428,8 @@ class MediaIndexer:
                             
                         logging.debug(f"提取的中文标题: {chinese_title}")
 
-                        # 检查是否匹配（支持中文标题匹配）
-                        if (item['标题'] == hover_title or 
-                            item['标题'] == chinese_title or
-                            hover_title.startswith(item['标题'])) and str(item['年份']) == hover_year:
+                        # 新的匹配逻辑：
+                        if self.is_title_match(item['标题'], hover_title, chinese_title) and str(item['年份']) == hover_year:
                             logging.info(f"找到匹配的电影卡片: {hover_title} ({hover_year})")
                             found_match = True  # 找到匹配的卡片
                             
@@ -329,7 +437,7 @@ class MediaIndexer:
                             actions = ActionChains(self.driver)
                             actions.move_to_element(title_element).click().perform()
                             logging.info("成功点击匹配的电影标题")
-    
+
                             # 切换到新标签页
                             WebDriverWait(self.driver, 15).until(
                                 lambda d: len(d.window_handles) > 1
@@ -386,6 +494,9 @@ class MediaIndexer:
                                     except Exception as size_error:
                                         logging.debug(f"无法提取文件大小信息: {size_error}")
                                     
+                                    # 提取热度数据（第4个td中的数据）
+                                    popularity = self.extract_popularity(resource)
+                                    
                                     # 检查是否包含排除关键词
                                     if any(keyword.strip() in resource_title for keyword in exclude_keywords):
                                         logging.info(f"跳过包含排除关键词的资源: {resource_title}")
@@ -410,7 +521,8 @@ class MediaIndexer:
                                             "resolution": resolution,
                                             "audio_tracks": details["audio_tracks"],
                                             "subtitles": details["subtitles"],
-                                            "size": details["size"]
+                                            "size": details["size"],
+                                            "popularity": popularity  # 添加热度数据
                                         })
                                     elif resolution == fallback_resolution:
                                         categorized_results["备选分辨率"].append({
@@ -419,7 +531,8 @@ class MediaIndexer:
                                             "resolution": resolution,
                                             "audio_tracks": details["audio_tracks"],
                                             "subtitles": details["subtitles"],
-                                            "size": details["size"]
+                                            "size": details["size"],
+                                            "popularity": popularity  # 添加热度数据
                                         })
                                     else:
                                         categorized_results["其他分辨率"].append({
@@ -428,7 +541,8 @@ class MediaIndexer:
                                             "resolution": resolution,
                                             "audio_tracks": details["audio_tracks"],
                                             "subtitles": details["subtitles"],
-                                            "size": details["size"]
+                                            "size": details["size"],
+                                            "popularity": popularity  # 添加热度数据
                                         })
                                 except Exception as e:
                                     logging.warning(f"解析资源项时出错: {e}")
@@ -556,10 +670,8 @@ class MediaIndexer:
 
                 logging.debug(f"提取的中文标题: {chinese_title}")
 
-                # 检查是否匹配（支持中文标题匹配）
-                if (item['剧集'] == hover_title or 
-                    item['剧集'] == chinese_title or
-                    hover_title.startswith(item['剧集'])) and str(item['年份']) == hover_year:
+                # 新的匹配逻辑：
+                if self.is_title_match(item['剧集'], hover_title, chinese_title) and str(item['年份']) == hover_year:
                     logging.info(f"找到匹配的电视节目卡片: {hover_title} ({hover_year})")
                     found_match = True  # 找到匹配的卡片
 
@@ -646,6 +758,9 @@ class MediaIndexer:
                             except Exception as size_error:
                                 logging.debug(f"无法提取文件大小信息: {size_error}")
 
+                            # 提取热度数据（第4个td中的数据）
+                            popularity = self.extract_popularity(resource)
+
                             # 检查是否包含排除关键词
                             if any(keyword.strip() in resource_title for keyword in exclude_keywords):
                                 logging.debug(f"跳过包含排除关键词的资源: {resource_title}")
@@ -681,7 +796,8 @@ class MediaIndexer:
                                     "resolution": resolution,
                                     "start_episode": details["start_episode"],
                                     "end_episode": details["end_episode"],
-                                    "size": details["size"]
+                                    "size": details["size"],
+                                    "popularity": popularity  # 添加热度数据
                                 })
                             elif resolution == fallback_resolution:
                                 categorized_results["备选分辨率"][episode_type].append({
@@ -690,7 +806,8 @@ class MediaIndexer:
                                     "resolution": resolution,
                                     "start_episode": details["start_episode"],
                                     "end_episode": details["end_episode"],
-                                    "size": details["size"]
+                                    "size": details["size"],
+                                    "popularity": popularity  # 添加热度数据
                                 })
                             else:
                                 categorized_results["其他分辨率"][episode_type].append({
@@ -699,7 +816,8 @@ class MediaIndexer:
                                     "resolution": resolution,
                                     "start_episode": details["start_episode"],
                                     "end_episode": details["end_episode"],
-                                    "size": details["size"]
+                                    "size": details["size"],
+                                    "popularity": popularity  # 添加热度数据
                                 })
                         except Exception as e:
                             logging.warning(f"解析资源项时出错: {e}")
@@ -722,6 +840,19 @@ class MediaIndexer:
             logging.info(f"未找到匹配的电视节目卡片: {item['剧集']} ({item['年份']})")
         
         return found_match
+
+    def extract_popularity(self, resource_element):
+        """
+        从资源元素中提取热度数据（第4个td中的数据）
+        """
+        try:
+            # 查找第4个td元素中的热度数据
+            popularity_element = resource_element.find_element(By.CSS_SELECTOR, "td:nth-child(4) i")
+            popularity_text = popularity_element.text.strip()
+            return int(popularity_text) if popularity_text.isdigit() else 0
+        except Exception as e:
+            logging.warning(f"提取热度数据时出错: {e}")
+            return 0
 
     def save_results_to_json(self, title, year, categorized_results, season=None):
         """将结果保存到 JSON 文件"""
