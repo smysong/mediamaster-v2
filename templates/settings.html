@@ -565,10 +565,10 @@
                                             
                                             {% if field.type == 'select' %}
                                                 <select class="form-select" name="{{ key }}" id="{{ key }}">
-                                                    <option value="移动" {% if field.value == '移动' %}selected{% endif %}>移动</option>
-                                                    <option value="复制" {% if field.value == '复制' %}selected{% endif %}>复制</option>
-                                                    <option value="软链接" {% if field.value == '软链接' %}selected{% endif %}>软链接</option>
-                                                    <option value="硬链接" {% if field.value == '硬链接' %}selected{% endif %}>硬链接</option>
+                                                    <option value="move" {% if field.value == 'move' %}selected{% endif %}>移动</option>
+                                                    <option value="copy" {% if field.value == 'copy' %}selected{% endif %}>复制</option>
+                                                    <option value="softlink" {% if field.value == 'softlink' %}selected{% endif %}>软链接</option>
+                                                    <option value="hardlink" {% if field.value == 'hardlink' %}selected{% endif %}>硬链接</option>
                                                 </select>
                                             {% elif field.type == 'text' %}
                                                 <input type="text" class="form-control" name="{{ key }}" id="{{ key }}" value="{{ field.value }}">
