@@ -732,3 +732,4 @@
 [2.5.8]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.8
 [2.5.9]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.9
 [2.5.10]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.10
+[2.5.11]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.11
