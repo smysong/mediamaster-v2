@@ -57,6 +57,8 @@ class XunleiDownloader:
         options.add_argument('--ignore-certificate-errors')
         options.add_argument('--allow-insecure-localhost')
         options.add_argument('--ignore-ssl-errors')
+        # 设置页面加载策略为急切模式
+        options.page_load_strategy = 'eager'
         # 设置浏览器语言为中文
         options.add_argument('--lang=zh-CN')
         # 设置用户配置文件缓存目录，使用固定instance-id 11作为该程序特有的id
@@ -203,38 +205,46 @@ class XunleiDownloader:
             logging.error("检测到未登录状态")
             return False
 
-    def check_device(self, device_name):
+    def check_device(self, device_name, max_retries=3):
         """
-        检查并切换迅雷设备。
+        检查并切换迅雷设备，增加刷新重试机制。
         :param device_name: 配置中的设备名称
+        :param max_retries: 最大重试次数
         :return: 成功返回 True，失败返回 False
         """
-        try:
-            # 检查当前设备
-            time.sleep(5)
-            header_home = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.XPATH, "//div[@class='header-home']"))
-            )
-            if header_home.text != device_name:
-                logging.info(f"当前设备为 '{header_home.text}'，正在切换到 '{device_name}'")
-                actions = ActionChains(self.driver)
-                actions.move_to_element(header_home).click().perform()
-                time.sleep(1)
-
-                device_option = WebDriverWait(self.driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH,
-                                                f"//span[contains(@class, 'device') and (text()='{device_name}' or text()='{device_name}(离线)')]"))
+        for attempt in range(max_retries):
+            try:
+                # 检查当前设备
+                time.sleep(5)
+                header_home = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, "//div[@class='header-home']"))
                 )
-                actions.move_to_element(device_option).click().perform()
-                time.sleep(3)
-            else:
-                logging.info("已处于目标设备")
+                if header_home.text != device_name:
+                    logging.info(f"当前设备为 '{header_home.text}'，正在切换到 '{device_name}'")
+                    actions = ActionChains(self.driver)
+                    actions.move_to_element(header_home).click().perform()
+                    time.sleep(1)
 
-            return True
+                    device_option = WebDriverWait(self.driver, 10).until(
+                        EC.element_to_be_clickable((By.XPATH,
+                                                    f"//span[contains(@class, 'device') and (text()='{device_name}' or text()='{device_name}(离线)')]"))
+                    )
+                    actions.move_to_element(device_option).click().perform()
+                    time.sleep(3)
+                else:
+                    logging.info("已处于目标设备")
 
-        except Exception as e:
-            logging.error(f"检查设备失败: {e}")
-            return False
+                return True
+
+            except Exception as e:
+                logging.warning(f"检查设备失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    logging.info("刷新页面并重试...")
+                    self.driver.refresh()
+                    time.sleep(5)
+                else:
+                    logging.error(f"检查设备最终失败，已重试 {max_retries} 次")
+                    return False
 
     def check_download_directory(self, download_dir):
         """
@@ -459,90 +469,162 @@ class XunleiDownloader:
         :param original_file_name: 原始种子文件名（用于清理）
         :return: 成功返回 True，失败返回 False
         """
-        try:
-            # 打开新建任务弹窗
-            new_task_button = WebDriverWait(self.driver, 10).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, "i.qh-icon-new"))
-            )
-            actions = ActionChains(self.driver)
-            actions.move_to_element(new_task_button).click().perform()
-            time.sleep(1)
-
-            # 填入磁力链接
-            magnet_input = WebDriverWait(self.driver, 10).until(
-                EC.visibility_of_element_located((By.CSS_SELECTOR, "textarea.textarea__inner"))
-            )
-            magnet_input.clear()
-            magnet_input.send_keys(magnet_link)
-            time.sleep(1)
-
-            # 点击确认按钮
-            confirm_button = self.driver.find_element(By.CSS_SELECTOR, "a.file-upload__button")
-            actions = ActionChains(self.driver)
-            actions.move_to_element(confirm_button).click().perform()
-            time.sleep(2)
-
-            # 检查下载目录
-            if not self.check_download_directory(self.config.get("xunlei_dir")):
-                logging.error("下载目录设置失败")
-                return False
-            time.sleep(2)
-
-            # 筛选文件大小小于 10MB 的文件并取消勾选
-            if not self._select_files_by_size_threshold(min_size_mb=5):
-                logging.error("文件筛选失败")
-                return False
-            time.sleep(2)
-
-            # 定位并点击“立即下载”按钮
-            start_download_button = WebDriverWait(self.driver, 10).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, "div.submit-frame > div.submit-btn"))
-            )
-            self.driver.execute_script("arguments[0].scrollIntoView(true);", start_download_button)
-            self.driver.execute_script("arguments[0].click();", start_download_button)
-            logging.debug("成功点击‘立即下载’按钮")
-            time.sleep(2)
-
-            # 检查是否出现“任务已存在”提示窗口
+        max_retries = 3
+        for attempt in range(max_retries):
             try:
-                task_exists_dialog = WebDriverWait(self.driver, 5).until(
-                    EC.presence_of_element_located((By.XPATH, "//div[@class='content']//h2[text()='任务已存在']"))
-                )
-                if task_exists_dialog:
-                    logging.info("检测到‘任务已存在’提示，跳过添加任务")
+                # 如果是第一次尝试，则打开新建任务弹窗
+                if attempt == 0:
 
-                    # 查找并点击“查看”按钮
-                    view_button = self.driver.find_element(By.XPATH, "//div[@class='buttons vertical']//button[text()='查看']")
-                    actions.move_to_element(view_button).click().perform()
+                    # 重新打开迅雷远程设备页面
+                    self.driver.get("https://pan.xunlei.com/yc/home/")
+                    time.sleep(3)
+                    
+                    # 等待页面加载完成
+                    WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "i.qh-icon-new"))
+                    )
+
+                    # 打开新建任务弹窗
+                    new_task_button = WebDriverWait(self.driver, 10).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, "i.qh-icon-new"))
+                    )
+                    actions = ActionChains(self.driver)
+                    actions.move_to_element(new_task_button).click().perform()
+                    time.sleep(1)
+                else:
+                    # 如果是重试，需要先关闭可能存在的弹窗，然后重新打开
+                    try:
+                        # 尝试点击关闭按钮
+                        close_button = self.driver.find_element(By.CSS_SELECTOR, "i.qh-icon-close")
+                        actions = ActionChains(self.driver)
+                        actions.move_to_element(close_button).click().perform()
+                        time.sleep(1)
+                    except:
+                        pass  # 如果找不到关闭按钮就忽略
+                    
+                    # 重新打开新建任务弹窗
+                    new_task_button = WebDriverWait(self.driver, 10).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, "i.qh-icon-new"))
+                    )
+                    actions = ActionChains(self.driver)
+                    actions.move_to_element(new_task_button).click().perform()
                     time.sleep(1)
 
-                    # 删除种子文件（任务已存在）
+                # 填入磁力链接
+                magnet_input = WebDriverWait(self.driver, 10).until(
+                    EC.visibility_of_element_located((By.CSS_SELECTOR, "textarea.textarea__inner"))
+                )
+                magnet_input.clear()
+                magnet_input.send_keys(magnet_link)
+                time.sleep(1)
+
+                # 点击确认按钮
+                confirm_button = self.driver.find_element(By.CSS_SELECTOR, "a.file-upload__button")
+                actions = ActionChains(self.driver)
+                actions.move_to_element(confirm_button).click().perform()
+                time.sleep(2)
+
+                # 检查下载目录，最多重试3次
+                dir_retry_count = 0
+                dir_max_retries = 3
+                while dir_retry_count < dir_max_retries:
+                    if self.check_download_directory(self.config.get("xunlei_dir")):
+                        break  # 下载目录设置成功，跳出循环
+                    else:
+                        dir_retry_count += 1
+                        if dir_retry_count < dir_max_retries:
+                            logging.info(f"下载目录设置失败，刷新页面并重试 ({dir_retry_count}/{dir_max_retries})")
+                            self.driver.refresh()
+                            time.sleep(3)
+                            
+                            # 重新填入磁力链接
+                            magnet_input = WebDriverWait(self.driver, 10).until(
+                                EC.visibility_of_element_located((By.CSS_SELECTOR, "textarea.textarea__inner"))
+                            )
+                            magnet_input.clear()
+                            magnet_input.send_keys(magnet_link)
+                            time.sleep(1)
+                            
+                            # 重新点击确认按钮
+                            confirm_button = self.driver.find_element(By.CSS_SELECTOR, "a.file-upload__button")
+                            actions = ActionChains(self.driver)
+                            actions.move_to_element(confirm_button).click().perform()
+                            time.sleep(2)
+                        else:
+                            logging.error("达到最大重试次数，下载目录设置仍然失败")
+                            # 添加任务失败时重命名种子文件
+                            if original_file_name:
+                                old_path = os.path.join(self.TORRENT_DIR, original_file_name)
+                                new_path = old_path + ".添加失败"
+                                if os.path.exists(old_path):
+                                    os.rename(old_path, new_path)
+                                    logging.info(f"种子文件重命名为: {new_path}")
+                                    logging.info(f"请手动对添加下载任务失败的种子文件进行处理！")
+                            return False
+                
+                time.sleep(2)
+
+                # 筛选文件大小小于 10MB 的文件并取消勾选
+                if not self._select_files_by_size_threshold(min_size_mb=5):
+                    logging.error("文件筛选失败")
+                    return False
+                time.sleep(2)
+
+                # 定位并点击"立即下载"按钮
+                start_download_button = WebDriverWait(self.driver, 10).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "div.submit-frame > div.submit-btn"))
+                )
+                self.driver.execute_script("arguments[0].scrollIntoView(true);", start_download_button)
+                self.driver.execute_script("arguments[0].click();", start_download_button)
+                logging.debug("成功点击'立即下载'按钮")
+                time.sleep(2)
+
+                # 检查是否出现"任务已存在"提示窗口
+                try:
+                    task_exists_dialog = WebDriverWait(self.driver, 5).until(
+                        EC.presence_of_element_located((By.XPATH, "//div[@class='content']//h2[text()='任务已存在']"))
+                    )
+                    if task_exists_dialog:
+                        logging.info("检测到'任务已存在'提示，跳过添加任务")
+
+                        # 查找并点击"查看"按钮
+                        view_button = self.driver.find_element(By.XPATH, "//div[@class='buttons vertical']//button[text()='查看']")
+                        actions.move_to_element(view_button).click().perform()
+                        time.sleep(1)
+
+                        # 删除种子文件（任务已存在）
+                        if original_file_name:
+                            os.remove(os.path.join(self.TORRENT_DIR, original_file_name))
+                            logging.info(f"已清理种子文件（任务已存在）: {original_file_name}")
+
+                        return True
+                except TimeoutException:
+                    pass  # 如果没有提示，则继续正常流程
+
+                logging.info("已成功添加迅雷下载任务")
+                # 成功添加任务后删除种子文件
+                if original_file_name:
+                    os.remove(os.path.join(self.TORRENT_DIR, original_file_name))
+                    logging.info(f"已清理种子文件（添加成功）: {original_file_name}")
+                return True
+
+            except Exception as e:
+                logging.error(f"添加任务失败: {e}")
+                if attempt < max_retries - 1:
+                    logging.info(f"添加任务失败，刷新页面并重试 ({attempt + 1}/{max_retries})")
+                    self.driver.refresh()
+                    time.sleep(3)
+                    continue  # 重新开始整个流程
+                else:
+                    # 添加任务失败时重命名种子文件
                     if original_file_name:
-                        os.remove(os.path.join(self.TORRENT_DIR, original_file_name))
-                        logging.info(f"已清理种子文件（任务已存在）: {original_file_name}")
-
-                    return True
-            except TimeoutException:
-                pass  # 如果没有提示，则继续正常流程
-
-            logging.info("已成功添加迅雷下载任务")
-            # 成功添加任务后删除种子文件
-            if original_file_name:
-                os.remove(os.path.join(self.TORRENT_DIR, original_file_name))
-                logging.info(f"已清理种子文件（添加成功）: {original_file_name}")
-            return True
-
-        except Exception as e:
-            logging.error(f"添加任务失败: {e}")
-            # 添加任务失败时重命名种子文件
-            if original_file_name:
-                old_path = os.path.join(self.TORRENT_DIR, original_file_name)
-                new_path = old_path + ".添加失败"
-                if os.path.exists(old_path):
-                    os.rename(old_path, new_path)
-                    logging.info(f"种子文件重命名为: {new_path}")
-                    logging.info(f"请手动对添加下载任务失败的种子文件进行处理！")
-            return False
+                        old_path = os.path.join(self.TORRENT_DIR, original_file_name)
+                        new_path = old_path + ".添加失败"
+                        if os.path.exists(old_path):
+                            os.rename(old_path, new_path)
+                            logging.info(f"种子文件重命名为: {new_path}")
+                            logging.info(f"请手动对添加下载任务失败的种子文件进行处理！")
+                    return False
 
     def close_driver(self):
         if self.driver:

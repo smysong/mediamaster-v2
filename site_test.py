@@ -50,6 +50,8 @@ class SiteTester:
         options.add_argument('--ignore-certificate-errors')
         options.add_argument('--allow-insecure-localhost')
         options.add_argument('--ignore-ssl-errors')
+        # 设置页面加载策略为急切模式
+        options.page_load_strategy = 'eager'
         # 设置浏览器语言为中文
         options.add_argument('--lang=zh-CN')
         # 设置用户配置文件缓存目录，使用固定instance-id 12作为该程序特有的id

@@ -83,12 +83,12 @@ class DouBanRSSParser:
             try:
                 response = requests.get(rss_url, headers=headers, timeout=10)
                 if response.status_code == 200:
-                    logging.info(f"成功获取豆瓣用户 {user_id} 的想看数据")
+                    logging.info(f"成功获取豆瓣用户 {user_id} 的兴趣数据")
                     all_rss_data.append(response.text)
                 else:
-                    logging.error(f"获取豆瓣用户 {user_id} 的想看数据失败，状态码: {response.status_code}")
+                    logging.error(f"获取豆瓣用户 {user_id} 的兴趣数据失败，状态码: {response.status_code}")
             except requests.RequestException as e:
-                logging.error(f"请求豆瓣用户 {user_id} 的想看数据时发生错误: {e}")
+                logging.error(f"请求豆瓣用户 {user_id} 的兴趣数据时发生错误: {e}")
         
         return all_rss_data
 
@@ -117,19 +117,30 @@ class DouBanRSSParser:
                     douban_id = path_segments[-2] if path_segments[-1] == '' else path_segments[-1]
                     douban_id = int(douban_id)  # 将豆瓣ID转换为int类型
 
-                    # 移除标题开头的"想看"（如果有的话）
-                    title = title.replace('想看', '', 1) if title.startswith('想看') else title
+                    # 检查项目状态：想看、在看、看过
+                    if title.startswith('看过'):
+                        logging.info(f"跳过已看过的项目: {title}（豆瓣ID: {douban_id}）")
+                        continue
+                    elif title.startswith('想看'):
+                        # 移除标题开头的"想看"
+                        title = title.replace('想看', '', 1)
+                    elif title.startswith('在看'):
+                        # 移除标题开头的"在看"
+                        title = title.replace('在看', '', 1)
+                    else:
+                        logging.warning(f"未知状态的项目: {title}（豆瓣ID: {douban_id}）")
+                        continue
 
                     # 检查是否已经处理过这个豆瓣ID，避免重复
                     if douban_id not in seen_douban_ids:
                         seen_douban_ids.add(douban_id)
                         all_parsed_items.append((title, douban_id))
                     else:
-                        logging.info(f"多用户重复想看: {title}（豆瓣ID: {douban_id}）将忽略并保留一份有效订阅")
+                        logging.info(f"多用户重复想看/在看: {title}（豆瓣ID: {douban_id}）将忽略并保留一份有效订阅")
                         
-                logging.info("成功解析豆瓣想看数据")
+                logging.info("成功解析豆瓣兴趣中的想看/在看项目")
             except ET.ParseError as e:
-                logging.error(f"解析豆瓣想看数据时发生错误: {e}")
+                logging.error(f"解析豆瓣兴趣中的想看/在看项目时发生错误: {e}")
         
         return all_parsed_items
 
@@ -384,7 +395,7 @@ class DouBanRSSParser:
                 # 删除数据库中不在新RSS数据中的过时数据
                 self.delete_old_data(existing_douban_ids, new_douban_ids)
 
-                logging.info("开始处理豆瓣想看中的所有项目")
+                logging.info("开始处理豆瓣兴趣中的所有想看/在看项目")
                 for title, douban_id in items:
                     # 检查数据库中是否已存在相同的豆瓣ID
                     if douban_id in existing_douban_ids:
@@ -410,9 +421,9 @@ class DouBanRSSParser:
                     sleep_time = random.uniform(10, 15)
                     time.sleep(sleep_time)
             else:
-                logging.warning("豆瓣想看中没有找到项目")
+                logging.warning("豆瓣兴趣中没有找到项目")
         else:
-            logging.error("未能获取豆瓣想看数据")
+            logging.error("未能获取豆瓣兴趣数据")
 
     def close_db(self):
         self.db_connection.close()

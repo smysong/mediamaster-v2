@@ -1,0 +1,744 @@
+{% extends "base.html" %}
+{% block title %}系统设置{% endblock %}
+{% block content %}
+<style>
+    .fixed-top-bar {
+        margin-top: 50px;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 100;
+        background-color: rgba(248, 249, 250, 0.5);
+        backdrop-filter: blur(10px);
+        padding: 0.5rem 0.5rem;
+        border-bottom: 1px solid #dee2e6;
+        box-shadow: 0 2px 4px rgba(0,0,0,.05);
+    }
+    
+    .card-header h5 {
+        font-size: clamp(12px, 1.2vw, 16px) !important;
+    }
+    
+    .form-text {
+        font-size: clamp(8px, 1.0vw, 12px) !important;
+    }
+    
+    /* 为页面内容添加顶部边距，避免被固定按钮栏遮挡 */
+    .main-content {
+        margin-top: 20px;
+    }
+    
+    .setting-item .form-label,
+    .setting-item .form-control,
+    .setting-item .form-select,
+    .modal-body .form-label,
+    .modal-body .form-control,
+    .modal-body .form-select {
+        font-size: clamp(10px, 1.0vw, 14px) !important;
+    }
+    
+    .directory-selector-btn {
+        border-top-left-radius: 0;
+        border-bottom-left-radius: 0;
+    }
+    
+    .directory-list .list-group-item {
+        border-radius: 0.375rem;
+        margin-bottom: 0.25rem;
+    }
+    
+    .directory-list .list-group-item:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .directory-list .list-group-item i {
+        color: #ffc107;
+    }
+</style>
+<main class="container-fluid px-4 py-4 main-content">
+    <div class="row g-4">
+        <div class="col-12">
+            <div class="fixed-top-bar">
+                <div class="page-header d-flex justify-content-end align-items-center mb-0">
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-danger" id="resetBtn" data-toggle="tooltip" data-placement="bottom" title="提示：执行重置操作后程序将清除所有配置并重启恢复到默认配置。">
+                            <i class="bi bi-arrow-repeat"></i> 系统重置
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="restartBtn" data-toggle="tooltip" data-placement="bottom" title="提示：结束主程序并尝试重启容器。">
+                            <i class="bi bi-bootstrap-reboot"></i> 重启系统
+                        </button>
+                        <button type="submit" class="btn btn-sm btn-primary" form="settingsForm" data-toggle="tooltip" data-placement="bottom" title="提示：某些配置需要重启后才能生效，如保存后未生效请重启系统。">
+                            <i class="bi bi-save"></i> 保存配置
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <form method="post" action="/save_set" id="settingsForm">
+                <div class="row g-4">
+                    {% for group, options in config.items() %}
+                    <div class="col-12 col-lg-6">
+                        <div class="card h-100 shadow-sm">
+                            <div class="card-header text-white d-flex align-items-center">
+                                <i class="bi bi-gear-wide-connected me-2"></i>
+                                <h5 class="mb-0">{{ group }}</h5>
+                            </div>
+                            <div class="card-body">
+                                {% for key, field in options.items() %}
+                                {# 默认隐藏指定key的配置项 #}
+                                {% set hide_keys = ['douban_api_key', 'douban_cookie', 'bt0_login_username', 'bt0_login_password'] %}
+                                <div class="mb-3 setting-item"
+                                     id="form-group-{{ key }}"
+                                     {% if key in hide_keys %}style="display:none;"{% endif %}>
+                                    <label for="{{ key }}" class="form-label fw-medium">{{ field.label }}</label>
+                                    
+                                    <!-- 隐藏字段存储 ID -->
+                                    <input type="hidden" name="{{ key }}_id" value="{{ field.id }}">
+                                    
+                                    {% if field.type == 'password' %}
+                                        <input type="password" class="form-control" name="{{ key }}" id="{{ key }}" value="{{ field.value }}">
+                                    {% elif field.type == 'select' %}
+                                        <select class="form-select" name="{{ key }}" id="{{ key }}">
+                                            <option value="move" {% if field.value == 'move' %}selected{% endif %}>移动</option>
+                                            <option value="copy" {% if field.value == 'copy' %}selected{% endif %}>复制</option>
+                                            <option value="softlink" {% if field.value == 'softlink' %}selected{% endif %}>软链接</option>
+                                            <option value="hardlink" {% if field.value == 'hardlink' %}selected{% endif %}>硬链接</option>
+                                        </select>
+                                    {% elif field.type == 'downloader' %}
+                                        <select class="form-select" name="{{ key }}" id="{{ key }}">
+                                            <option value="transmission" {% if field.value == 'transmission' %}selected{% endif %}>Transmission</option>
+                                            <option value="qbittorrent" {% if field.value == 'qbittorrent' %}selected{% endif %}>qBittorrent</option>
+                                            <option value="xunlei" {% if field.value == 'xunlei' %}selected{% endif %}>迅雷</option>
+                                        </select>
+                                    {% elif field.type == 'switch' %}
+                                        <select class="form-select" name="{{ key }}" id="{{ key }}">
+                                            <option value="True" {% if field.value == 'True' %}selected{% endif %}>开启</option>
+                                            <option value="False" {% if field.value == 'False' %}selected{% endif %}>关闭</option>
+                                        </select>
+                                    {% else %}
+                                        <div class="input-group">
+                                            <input type="text" class="form-control" name="{{ key }}" id="{{ key }}" value="{{ field.value }}">
+                                            {% if key in ['media_dir', 'movies_path', 'episodes_path', 'unknown_path', 'download_dir'] %}
+                                            <button class="btn btn-sm btn-outline-primary directory-selector-btn" 
+                                                    type="button" data-target="{{ key }}">
+                                                <i class="bi bi-folder" style="margin-right:0px;"></i>
+                                            </button>
+                                            {% endif %}
+                                        </div>
+                                        {% if ',' in field.value %}
+                                        <div class="form-text">
+                                            <i class="bi bi-info-circle me-1"></i> 多个值可以用,逗号分隔
+                                        </div>
+                                        {% endif %}
+                                    {% endif %}
+                                    
+                                    <!-- 添加提示信息 -->
+                                    {% if key == 'tmdb_api_key' %}
+                                    <div class="form-text">
+                                        <i class="bi bi-info-circle me-1"></i> TMDB密钥用于获取媒体详细信息、文件转移、热门推荐；系统已内置API密钥，您也可以使用自己的API密钥。
+                                    </div>
+                                    {% elif key == 'ocr_api_key' %}
+                                    <div class="form-text">
+                                        <i class="bi bi-info-circle me-1"></i> OCR API密钥用于识别站点图片验证码，需自行申请：<a target="_blank" href="https://ocr.space/ocrapi/freekey">免费申请</a>
+                                    </div>
+                                    {% elif key == 'preferred_resolution' %}
+                                    <div class="form-text">
+                                        <i class="bi bi-info-circle me-1"></i> 首选、备选分辨率支持：720p、1080p、2160p等。以"p"（逐行扫描）为单位。
+                                    </div>
+                                    {% elif key == 'resources_prefer_keywords' %}
+                                    <div class="form-text">
+                                        <i class="bi bi-info-circle me-1"></i> 资源下载偏好关键词与资源搜索排除关键词是相反冲突的，相同关键词不应该同时出现在两个设置项中。如无需求可不填写。
+                                    </div>
+                                    {% elif key == 'douban_api_key' %}
+                                    <div class="form-text">
+                                        <i class="bi bi-info-circle me-1"></i> 豆瓣密钥用于获取媒体详细信息、演职人员中文汉化等，保持系统默认即可。
+                                    </div>
+                                    {% elif key == 'run_interval_hours' %}
+                                    <div class="form-text">
+                                        <i class="bi bi-info-circle me-1"></i> 自动化流程（检查订阅、检索、下载等）运行间隔时间（小时），建议设置为4小时以上，以减少频繁请求。
+                                    </div>
+                                    {% elif key == 'dateadded' %}
+                                    <div class="form-text">
+                                        <i class="bi bi-info-circle me-1"></i> 修改媒体库目录中NFO元数据文件中的添加日期为影片发行日期，Emby、Jellyfin等媒体服务器会读取此信息，在最新媒体中按发行日期排序，否则默认按添加日期排序。
+                                    </div>
+                                    {% elif key == 'actor_nfo' %}
+                                    <div class="form-text">
+                                        <i class="bi bi-info-circle me-1"></i> NFO元数据文件演职人员汉化，开启后将尝试对演职人员信息进行中文汉化。如媒体库目录无NFO元数据文件则无需开启。
+                                    </div>
+                                    {% elif key == 'douban_cookie' %}
+                                    <div class="form-text">
+                                        <i class="bi bi-info-circle me-1"></i> 豆瓣cookie非必要选项，保持系统默认即可。
+                                    </div>
+                                    {% elif key == 'douban_user_ids' %}
+                                    <div class="form-text text-danger">
+                                        <i class="bi bi-exclamation-triangle me-1"></i> 必填项：豆瓣账号ID，用于获取豆瓣想看数据并添加订阅，多个账号可以用,逗号分隔。<a target="_blank" href="http://wiki.songmy.top:8080/web/#/686311457/102215711">使用帮助</a>
+                                    </div>
+                                    {% elif key == 'douban_rss_url' %}
+                                    <div class="form-text text-danger">
+                                        <i class="bi bi-exclamation-triangle me-1"></i> 必填项：豆瓣想看地址，将your_douban_id替换为自己的ID。<a target="_blank" href="http://wiki.songmy.top:8080/web/#/686311457/102215711">使用帮助</a>
+                                    </div>
+                                    {% elif key == 'bt_login_username' %}
+                                    <div class="form-text">
+                                        <i class="bi bi-info-circle me-1"></i> 如不使用私有站点，则保持系统默认即可。
+                                    </div>
+                                    {% elif key == 'gy_login_username' %}
+                                    <div class="form-text">
+                                        <i class="bi bi-info-circle me-1"></i> 观影站点，需要登录才有权限搜索、下载，请自行注册用户。如不使用则保持系统默认即可。
+                                    </div>
+                                    {% elif key == 'bt0_login_username' %}
+                                    <div class="form-text">
+                                        <i class="bi bi-info-circle me-1"></i> 不太灵站点，暂不需要登录，备用选项。保持系统默认即可。
+                                    </div>
+                                    {% elif key == 'download_port' %}
+                                    <div class="form-text">
+                                        <i class="bi bi-info-circle me-1"></i> 使用transmission和qbittorrent需要填写IP地址和端口。如不使用则保持系统默认即可。
+                                    </div>
+                                    <!-- 添加测试按钮 -->
+                                    <div class="mt-2">
+                                        <button type="button" id="testDownloaderBtn" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-wifi"></i> 测试连接
+                                        </button>
+                                        <span id="testResult" class="ms-2"></span>
+                                    </div>
+                                    {% elif key == 'xunlei_dir' %}
+                                    <div class="form-text">
+                                        <i class="bi bi-info-circle me-1"></i> 迅雷远程下载需填写用户名、密码、设备名称、下载目录。<a target="_blank" href="http://wiki.songmy.top:8080/web/#/686311457/102215687">使用帮助</a>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 加载指示器 -->
+    <div class="loader-container" id="loading-overlay">
+        <div class="loader"></div>
+        <div class="loading-text">请稍后...</div>
+    </div>
+    
+    <!-- 目录选择模态框 -->
+    <div class="modal fade" id="directorySelectorModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">选择目录</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">当前路径:</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="currentPath" readonly>
+                            <button class="btn btn-sm btn-outline-primary" type="button" id="refreshPath" title="刷新">
+                                <i class="bi bi-arrow-repeat" style="margin-right:0px;"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary" type="button" id="newDirBtn" title="新建目录">
+                                <i class="bi bi-folder-plus" style="margin-right:0px;"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary" type="button" id="renameDirBtn" title="重命名目录">
+                                <i class="bi bi-pencil" style="margin-right:0px;"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="directory-list" id="directoryList" style="max-height: 400px; overflow-y: auto;">
+                        <!-- 目录列表将通过JavaScript动态填充 -->
+                    </div>
+                </div>
+                <div class="modal-footer" style="width: 100%;">
+                    <button type="button" class="btn btn-sm btn-primary" id="selectDirectoryBtn">选择此目录</button>
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新建目录模态框 -->
+    <div class="modal fade" id="newDirModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">新建目录</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">目录名称</label>
+                        <input type="text" class="form-control" id="newDirName" placeholder="请输入目录名称">
+                    </div>
+                </div>
+                <div class="modal-footer" style="width: 100%;">
+                    <button type="button" class="btn btn-sm btn-primary" id="confirmNewDirBtn">创建</button>
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 重命名目录模态框 -->
+    <div class="modal fade" id="renameDirModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">重命名目录</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">新名称</label>
+                        <input type="text" class="form-control" id="renameDirName" placeholder="请输入新名称">
+                        <input type="hidden" id="renameDirPath">
+                    </div>
+                </div>
+                <div class="modal-footer" style="width: 100%;">
+                    <button type="button" class="btn btn-sm btn-primary" id="confirmRenameDirBtn">重命名</button>
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script src="/static/js/jquery.min.js"></script>
+<script>
+    $(document).ready(function () {
+        // 初始化Bootstrap tooltips
+        $('[data-toggle="tooltip"]').tooltip();
+
+        // 动态显示/隐藏下载器相关配置项
+        function toggleDownloaderFields() {
+            // 根据 notification 开关显示/隐藏 notification_api_key
+            var notification = $('#notification').val() || $('#notification').find("option:selected").val();
+            if (notification === 'True') {
+                $('#form-group-notification_api_key').show();
+            } else {
+                $('#form-group-notification_api_key').hide();
+            }
+
+            // 根据 actor_nfo 开关显示/隐藏相关配置项
+            var actorNfo = $('#actor_nfo').val() || $('#actor_nfo').find("option:selected").val();
+            var nfoFields = [
+                'nfo_exclude_dirs',
+                'nfo_excluded_filenames',
+                'nfo_excluded_subdir_keywords'
+            ];
+            if (actorNfo === 'True') {
+                nfoFields.forEach(function(key) {
+                    $('#form-group-' + key).show();
+                });
+            } else {
+                nfoFields.forEach(function(key) {
+                    $('#form-group-' + key).hide();
+                });
+            }
+
+            // 获取下载器类型和下载管理开关
+            var downloader = $('#download_type').val() || $('#download_type').find("option:selected").val();
+            var mgmt = $('#download_mgmt').val() || $('#download_mgmt').find("option:selected").val();
+
+            // 先处理下载管理总开关
+            var downloadFields = [
+                'download_type', 'download_username', 'download_password',
+                'download_host', 'download_port', 'xunlei_device_name', 'xunlei_dir'
+            ];
+            if (mgmt === 'False') {
+                downloadFields.forEach(function(key) {
+                    $('#form-group-' + key).hide();
+                });
+                return;
+            } else {
+                downloadFields.forEach(function(key) {
+                    $('#form-group-' + key).show();
+                });
+            }
+
+            // 只在选择迅雷时显示xunlei_device_name、xunlei_dir，隐藏download_host、download_port
+            if (downloader === 'xunlei') {
+                $('#form-group-xunlei_device_name').show();
+                $('#form-group-xunlei_dir').show();
+                $('#form-group-download_host').hide();
+                $('#form-group-download_port').hide();
+            } else if (downloader === 'transmission' || downloader === 'qbittorrent') {
+                $('#form-group-xunlei_device_name').hide();
+                $('#form-group-xunlei_dir').hide();
+                $('#form-group-download_host').show();
+                $('#form-group-download_port').show();
+            } else {
+                $('#form-group-xunlei_device_name').hide();
+                $('#form-group-xunlei_dir').hide();
+                $('#form-group-download_host').show();
+                $('#form-group-download_port').show();
+            }
+        }
+
+        // 绑定下拉框事件
+        $('#download_type').on('change', toggleDownloaderFields);
+        $('#download_mgmt').on('change', toggleDownloaderFields);
+        $('#notification').on('change', toggleDownloaderFields);
+        $('#actor_nfo').on('change', toggleDownloaderFields);
+        
+        // 页面加载时初始化
+        toggleDownloaderFields();
+
+        // 获取 Flask 传递的闪现消息
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    // 设置 Toast 消息内容
+                    $('#toastMessage').text('{{ message }}');
+
+                    // 初始化并显示 Toast
+                    var toast = new bootstrap.Toast(document.getElementById('toast'), {
+                        delay: 2000  // 设置自动关闭的时间，单位为毫秒
+                    });
+                    toast.show();
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        // 添加测试下载器连接功能
+        $('#testDownloaderBtn').on('click', function() {
+            var downloader = $('#download_type').val() || $('#download_type').find("option:selected").val();
+            var host = $('#download_host').val();
+            var port = $('#download_port').val();
+            var username = $('#download_username').val();
+            var password = $('#download_password').val();
+            
+            if (downloader !== 'transmission' && downloader !== 'qbittorrent') {
+                $('#testResult').html('<span class="text-warning"><i class="bi bi-exclamation-triangle"></i> 仅支持测试Transmission和qBittorrent</span>');
+                return;
+            }
+            
+            if (!host || !port) {
+                $('#testResult').html('<span class="text-danger"><i class="bi bi-exclamation-circle"></i> 请填写下载器地址和端口</span>');
+                return;
+            }
+            
+            $('#testResult').html('<span class="text-info"><i class="bi bi-arrow-repeat"></i> 测试中...</span>');
+            
+            // 发送测试请求到后端
+            $.ajax({
+                url: '/test_downloader_connection',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    downloader: downloader,
+                    host: host,
+                    port: port,
+                    username: username,
+                    password: password
+                }),
+                success: function(response) {
+                    if (response.success) {
+                        $('#testResult').html('<span class="text-success"><i class="bi bi-check-circle"></i> 连接成功！</span>');
+                    } else {
+                        $('#testResult').html('<span class="text-danger"><i class="bi bi-x-circle"></i> 连接失败：' + response.message + '</span>');
+                    }
+                },
+                error: function(xhr, status, error) {
+                    $('#testResult').html('<span class="text-danger"><i class="bi bi-x-circle"></i> 测试请求失败：' + error + '</span>');
+                }
+            });
+        });
+    });
+
+    // 重置按钮的点击事件处理
+    function handleReset() {
+        if (confirm('确定要执行系统重置吗？这将删除所有配置并重启容器，恢复到初始状态。')) {
+            // 显示加载指示器
+            $('#loading-overlay').css('display', 'flex');
+            $('.loading-text').text('正在执行系统重置...');
+            
+            $.ajax({
+                url: '/reset_program',
+                method: 'POST',
+                success: function(response) {
+                    // 更新加载文本
+                    $('.loading-text').text('系统正在重启中，请稍候...');
+                    // 开始轮询系统状态
+                    pollHealthCheck();
+                },
+                error: function(xhr, status, error) {
+                    // 隐藏加载指示器
+                    $('#loading-overlay').hide();
+                    alert('重置失败: ' + xhr.responseJSON.message);
+                }
+            });
+        }
+    }
+
+    // 重启按钮的点击事件处理
+    function handleRestart() {
+        if (confirm('确定要重启系统吗？重启过程可能需要几分钟。')) {
+            // 显示加载指示器
+            $('#loading-overlay').css('display', 'flex');
+            $('.loading-text').text('正在执行系统重启，请稍候...');
+            
+            $.ajax({
+                url: '/restart_program',
+                method: 'POST',
+                success: function(response) {
+                    // 更新加载文本
+                    $('.loading-text').text('系统正在重启中，请稍候...');
+                    // 开始轮询系统状态
+                    pollHealthCheck();
+                },
+                error: function(xhr, status, error) {
+                    // 隐藏加载指示器
+                    $('#loading-overlay').hide();
+                    alert('重启失败: ' + xhr.responseJSON.message);
+                }
+            });
+        }
+    }
+
+    // 保存配置按钮的点击事件处理
+    $('button[form="settingsForm"]').on('click', function(e) {
+        e.preventDefault();
+        
+        // 显示加载指示器
+        $('#loading-overlay').css('display', 'flex');
+        $('.loading-text').text('正在保存配置...');
+        
+        // 提交表单
+        $('#settingsForm').submit();
+    });
+
+    // 绑定按钮事件
+    $('#resetBtn').on('click', handleReset);
+    $('#restartBtn').on('click', handleRestart);
+
+    // 轮询健康检查函数
+    function pollHealthCheck() {
+        const pollInterval = 3000; // 3秒轮询一次
+        const maxAttempts = 40; // 最多尝试40次，约2分钟
+        let attempts = 0;
+        
+        const poll = function() {
+            attempts++;
+            
+            $.ajax({
+                url: '/health_check',
+                method: 'GET',
+                timeout: 3000, // 3秒超时
+                success: function(response) {
+                    if (response.status === 'ok') {
+                        // 系统已重启，跳转到登录页面
+                        $('.loading-text').text('重启成功，正在跳转到登录页面...');
+                        setTimeout(function() {
+                            window.location.href = '/login';
+                        }, 1500);
+                    } else {
+                        // 如果返回了非预期的状态，继续轮询
+                        if (attempts < maxAttempts) {
+                            setTimeout(poll, pollInterval);
+                        } else {
+                            $('#loading-overlay').hide();
+                            if (confirm('系统重启超时，请手动访问登录页面。是否立即跳转？')) {
+                                window.location.href = '/login';
+                            }
+                        }
+                    }
+                },
+                error: function(xhr, status, error) {
+                    // 请求失败（可能是服务器正在重启），继续轮询
+                    if (attempts < maxAttempts) {
+                        setTimeout(poll, pollInterval);
+                    } else {
+                        $('#loading-overlay').hide();
+                        if (confirm('系统重启超时，请手动访问登录页面。是否立即跳转？')) {
+                            window.location.href = '/login';
+                        }
+                    }
+                }
+            });
+        };
+        
+        // 开始轮询
+        setTimeout(poll, pollInterval);
+    }
+    
+    // 目录选择相关变量
+    let currentSelectedPath = '';
+    let targetInputId = '';
+    
+    // 打开目录选择器
+    function openDirectorySelector(inputId) {
+        targetInputId = inputId;
+        currentSelectedPath = $('#' + inputId).val() || '/';
+        loadDirectory(currentSelectedPath);
+        new bootstrap.Modal(document.getElementById('directorySelectorModal')).show();
+    }
+    
+    // 加载目录内容
+    function loadDirectory(path) {
+        $('#currentPath').val(path);
+        $('#directoryList').html('<div class="text-center"><div class="spinner-border" role="status"></div></div>');
+        
+        $.get('/api/browse_directory', {path: path})
+            .done(function(data) {
+                if (data.error) {
+                    $('#directoryList').html(`<div class="alert alert-danger">${data.error}</div>`);
+                    return;
+                }
+                
+                let html = '<div class="list-group">';
+                data.items.forEach(function(item) {
+                    if (item.is_dir) {
+                        html += `
+                            <a href="#" class="list-group-item list-group-item-action directory-item" 
+                               data-path="${item.path}">
+                                <i class="bi bi-folder me-2"></i>${item.name}
+                            </a>
+                        `;
+                    }
+                });
+                html += '</div>';
+                $('#directoryList').html(html);
+                
+                // 绑定目录项点击事件
+                $('.directory-item').on('click', function(e) {
+                    e.preventDefault();
+                    const path = $(this).data('path');
+                    loadDirectory(path);
+                });
+            })
+            .fail(function(xhr) {
+                let errorMsg = '加载目录失败';
+                if (xhr.responseJSON && xhr.responseJSON.error) {
+                    errorMsg = xhr.responseJSON.error;
+                }
+                $('#directoryList').html(`<div class="alert alert-danger">${errorMsg}</div>`);
+            });
+    }
+    
+    // 刷新当前目录
+    $('#refreshPath').on('click', function() {
+        loadDirectory($('#currentPath').val());
+    });
+    
+    // 选择目录按钮事件
+    $('#selectDirectoryBtn').on('click', function() {
+        if (targetInputId) {
+            $('#' + targetInputId).val($('#currentPath').val());
+            bootstrap.Modal.getInstance(document.getElementById('directorySelectorModal')).hide();
+        }
+    });
+    
+    // 绑定选择按钮事件
+    $('.directory-selector-btn').on('click', function() {
+        const targetId = $(this).data('target');
+        openDirectorySelector(targetId);
+    });
+
+    // 新建目录按钮事件
+    $('#newDirBtn').on('click', function() {
+        $('#newDirName').val('');
+        new bootstrap.Modal(document.getElementById('newDirModal')).show();
+    });
+
+    // 确认新建目录按钮事件
+    $('#confirmNewDirBtn').on('click', function() {
+        const dirName = $('#newDirName').val().trim();
+        const currentPath = $('#currentPath').val();
+        
+        if (!dirName) {
+            alert('请输入目录名称');
+            return;
+        }
+        
+        // 发送创建目录请求
+        $.ajax({
+            url: '/api/create_directory',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                path: currentPath,
+                dir_name: dirName
+            }),
+            success: function(response) {
+                bootstrap.Modal.getInstance(document.getElementById('newDirModal')).hide();
+                // 将当前路径设置为新建的目录路径
+                loadDirectory(response.path);
+            },
+            error: function(xhr) {
+                let errorMsg = '创建目录失败';
+                if (xhr.responseJSON && xhr.responseJSON.error) {
+                    errorMsg = xhr.responseJSON.error;
+                }
+                alert(errorMsg);
+            }
+        });
+    });
+
+    // 重命名目录按钮事件
+    $('#renameDirBtn').on('click', function() {
+        const currentPath = $('#currentPath').val();
+        // 如果当前路径是根目录，不允许重命名
+        if (currentPath === '/') {
+            alert('不能重命名根目录');
+            return;
+        }
+        
+        const dirName = path.basename(currentPath);
+        $('#renameDirName').val(dirName);
+        $('#renameDirPath').val(currentPath);
+        new bootstrap.Modal(document.getElementById('renameDirModal')).show();
+    });
+
+    // 确认重命名目录按钮事件
+    $('#confirmRenameDirBtn').on('click', function() {
+        const newName = $('#renameDirName').val().trim();
+        const oldPath = $('#renameDirPath').val();
+        const parentPath = path.dirname(oldPath);
+        
+        if (!newName) {
+            alert('请输入新名称');
+            return;
+        }
+        
+        // 发送重命名目录请求
+        $.ajax({
+            url: '/api/rename_directory',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                old_path: oldPath,
+                new_name: newName
+            }),
+            success: function(response) {
+                bootstrap.Modal.getInstance(document.getElementById('renameDirModal')).hide();
+                loadDirectory(parentPath); // 刷新父目录
+            },
+            error: function(xhr) {
+                let errorMsg = '重命名目录失败';
+                if (xhr.responseJSON && xhr.responseJSON.error) {
+                    errorMsg = xhr.responseJSON.error;
+                }
+                alert(errorMsg);
+            }
+        });
+    });
+
+    // 添加path工具函数
+    const path = {
+        basename: function(path) {
+            return path.split('/').pop();
+        },
+        dirname: function(path) {
+            const parts = path.split('/');
+            parts.pop();
+            return parts.join('/') || '/';
+        }
+    };
+</script>
+
+{% endblock %}

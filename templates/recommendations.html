@@ -804,7 +804,7 @@
         startDate.setFullYear(startDate.getFullYear() - 1);
         const startDateStr = startDate.toISOString().split('T')[0];
         
-        const url = `https://api.tmdb.org/3/discover/movie?api_key=${apiKey}&language=zh-CN&sort_by=release_date.desc&primary_release_date.gte=${startDateStr}&primary_release_date.lte=${endDate}&with_origin_country=CN&vote_count.gte=10`;
+        const url = `https://api.tmdb.org/3/discover/movie?api_key=${apiKey}&language=zh-CN&sort_by=release_date.desc&primary_release_date.gte=${startDateStr}&primary_release_date.lte=${endDate}&with_origin_country=CN&vote_count.gte=2&vote_average.gte=5`;
         
         return fetch(url)
             .then(response => response.json())
@@ -840,7 +840,7 @@
         // 2. 要求有评分和投票数
         // 3. 限定原始语言为中文
         // 4. 可以添加 with_origin_country=CN 或使用 region=CN
-        const url = `https://api.tmdb.org/3/discover/tv?api_key=${apiKey}&language=zh-CN&sort_by=first_air_date.desc&first_air_date.gte=${startDateStr}&first_air_date.lte=${endDate}&with_original_language=zh&vote_count.gte=1&vote_average=4&page=1`;
+        const url = `https://api.tmdb.org/3/discover/tv?api_key=${apiKey}&language=zh-CN&sort_by=first_air_date.desc&first_air_date.gte=${startDateStr}&first_air_date.lte=${endDate}&with_original_language=zh&vote_count.gte=2&vote_average=5`;
         
         return fetch(url)
             .then(response => response.json())

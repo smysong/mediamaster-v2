@@ -1714,16 +1714,27 @@ GROUP_MAPPING = {
         "notification_api_key": {"type": "password", "label": "Bark API密钥"},
     },
     "媒体添加时间": {
-        "dateadded": {"type": "switch", "label": "使用影片发行日期"}
+        "dateadded": {"type": "switch", "label": "发行日期作为媒体添加日期"}
     },
     "媒体元数据刮削": {
         "scrape_metadata": {"type": "switch", "label": "刮削媒体元数据"},
+        "scrape_plot": {"type": "switch", "label": "刮削简介"},
+        "scrape_actors": {"type": "switch", "label": "刮削演员信息"},
+        "scrape_director": {"type": "switch", "label": "刮削导演信息"},
+        "scrape_actor_thumb": {"type": "switch", "label": "刮削演职人员头像"},
+        "scrape_ratings": {"type": "switch", "label": "刮削评分信息"},
+        "scrape_genres": {"type": "switch", "label": "刮削类型信息"},
+        "scrape_tags": {"type": "switch", "label": "刮削标签信息"},
+        "scrape_studios": {"type": "switch", "label": "刮削制片公司信息"},
+        "scrape_poster": {"type": "switch", "label": "下载海报图"},
+        "scrape_fanart": {"type": "switch", "label": "下载背景图"},
+        "scrape_clearlogo": {"type": "switch", "label": "下载Logo图"}
     },
     "中文演职人员": {
         "actor_nfo": {"type": "switch", "label": "演职人员汉化"},
-        "nfo_exclude_dirs": {"type": "text", "label": "排除目录"},
-        "nfo_excluded_filenames": {"type": "text", "label": "排除文件名"},
-        "nfo_excluded_subdir_keywords": {"type": "text", "label": "排除关键字"}
+        "nfo_exclude_dirs": {"type": "text", "label": "汉化排除目录"},
+        "nfo_excluded_filenames": {"type": "text", "label": "汉化排除文件名"},
+        "nfo_excluded_subdir_keywords": {"type": "text", "label": "汉化排除关键字"}
     },
     "媒体库目录": {
         "media_dir": {"type": "text", "label": "主目录"},
@@ -1733,7 +1744,7 @@ GROUP_MAPPING = {
     },
     "资源下载设置": {
         "download_dir": {"type": "text", "label": "下载目录"},
-        "download_action": {"type": "select", "label": "下载文件转移方式", "options": ["移动", "复制", "软链接", "硬链接"]},
+        "download_action": {"type": "select", "label": "文件入库转移方式", "options": ["移动", "复制", "软链接", "硬链接"]},
         "download_excluded_filenames": {"type": "text", "label": "下载转移排除的文件名"},
         "preferred_resolution": {"type": "text", "label": "资源下载首选分辨率"},
         "fallback_resolution": {"type": "text", "label": "资源下载备选分辨率"},

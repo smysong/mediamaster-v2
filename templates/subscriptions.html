@@ -66,7 +66,7 @@
                     <i class="bi bi-view-list"></i>剧集关联
                 </button>
                 <button type="button" class="btn btn-sm btn-primary ms-2" data-bs-toggle="modal" data-bs-target="#doubanSubscriptionsModal">
-                    <i class="bi bi-heart"></i>豆瓣想看
+                    <i class="bi bi-heart"></i>豆瓣兴趣
                 </button>
             </div>
         </div>
@@ -277,22 +277,22 @@
         </div>
     </div>
 </div>
-<!-- 豆瓣想看模态框 -->
+<!-- 豆瓣兴趣模态框 -->
 <div class="modal fade" id="doubanSubscriptionsModal" tabindex="-1" aria-labelledby="doubanSubscriptionsModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl">
         <div class="modal-content border-0 shadow-lg">
             <div class="modal-header">
-                <h5 class="modal-title" id="doubanSubscriptionsModalLabel">豆瓣想看数据</h5>
+                <h5 class="modal-title" id="doubanSubscriptionsModalLabel">想看/在看项目</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-0">
                 <div id="doubanSubscriptionsContent">
-                    <!-- 豆瓣想看内容将通过 AJAX 加载 -->
+                    <!-- 豆瓣兴趣内容将通过 AJAX 加载 -->
                     <div class="text-center py-5">
                         <div class="spinner-border text-primary" role="status">
                             <span class="visually-hidden">加载中...</span>
                         </div>
-                        <p class="mt-2 text-muted">正在加载豆瓣想看内容...</p>
+                        <p class="mt-2 text-muted">正在加载豆瓣兴趣内容...</p>
                     </div>
                 </div>
             </div>
@@ -1308,12 +1308,12 @@
         });
     });
 
-    // 豆瓣想看模态框相关功能
+    // 豆瓣兴趣模态框相关功能
     document.getElementById('doubanSubscriptionsModal').addEventListener('show.bs.modal', function () {
         loadDoubanSubscriptions();
     });
 
-    // 加载豆瓣想看内容
+    // 加载豆瓣兴趣数据
     function loadDoubanSubscriptions() {
         const container = document.getElementById('doubanSubscriptionsContent');
         container.innerHTML = `
@@ -1321,7 +1321,7 @@
                 <div class="spinner-border text-primary" role="status">
                     <span class="visually-hidden">加载中...</span>
                 </div>
-                <p class="mt-2 text-muted">正在加载豆瓣想看内容...</p>
+                <p class="mt-2 text-muted">正在加载豆瓣兴趣数据...</p>
             </div>
         `;
         
@@ -1334,7 +1334,7 @@
                 html += `
                     <div class="p-4">
                         <h5 class="mb-4 pb-2 border-bottom d-flex align-items-center">
-                            <i class="bi bi-film me-2 text-primary"></i>想看的电影
+                            <i class="bi bi-film me-2 text-primary"></i>想看/在看的影片
                         </h5>
                 `;
                 
@@ -1371,7 +1371,7 @@
                     html += `
                         <div class="text-center py-5">
                             <i class="bi bi-film text-muted" style="font-size: 3rem;"></i>
-                            <p class="mt-3 text-muted">目前没有想看的电影</p>
+                            <p class="mt-3 text-muted">目前没有想看/在看的影片</p>
                         </div>
                     `;
                 }
@@ -1382,7 +1382,7 @@
                 html += `
                     <div class="p-4 bg-light bg-opacity-50">
                         <h5 class="mb-4 pb-2 border-bottom d-flex align-items-center">
-                            <i class="bi bi-tv me-2 text-primary"></i>想看的电视剧
+                            <i class="bi bi-tv me-2 text-primary"></i>想看/在看的剧集
                         </h5>
                 `;
                 
@@ -1427,7 +1427,7 @@
                     html += `
                         <div class="text-center py-5">
                             <i class="bi bi-tv text-muted" style="font-size: 3rem;"></i>
-                            <p class="mt-3 text-muted">目前没有想看的电视剧</p>
+                            <p class="mt-3 text-muted">目前没有想看/在看的剧集</p>
                         </div>
                     `;
                 }
@@ -1441,7 +1441,7 @@
                 container.innerHTML = `
                     <div class="text-center py-5">
                         <i class="bi bi-exclamation-triangle text-danger" style="font-size: 3rem;"></i>
-                        <p class="mt-3 text-danger">加载豆瓣想看内容失败</p>
+                        <p class="mt-3 text-danger">加载豆瓣兴趣数据失败</p>
                         <button class="btn btn-sm btn-outline-primary mt-2" onclick="loadDoubanSubscriptions()">
                             <i class="bi bi-arrow-repeat me-1"></i>重新加载
                         </button>

@@ -43,8 +43,8 @@ def get_movie_info_from_tmdb(tmdb_id, config):
     url = f"{TMDB_BASE_URL}/3/movie/{tmdb_id}"
     params = {
         'api_key': TMDB_API_KEY,
-        'language': 'zh-CN',
-        'append_to_response': 'credits'
+        'language': 'zh',
+        'append_to_response': 'credits,keywords,images'
     }
     try:
         resp = requests.get(url, params=params, timeout=10)
@@ -69,31 +69,62 @@ def get_movie_info_from_tmdb(tmdb_id, config):
             "actors": [],
             "director": "",
             "director_tmdbid": "",
+            "director_thumb": "",
             "poster": f"https://image.tmdb.org/t/p/original{data['poster_path']}" if data.get("poster_path") else "",
             "fanart": f"https://image.tmdb.org/t/p/original{data['backdrop_path']}" if data.get("backdrop_path") else "",
+            "tags": []
         }
+        
+        # 获取标签信息
+        if data.get("keywords") and data["keywords"].get("keywords"):
+            info["tags"] = [k["name"] for k in data["keywords"]["keywords"]]
+        
         # 演员
         for cast in data.get("credits", {}).get("cast", [])[:20]:
-            info["actors"].append({
+            actor_info = {
                 "name": cast.get("name"),
                 "role": cast.get("character"),
                 "tmdbid": cast.get("id"),
                 "imdbid": None
-            })
+            }
+            # 添加演员头像
+            if cast.get("profile_path"):
+                actor_info["thumb"] = f"https://image.tmdb.org/t/p/original{cast['profile_path']}"
+            info["actors"].append(actor_info)
+            
         # 导演
         for crew in data.get("credits", {}).get("crew", []):
             if crew.get("job") == "Director":
                 info["director"] = crew.get("name")
                 info["director_tmdbid"] = crew.get("id")
+                # 添加导演头像
+                if crew.get("profile_path"):
+                    info["director_thumb"] = f"https://image.tmdb.org/t/p/original{crew['profile_path']}"
                 break
 
         # 获取 clearlogo
         if data.get("images"):
             logos = data["images"].get("logos", [])
+            logging.debug(f"电影 {data.get('title')} 找到 {len(logos)} 个 logo 候选项")
             if logos:
-                info["clearlogo"] = f"https://image.tmdb.org/t/p/original{logos[0]['file_path']}"
+                # 优先选择中文或英文的logo，且评分较高的
+                preferred_logos = [logo for logo in logos if logo.get("iso_639_1") in ("zh", "en", "zh-CN", "zh-TW")]
+                if preferred_logos:
+                    logging.debug(f"找到 {len(preferred_logos)} 个中英文 logo")
+                    # 选择评分最高的
+                    best_logo = max(preferred_logos, key=lambda x: x.get("vote_average", 0))
+                else:
+                    # 如果没有中英文logo，则选择评分最高的
+                    best_logo = max(logos, key=lambda x: x.get("vote_average", 0))
+                logging.debug(f"选择的 logo 信息: language={best_logo.get('iso_639_1')}, "
+                            f"rating={best_logo.get('vote_average')}, path={best_logo.get('file_path')}")
+                info["clearlogo"] = f"https://image.tmdb.org/t/p/original{best_logo['file_path']}"
             else:
+                logging.debug("未找到任何 logo")
                 info["clearlogo"] = None
+        else:
+            logging.debug("未返回 images 数据")
+            info["clearlogo"] = None
 
         return info
     except Exception as e:
@@ -107,8 +138,8 @@ def get_tv_info_from_tmdb(tmdb_id, config):
     url = f"{TMDB_BASE_URL}/3/tv/{tmdb_id}"
     params = {
         'api_key': TMDB_API_KEY,
-        'language': 'zh-CN',
-        'append_to_response': 'credits,external_ids,images'
+        'language': 'zh',
+        'append_to_response': 'credits,external_ids,images,keywords'
     }
     try:
         resp = requests.get(url, params=params, timeout=10)
@@ -150,11 +181,16 @@ def get_tv_info_from_tmdb(tmdb_id, config):
         }
         # 演员
         for cast in data.get("credits", {}).get("cast", [])[:20]:
-            info["actors"].append({
+            actor_info = {
                 "name": cast.get("name"),
                 "role": cast.get("character"),
                 "tmdbid": cast.get("id"),
-            })
+            }
+            # 添加演员头像
+            if cast.get("profile_path"):
+                actor_info["thumb"] = f"https://image.tmdb.org/t/p/original{cast['profile_path']}"
+            info["actors"].append(actor_info)
+            
         # tag
         if data.get("keywords", {}).get("results"):
             info["tags"] = [k["name"] for k in data["keywords"]["results"]]
@@ -175,10 +211,26 @@ def get_tv_info_from_tmdb(tmdb_id, config):
         # 获取 clearlogo
         if data.get("images"):
             logos = data["images"].get("logos", [])
+            logging.debug(f"剧集 {data.get('name')} 找到 {len(logos)} 个 logo 候选项")
             if logos:
-                info["clearlogo"] = f"https://image.tmdb.org/t/p/original{logos[0]['file_path']}"
+                # 优先选择中文或英文的logo，且评分较高的
+                preferred_logos = [logo for logo in logos if logo.get("iso_639_1") in ("zh", "en", "zh-CN", "zh-TW")]
+                if preferred_logos:
+                    logging.debug(f"找到 {len(preferred_logos)} 个中英文 logo")
+                    # 选择评分最高的
+                    best_logo = max(preferred_logos, key=lambda x: x.get("vote_average", 0))
+                else:
+                    # 如果没有中英文logo，则选择评分最高的
+                    best_logo = max(logos, key=lambda x: x.get("vote_average", 0))
+                logging.debug(f"选择的 logo 信息: language={best_logo.get('iso_639_1')}, "
+                            f"rating={best_logo.get('vote_average')}, path={best_logo.get('file_path')}")
+                info["clearlogo"] = f"https://image.tmdb.org/t/p/original{best_logo['file_path']}"
             else:
+                logging.debug("未找到任何 logo")
                 info["clearlogo"] = None
+        else:
+            logging.debug("未返回 images 数据")
+            info["clearlogo"] = None
 
         # namedseason
         if data.get("seasons") and len(data["seasons"]) > 0:
@@ -195,7 +247,7 @@ def get_episode_info_from_tmdb(tv_id, season_num, episode_num, config):
     url = f"{TMDB_BASE_URL}/3/tv/{tv_id}/season/{season_num}/episode/{episode_num}"
     params = {
         'api_key': TMDB_API_KEY,
-        'language': 'zh-CN',
+        'language': 'zh',
         'append_to_response': 'credits'
     }
     try:
@@ -212,6 +264,7 @@ def get_episode_info_from_tmdb(tv_id, season_num, episode_num, config):
             "actors": [],
             "director": "",
             "director_tmdbid": "",
+            "director_thumb": "",
             "rating": 0,
             "year": int(data.get("air_date", "1900-01-01")[:4]) if data.get("air_date") else "",
             "sorttitle": f"第 {episode_num} 集",
@@ -235,16 +288,24 @@ def get_episode_info_from_tmdb(tv_id, season_num, episode_num, config):
         }
         # 演员
         for cast in data.get("credits", {}).get("cast", [])[:20]:
-            info["actors"].append({
+            actor_info = {
                 "name": cast.get("name"),
                 "role": cast.get("character"),
                 "tmdbid": cast.get("id"),
-            })
+            }
+            # 添加演员头像
+            if cast.get("profile_path"):
+                actor_info["thumb"] = f"https://image.tmdb.org/t/p/original{cast['profile_path']}"
+            info["actors"].append(actor_info)
+            
         # 导演
         for crew in data.get("credits", {}).get("crew", []):
             if crew.get("job") == "Director":
                 info["director"] = crew.get("name")
                 info["director_tmdbid"] = crew.get("id")
+                # 添加导演头像
+                if crew.get("profile_path"):
+                    info["director_thumb"] = f"https://image.tmdb.org/t/p/original{crew['profile_path']}"
                 break
         # studio
         if data.get("production_companies"):
@@ -313,32 +374,59 @@ def download_image(url, save_path):
         logging.error(f"下载图片时出错: {e}")
     return False
 
-def generate_movie_nfo(nfo_path, info):
+def generate_movie_nfo(nfo_path, info, config):
     """生成电影NFO文件，info为包含所有字段的dict"""
     root = ET.Element("movie")
-    ET.SubElement(root, "plot").text = f"{info.get('plot','')}"
-    ET.SubElement(root, "outline")
+    
+    # 根据配置决定是否刮削剧情简介
+    if config.get('scrape_plot', 'True') == 'True':
+        ET.SubElement(root, "plot").text = f"{info.get('plot','')}"
+        ET.SubElement(root, "outline")
+    else:
+        ET.SubElement(root, "plot")
+        ET.SubElement(root, "outline")
+        
     ET.SubElement(root, "lockdata").text = "false"
     ET.SubElement(root, "dateadded").text = info.get("dateadded", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     ET.SubElement(root, "title").text = info.get("title", "")
     ET.SubElement(root, "originaltitle").text = info.get("originaltitle", info.get("title", ""))
-    # 演员
-    for actor in info.get("actors", []):
-        actor_el = ET.SubElement(root, "actor")
-        ET.SubElement(actor_el, "name").text = actor.get("name", "")
-        ET.SubElement(actor_el, "role").text = actor.get("role", "")
-        ET.SubElement(actor_el, "type").text = "Actor"
-        if actor.get("tmdbid"):
-            ET.SubElement(actor_el, "tmdbid").text = str(actor["tmdbid"])
-        if actor.get("imdbid"):
-            ET.SubElement(actor_el, "imdbid").text = actor["imdbid"]
-    # 导演
-    if info.get("director"):
-        director_el = ET.SubElement(root, "director", tmdbid=str(info.get("director_tmdbid", "")))
-        director_el.text = info["director"]
-    ET.SubElement(root, "rating").text = str(info.get("rating", 0))
+    
+    # 根据配置决定是否刮削演员信息
+    if config.get('scrape_actors', 'True') == 'True':
+        # 演员
+        for actor in info.get("actors", []):
+            actor_el = ET.SubElement(root, "actor")
+            ET.SubElement(actor_el, "name").text = actor.get("name", "")
+            ET.SubElement(actor_el, "role").text = actor.get("role", "")
+            ET.SubElement(actor_el, "type").text = "Actor"
+            if actor.get("tmdbid"):
+                ET.SubElement(actor_el, "tmdbid").text = str(actor["tmdbid"])
+            if actor.get("imdbid"):
+                ET.SubElement(actor_el, "imdbid").text = actor["imdbid"]
+            # 根据配置决定是否刮削演员头像
+            if config.get('scrape_actor_thumb', 'True') == 'True' and actor.get("thumb"):
+                ET.SubElement(actor_el, "thumb").text = actor["thumb"]
+    
+    # 根据配置决定是否刮削导演信息
+    if config.get('scrape_director', 'True') == 'True':
+        # 导演
+        if info.get("director"):
+            director_attrs = {"tmdbid": str(info.get("director_tmdbid", ""))}
+            # 根据配置决定是否刮削导演头像
+            if config.get('scrape_actor_thumb', 'True') == 'True' and info.get("director_thumb"):
+                director_attrs["thumb"] = info["director_thumb"]
+            director_el = ET.SubElement(root, "director", director_attrs)
+            director_el.text = info["director"]
+    
+    # 根据配置决定是否刮削评分信息
+    if config.get('scrape_ratings', 'True') == 'True':
+        ET.SubElement(root, "rating").text = str(info.get("rating", 0))
+    else:
+        ET.SubElement(root, "rating").text = "0"
+        
     ET.SubElement(root, "year").text = str(info.get("year", ""))
     ET.SubElement(root, "sorttitle").text = info.get("sorttitle", info.get("title", ""))
+    
     if info.get("imdbid"):
         ET.SubElement(root, "imdbid").text = info["imdbid"]
     if info.get("tmdbid"):
@@ -351,62 +439,117 @@ def generate_movie_nfo(nfo_path, info):
         ET.SubElement(root, "runtime").text = str(info["runtime"])
     if info.get("country"):
         ET.SubElement(root, "country").text = info["country"]
-    for genre in info.get("genres", []):
-        ET.SubElement(root, "genre").text = genre
-    for studio in info.get("studios", []):
-        ET.SubElement(root, "studio").text = studio
+        
+    # 根据配置决定是否刮削类型信息
+    if config.get('scrape_genres', 'True') == 'True':
+        for genre in info.get("genres", []):
+            ET.SubElement(root, "genre").text = genre
+            
+    # 根据配置决定是否刮削制片公司信息
+    if config.get('scrape_studios', 'True') == 'True':
+        for studio in info.get("studios", []):
+            ET.SubElement(root, "studio").text = studio
+            
+    # 根据配置决定是否刮削标签信息
+    if config.get('scrape_tags', 'True') == 'True':
+        for tag in info.get("tags", []):
+            ET.SubElement(root, "tag").text = tag
+            
+    # 唯一ID
     if info.get("tmdbid"):
         ET.SubElement(root, "uniqueid", type="tmdb").text = str(info["tmdbid"])
     if info.get("imdbid"):
         ET.SubElement(root, "uniqueid", type="imdb").text = info["imdbid"]
     if info.get("imdbid"):
         ET.SubElement(root, "id").text = info["imdbid"]
-    if info.get("poster"):
-        thumb_el = ET.SubElement(root, "thumb", aspect="poster")
-        thumb_el.text = info["poster"]
-    if info.get("fanart"):
-        fanart_el = ET.SubElement(root, "fanart")
-        fanart_thumb = ET.SubElement(fanart_el, "thumb")
-        fanart_thumb.text = info["fanart"]
+        
+    # 根据配置决定是否刮削海报
+    if config.get('scrape_poster', 'True') == 'True':
+        if info.get("poster"):
+            thumb_el = ET.SubElement(root, "thumb", aspect="poster")
+            thumb_el.text = info["poster"]
+            
+    # 根据配置决定是否刮削背景图
+    if config.get('scrape_fanart', 'True') == 'True':
+        if info.get("fanart"):
+            fanart_el = ET.SubElement(root, "fanart")
+            fanart_thumb = ET.SubElement(fanart_el, "thumb")
+            fanart_thumb.text = info["fanart"]
+            
     movie_dir = os.path.dirname(nfo_path)
-    poster_url = info.get("poster")
-    fanart_url = info.get("fanart")
-    if poster_url:
-        poster_path = os.path.join(movie_dir, "poster.jpg")
-        if not os.path.exists(poster_path):
-            download_image(poster_url, poster_path)
-    if fanart_url:
-        fanart_path = os.path.join(movie_dir, "fanart.jpg")
-        if not os.path.exists(fanart_path):
-            download_image(fanart_url, fanart_path)
-    clearlogo_url = info.get("clearlogo")
-    if clearlogo_url:
-        clearlogo_path = os.path.join(movie_dir, "clearlogo.png")
-        if not os.path.exists(clearlogo_path):
-            download_image(clearlogo_url, clearlogo_path)
+    
+    # 下载海报
+    if config.get('scrape_poster', 'True') == 'True':
+        poster_url = info.get("poster")
+        if poster_url:
+            poster_path = os.path.join(movie_dir, "poster.jpg")
+            if not os.path.exists(poster_path):
+                download_image(poster_url, poster_path)
+                
+    # 下载背景图
+    if config.get('scrape_fanart', 'True') == 'True':
+        fanart_url = info.get("fanart")
+        if fanart_url:
+            fanart_path = os.path.join(movie_dir, "fanart.jpg")
+            if not os.path.exists(fanart_path):
+                download_image(fanart_url, fanart_path)
+                
+    # 下载ClearLogo
+    if config.get('scrape_clearlogo', 'True') == 'True':
+        clearlogo_url = info.get("clearlogo")
+        if clearlogo_url:
+            clearlogo_path = os.path.join(movie_dir, "clearlogo.png")
+            if not os.path.exists(clearlogo_path):
+                download_image(clearlogo_url, clearlogo_path)
+                
     logging.info(f"生成影片NFO: {nfo_path}")
     write_pretty_xml(root, nfo_path)
 
-def generate_tvshow_nfo(nfo_path, info):
+def generate_tvshow_nfo(nfo_path, info, config):
     """生成剧集NFO文件，info为包含所有字段的dict"""
     root = ET.Element("tvshow")
-    ET.SubElement(root, "plot").text = f"{info.get('plot','')}"
-    ET.SubElement(root, "outline").text = f"{info.get('outline','')}"
+    
+    # 根据配置决定是否刮削剧情简介
+    if config.get('scrape_plot', 'True') == 'True':
+        ET.SubElement(root, "plot").text = f"{info.get('plot','')}"
+        ET.SubElement(root, "outline").text = f"{info.get('outline','')}"
+    else:
+        ET.SubElement(root, "plot")
+        ET.SubElement(root, "outline")
+        
     ET.SubElement(root, "lockdata").text = "false"
     ET.SubElement(root, "dateadded").text = info.get("dateadded", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     ET.SubElement(root, "title").text = info.get("title", "")
     ET.SubElement(root, "originaltitle").text = info.get("originaltitle", info.get("title", ""))
-    # 演员
-    for actor in info.get("actors", []):
-        actor_el = ET.SubElement(root, "actor")
-        ET.SubElement(actor_el, "name").text = actor.get("name", "")
-        ET.SubElement(actor_el, "role").text = actor.get("role", "")
-        ET.SubElement(actor_el, "type").text = "Actor"
-        if actor.get("tmdbid"):
-            ET.SubElement(actor_el, "tmdbid").text = str(actor["tmdbid"])
-    ET.SubElement(root, "rating").text = str(info.get("rating", 0))
+    
+    # 根据配置决定是否刮削演员信息
+    if config.get('scrape_actors', 'True') == 'True':
+        # 演员
+        for actor in info.get("actors", []):
+            actor_el = ET.SubElement(root, "actor")
+            ET.SubElement(actor_el, "name").text = actor.get("name", "")
+            ET.SubElement(actor_el, "role").text = actor.get("role", "")
+            ET.SubElement(actor_el, "type").text = "Actor"
+            if actor.get("tmdbid"):
+                ET.SubElement(actor_el, "tmdbid").text = str(actor["tmdbid"])
+            # 根据配置决定是否刮削演员头像
+            if config.get('scrape_actor_thumb', 'True') == 'True' and actor.get("thumb"):
+                ET.SubElement(actor_el, "thumb").text = actor["thumb"]
+                
+    # 根据配置决定是否刮削评分信息
+    if config.get('scrape_ratings', 'True') == 'True':
+        ET.SubElement(root, "rating").text = str(info.get("rating", 0))
+        # ratings
+        ratings = ET.SubElement(root, "ratings")
+        rating = ET.SubElement(ratings, "rating", default="true", max="10", name="themoviedb")
+        ET.SubElement(rating, "value").text = str(info.get("rating", 0))
+        ET.SubElement(rating, "votes").text = str(info.get("votes", 1))
+    else:
+        ET.SubElement(root, "rating").text = "0"
+        
     ET.SubElement(root, "year").text = str(info.get("year", ""))
     ET.SubElement(root, "sorttitle").text = info.get("sorttitle", info.get("title", ""))
+    
     if info.get("imdb_id"):
         ET.SubElement(root, "imdb_id").text = info["imdb_id"]
     if info.get("tmdbid"):
@@ -419,12 +562,22 @@ def generate_tvshow_nfo(nfo_path, info):
         ET.SubElement(root, "runtime").text = str(info["runtime"])
     if info.get("country"):
         ET.SubElement(root, "country").text = info["country"]
-    for genre in info.get("genres", []):
-        ET.SubElement(root, "genre").text = genre
-    for studio in info.get("studios", []):
-        ET.SubElement(root, "studio").text = studio
-    for tag in info.get("tags", []):
-        ET.SubElement(root, "tag").text = tag
+        
+    # 根据配置决定是否刮削类型信息
+    if config.get('scrape_genres', 'True') == 'True':
+        for genre in info.get("genres", []):
+            ET.SubElement(root, "genre").text = genre
+            
+    # 根据配置决定是否刮削制片公司信息
+    if config.get('scrape_studios', 'True') == 'True':
+        for studio in info.get("studios", []):
+            ET.SubElement(root, "studio").text = studio
+            
+    # 根据配置决定是否刮削标签
+    if config.get('scrape_tags', 'True') == 'True':
+        for tag in info.get("tags", []):
+            ET.SubElement(root, "tag").text = tag
+            
     # 唯一ID
     if info.get("tmdbid"):
         ET.SubElement(root, "uniqueid", type="tmdb").text = str(info["tmdbid"])
@@ -433,53 +586,67 @@ def generate_tvshow_nfo(nfo_path, info):
     if info.get("tvdbid"):
         ET.SubElement(root, "uniqueid", type="tvdb").text = str(info["tvdbid"])
         ET.SubElement(root, "tvdbid").text = str(info["tvdbid"])
+        
     # episodeguide
     if info.get("episodeguide"):
         ET.SubElement(root, "episodeguide").text = info["episodeguide"]
     if info.get("id"):
         ET.SubElement(root, "id").text = str(info["id"])
+        
     ET.SubElement(root, "season").text = str(info.get("season", -1))
     ET.SubElement(root, "episode").text = str(info.get("episode", -1))
     ET.SubElement(root, "displayorder").text = info.get("displayorder", "aired")
     ET.SubElement(root, "status").text = info.get("status", "Continuing")
     ET.SubElement(root, "showtitle").text = info.get("showtitle", info.get("title", ""))
     ET.SubElement(root, "top250").text = str(info.get("top250", 0))
-    # ratings
-    ratings = ET.SubElement(root, "ratings")
-    rating = ET.SubElement(ratings, "rating", default="true", max="10", name="themoviedb")
-    ET.SubElement(rating, "value").text = str(info.get("rating", 0))
-    ET.SubElement(rating, "votes").text = str(info.get("votes", 1))
     ET.SubElement(root, "userrating").text = str(info.get("userrating", 0))
-    # 图片
-    if info.get("poster"):
-        ET.SubElement(root, "thumb", aspect="poster").text = info["poster"]
-        ET.SubElement(root, "thumb", aspect="poster", season="1", type="season").text = info["poster"]
-    if info.get("fanart"):
-        fanart = ET.SubElement(root, "fanart")
-        ET.SubElement(fanart, "thumb").text = info["fanart"]
+    
+    # 根据配置决定是否刮削海报和背景图
+    if config.get('scrape_poster', 'True') == 'True':
+        if info.get("poster"):
+            ET.SubElement(root, "thumb", aspect="poster").text = info["poster"]
+            ET.SubElement(root, "thumb", aspect="poster", season="1", type="season").text = info["poster"]
+            
+    if config.get('scrape_fanart', 'True') == 'True':
+        if info.get("fanart"):
+            fanart = ET.SubElement(root, "fanart")
+            ET.SubElement(fanart, "thumb").text = info["fanart"]
+            
     ET.SubElement(root, "certification")
     ET.SubElement(root, "watched").text = "false"
     ET.SubElement(root, "playcount")
     ET.SubElement(root, "user_note")
+    
     # namedseason
     if info.get("namedseason"):
         ET.SubElement(root, "namedseason", number="1").text = info["namedseason"]
+        
     tv_dir = os.path.dirname(nfo_path)
-    poster_url = info.get("poster")
-    fanart_url = info.get("fanart")
-    if poster_url:
-        poster_path = os.path.join(tv_dir, "poster.jpg")
-        if not os.path.exists(poster_path):
-            download_image(poster_url, poster_path)
-    if fanart_url:
-        fanart_path = os.path.join(tv_dir, "fanart.jpg")
-        if not os.path.exists(fanart_path):
-            download_image(fanart_url, fanart_path)
-    clearlogo_url = info.get("clearlogo")
-    if clearlogo_url:
-        clearlogo_path = os.path.join(tv_dir, "clearlogo.png")
-        if not os.path.exists(clearlogo_path):
-            download_image(clearlogo_url, clearlogo_path)
+    
+    # 下载海报
+    if config.get('scrape_poster', 'True') == 'True':
+        poster_url = info.get("poster")
+        if poster_url:
+            poster_path = os.path.join(tv_dir, "poster.jpg")
+            if not os.path.exists(poster_path):
+                download_image(poster_url, poster_path)
+                
+    # 下载背景图
+    if config.get('scrape_fanart', 'True') == 'True':
+        fanart_url = info.get("fanart")
+        if fanart_url:
+            fanart_path = os.path.join(tv_dir, "fanart.jpg")
+            if not os.path.exists(fanart_path):
+                download_image(fanart_url, fanart_path)
+                
+    # 下载ClearLogo
+    if config.get('scrape_clearlogo', 'True') == 'True':
+        clearlogo_url = info.get("clearlogo")
+        if clearlogo_url:
+            clearlogo_path = os.path.join(tv_dir, "clearlogo.png")
+            if not os.path.exists(clearlogo_path):
+                download_image(clearlogo_url, clearlogo_path)
+                
     logging.info(f"生成剧集NFO: {nfo_path}")
     write_pretty_xml(root, nfo_path)
 
@@ -535,9 +702,16 @@ def generate_episode_nfo(nfo_path, episode_info):
         ET.SubElement(actor_el, "type").text = "Actor"
         if actor.get("tmdbid"):
             ET.SubElement(actor_el, "tmdbid").text = str(actor["tmdbid"])
+        # 根据配置决定是否刮削演员头像
+        if actor.get("thumb"):
+            ET.SubElement(actor_el, "thumb").text = actor["thumb"]
     # 导演
     if episode_info.get("director"):
-        director_el = ET.SubElement(root, "director", tmdbid=str(episode_info.get("director_tmdbid", "")))
+        director_attrs = {"tmdbid": str(episode_info.get("director_tmdbid", ""))}
+        # 根据配置决定是否刮削导演头像
+        if episode_info.get("director_thumb"):
+            director_attrs["thumb"] = episode_info["director_thumb"]
+        director_el = ET.SubElement(root, "director", director_attrs)
         director_el.text = episode_info["director"]
     ET.SubElement(root, "rating").text = str(episode_info.get("rating", 0))
     ET.SubElement(root, "year").text = str(episode_info.get("year", ""))
@@ -613,7 +787,7 @@ def process_movies(root, files, media_extensions, config):
                 if tmdb_id:
                     info = get_movie_info_from_tmdb(tmdb_id, config)
                     if info:
-                        generate_movie_nfo(nfo_file_path, info)
+                        generate_movie_nfo(nfo_file_path, info, config)  # 传递配置
                 else:
                     logging.warning(f"未找到TMDB_ID: {movie_name} ({year})，跳过NFO生成")
 
@@ -638,7 +812,7 @@ def process_tvshow_directory(root, dirs, config):
     if tmdb_id:
         info = get_tv_info_from_tmdb(tmdb_id, config)
         if info:
-            generate_tvshow_nfo(tvshow_nfo_path, info)
+            generate_tvshow_nfo(tvshow_nfo_path, info, config)
 
 def process_season_directory(root, dirs, config):
     """处理剧集季目录"""
@@ -799,6 +973,7 @@ def main():
     db_path = '/config/data.db'
     config = load_config(db_path)
     config['db_path'] = db_path
+    
     # 新增：检查程序启用状态
     program_enabled = config['scrape_metadata']
     # 支持字符串和布尔类型
@@ -807,10 +982,13 @@ def main():
     if not program_enabled:
         logging.info("媒体元数据刮削功能未启用，程序无需运行。")
         exit(0)
+        
     movies_path = config['movies_path']
     episodes_path = config['episodes_path']
+    
     # 扫描电影路径（指定path_type为'movie'）
     scan_metadata(movies_path, config, path_type='movie')
+    
     # 扫描剧集路径（指定path_type为'tv'）
     scan_metadata(episodes_path, config, path_type='tv')
 

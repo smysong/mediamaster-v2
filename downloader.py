@@ -54,15 +54,19 @@ def run_task_adder(torrent_path):
         logging.info(f"向下载器添加下载任务：{torrent_path}")
         # 使用with打开devnull，避免未定义报错
         with open(os.devnull, 'w') as devnull:
-            subprocess.run(
+            result = subprocess.run(
                 ['python', 'download_task_adder.py', torrent_path],
-                check=True,
+                check=False,  # 不自动抛出异常
                 stdout=devnull,
                 stderr=devnull
             )
-        logging.info("下载任务添加完成")
-    except subprocess.CalledProcessError as e:
-        logging.error(f"添加下载任务失败: {e}")
+            
+        if result.returncode == 0:
+            logging.info("下载任务添加完成")
+        elif result.returncode == 1:
+            logging.info("下载器未启用或配置异常，跳过自动添加下载任务")
+        else:
+            logging.error(f"添加下载任务失败，返回码: {result.returncode}")
     except FileNotFoundError as e:
         logging.error(f"调用 添加下载器任务程序 失败，文件未找到: {e}")
     except Exception as e:
@@ -92,6 +96,8 @@ class MediaDownloader:
         options.add_argument('--ignore-certificate-errors')
         options.add_argument('--allow-insecure-localhost')
         options.add_argument('--ignore-ssl-errors')
+        # 设置页面加载策略为急切模式
+        options.page_load_strategy = 'eager'
         # 设置浏览器语言为中文
         options.add_argument('--lang=zh-CN')
         # 设置用户配置文件缓存目录，使用固定instance-id 10作为该程序特有的id
@@ -956,20 +962,8 @@ class MediaDownloader:
                     logging.error(f"读取索引文件时出错: {index_file_path}, 错误: {e}")
                     continue
 
-                # 收集所有可能的下载结果，按优先级排序
-                all_download_results = []
-                
-                # 按优先级添加结果
-                if index_data.get("首选分辨率"):
-                    all_download_results.extend([(result, "首选分辨率") for result in index_data["首选分辨率"]])
-                if index_data.get("备选分辨率"):
-                    all_download_results.extend([(result, "备选分辨率") for result in index_data["备选分辨率"]])
-                if index_data.get("其他分辨率"):
-                    all_download_results.extend([(result, "其他分辨率") for result in index_data["其他分辨率"]])
-
-                # 根据优先关键词和热度对下载结果进行排序
-                def sort_key(result_tuple):
-                    result, _ = result_tuple
+                # 根据优先关键词和热度对下载结果进行排序的函数
+                def sort_key(result):
                     # 关键词匹配优先级
                     keyword_score = 0
                     if prefer_keywords_list:
@@ -980,19 +974,31 @@ class MediaDownloader:
                     popularity = result.get("popularity", 0)
                     
                     # 排序规则：首先按关键词匹配数降序，然后按热度降序
-                    # 负号是因为sort是升序排列，而我们需要降序
                     return (-keyword_score, -popularity)
 
-                all_download_results.sort(key=sort_key)
+                # 按分辨率优先级选择资源
+                selected_result = None
+                selected_resolution_type = None
+                resolution_priorities = ["首选分辨率", "备选分辨率", "其他分辨率"]
 
-                # 遍历所有可能的下载结果
-                for download_result, resolution_type in all_download_results:
-                    download_title = download_result.get("title")
-                    logging.info(f"在来源 {source} 中找到匹配结果: {download_title} (分辨率类型: {resolution_type})")
+                # 按优先级顺序检查各分辨率类型
+                for resolution_type in resolution_priorities:
+                    if index_data.get(resolution_type):
+                        # 对当前分辨率类型中的资源按热度和关键词排序
+                        sorted_results = sorted(index_data[resolution_type], key=sort_key)
+                        if sorted_results:
+                            selected_result = sorted_results[0]
+                            selected_resolution_type = resolution_type
+                            break
+
+                # 如果找到了合适的资源，则进行下载
+                if selected_result:
+                    download_title = selected_result.get("title")
+                    logging.info(f"在来源 {source} 中找到匹配结果: {download_title} (分辨率类型: {selected_resolution_type})")
                     
                     # 获取下载链接和标题
-                    link = download_result.get("link")
-                    resolution = download_result.get("resolution")
+                    link = selected_result.get("link")
+                    resolution = selected_result.get("resolution")
 
                     if not link:
                         logging.warning(f"未找到种子下载链接: {title} ({year})，尝试下一个结果")
@@ -1002,13 +1008,13 @@ class MediaDownloader:
                     logging.info(f"开始下载: {download_title} ({resolution}) 来源: {source}")
                     try:
                         if source == "BTHD":
-                            self.bthd_download_torrent(download_result, download_title, year=year, resolution=resolution, title=title)
+                            self.bthd_download_torrent(selected_result, download_title, year=year, resolution=resolution, title=title)
                         elif source == "BTYS":
-                            self.btys_download_torrent(download_result, download_title, year=year, resolution=resolution, title=title)
+                            self.btys_download_torrent(selected_result, download_title, year=year, resolution=resolution, title=title)
                         elif source == "BT0":
-                            self.bt0_download_torrent(download_result, download_title, year=year, resolution=resolution, title=title)
+                            self.bt0_download_torrent(selected_result, download_title, year=year, resolution=resolution, title=title)
                         elif source == "GY":
-                            self.gy_download_torrent(download_result, download_title, year=year, resolution=resolution, title=title)
+                            self.gy_download_torrent(selected_result, download_title, year=year, resolution=resolution, title=title)
                         
                         # 下载成功
                         download_success = True
@@ -1034,6 +1040,8 @@ class MediaDownloader:
                     except Exception as e:
                         logging.error(f"下载过程中发生错误: {e}，尝试当前来源的下一个结果")
                         continue  # 继续尝试当前来源的其他结果
+                else:
+                    logging.warning(f"在来源 {source} 中未找到任何匹配结果")
                 
                 # 如果当前来源中有成功下载的，就不再尝试其他来源
                 if download_success:
@@ -1107,68 +1115,81 @@ class MediaDownloader:
                         "单集": 2
                     }
                     
-                    # 收集所有可能的下载结果
-                    all_download_options = []
-                    
-                    # 按分辨率优先级收集结果
-                    for resolution_priority in resolution_priorities:
-                        # 收集全集
-                        for item in index_data.get(resolution_priority, {}).get("全集", []):
-                            if (item.get("start_episode") is not None and item.get("end_episode") is not None and
-                                int(item["start_episode"]) <= episode <= int(item["end_episode"])):
-                                all_download_options.append((item, source, resolution_priority, "全集"))
-                        
-                        # 收集集数范围
-                        for item in index_data.get(resolution_priority, {}).get("集数范围", []):
-                            if (item.get("start_episode") is not None and item.get("end_episode") is not None and
-                                int(item["start_episode"]) <= episode <= int(item["end_episode"])):
-                                all_download_options.append((item, source, resolution_priority, "集数范围"))
-                        
-                        # 收集单集
-                        for item in index_data.get(resolution_priority, {}).get("单集", []):
-                            if item.get("start_episode") is not None and int(item["start_episode"]) == episode:
-                                all_download_options.append((item, source, resolution_priority, "单集"))
-
-                    # 根据优先关键词和热度对下载选项进行排序
-                    def sort_key(option_tuple):
-                        item, _, resolution_priority, item_type = option_tuple
+                    # 根据优先关键词和热度对下载结果进行排序的函数
+                    def sort_key(result):
                         # 关键词匹配优先级
                         keyword_score = 0
                         if prefer_keywords_list:
-                            title_text = item.get("title", "").lower()
+                            title_text = result.get("title", "").lower()
                             keyword_score = sum(1 for kw in prefer_keywords_list if kw.lower() in title_text)
                         
                         # 热度值优先级（如果存在）
-                        popularity = item.get("popularity", 0)
+                        popularity = result.get("popularity", 0)
                         
-                        # 排序规则：首先按类型优先级，然后按分辨率优先级，再按关键词匹配数降序，最后按热度降序
-                        return (
-                            item_type_priority.get(item_type, 99),
-                            resolution_priorities.index(resolution_priority),
-                            -keyword_score,
-                            -popularity
-                        )
+                        # 排序规则：首先按关键词匹配数降序，然后按热度降序
+                        return (-keyword_score, -popularity)
 
-                    all_download_options.sort(key=sort_key)
-                    
-                    # 遍历所有可能的下载选项（已按优先级排序）
-                    for download_result, result_source, resolution_priority, item_type in all_download_options:
+                    # 按资源类型和分辨率优先级选择资源
+                    selected_result = None
+                    selected_resolution_type = None
+                    selected_item_type = None
+
+                    # 按资源类型优先级遍历
+                    for item_type in ["全集", "集数范围", "单集"]:
+                        if selected_result:
+                            break
+                        
+                        # 在同一资源类型内按分辨率优先级遍历
+                        for resolution_type in resolution_priorities:
+                            if selected_result:
+                                break
+                                
+                            # 收集当前类型和分辨率下的资源
+                            current_options = []
+                            
+                            # 根据类型收集相应资源
+                            if item_type == "全集":
+                                for item in index_data.get(resolution_type, {}).get("全集", []):
+                                    if (item.get("start_episode") is not None and item.get("end_episode") is not None and
+                                        int(item["start_episode"]) <= episode <= int(item["end_episode"])):
+                                        current_options.append(item)
+                            elif item_type == "集数范围":
+                                for item in index_data.get(resolution_type, {}).get("集数范围", []):
+                                    if (item.get("start_episode") is not None and item.get("end_episode") is not None and
+                                        int(item["start_episode"]) <= episode <= int(item["end_episode"])):
+                                        current_options.append(item)
+                            elif item_type == "单集":
+                                for item in index_data.get(resolution_type, {}).get("单集", []):
+                                    if item.get("start_episode") is not None and int(item["start_episode"]) == episode:
+                                        current_options.append(item)
+                            
+                            # 如果当前类型和分辨率下有资源，则按关键词和热度排序，选择最佳资源
+                            if current_options:
+                                # 对当前选项排序并选择最佳资源
+                                sorted_options = sorted(current_options, key=sort_key)
+                                selected_result = sorted_options[0]
+                                selected_resolution_type = resolution_type
+                                selected_item_type = item_type
+                                break
+
+                    # 如果找到了合适的资源，则进行下载
+                    if selected_result:
                         # 创建资源唯一标识符
-                        resource_identifier = (result_source, download_result.get("title"), 
-                                            download_result.get("link"), 
-                                            download_result.get("start_episode"), 
-                                            download_result.get("end_episode"))
+                        resource_identifier = (source, selected_result.get("title"), 
+                                            selected_result.get("link"), 
+                                            selected_result.get("start_episode"), 
+                                            selected_result.get("end_episode"))
                         
                         # 如果这个资源已经被处理过，跳过
                         if resource_identifier in processed_resources:
                             continue
                         
                         # 找到匹配结果，尝试下载
-                        logging.info(f"在来源 {result_source} 中找到匹配结果: {download_result['title']} (类型: {item_type}, 分辨率优先级: {resolution_priority})")
+                        logging.info(f"在来源 {source} 中找到匹配结果: {selected_result['title']} (类型: {selected_item_type}, 分辨率优先级: {selected_resolution_type})")
                         
                         # 处理集数范围命名
-                        start_ep = download_result.get("start_episode")
-                        end_ep = download_result.get("end_episode")
+                        start_ep = selected_result.get("start_episode")
+                        end_ep = selected_result.get("end_episode")
                         
                         # 计算本次下载包含的集数
                         if start_ep and end_ep:
@@ -1189,7 +1210,7 @@ class MediaDownloader:
                         if start_ep and end_ep:
                             if int(start_ep) == int(end_ep):
                                 episode_range = f"{start_ep}集"
-                            elif int(start_ep) == 1 and int(end_ep) > 1 and download_result.get("is_full_season", False):
+                            elif int(start_ep) == 1 and int(end_ep) > 1 and selected_result.get("is_full_season", False):
                                 episode_range = f"全{end_ep}集"
                             else:
                                 episode_range = f"{start_ep}-{end_ep}集"
@@ -1198,29 +1219,29 @@ class MediaDownloader:
                         else:
                             episode_range = "未知集数"
                             
-                        resolution = download_result.get("resolution")
+                        resolution = selected_result.get("resolution")
                         
                         # 尝试下载
                         try:
-                            if result_source == "HDTV":
-                                self.hdtv_download_torrent(download_result, download_result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
-                            elif result_source == "BTYS":
-                                self.btys_download_torrent(download_result, download_result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
-                            elif result_source == "BT0":
-                                self.bt0_download_torrent(download_result, download_result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
-                            elif result_source == "GY":
-                                self.gy_download_torrent(download_result, download_result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
+                            if source == "HDTV":
+                                self.hdtv_download_torrent(selected_result, selected_result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
+                            elif source == "BTYS":
+                                self.btys_download_torrent(selected_result, selected_result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
+                            elif source == "BT0":
+                                self.bt0_download_torrent(selected_result, selected_result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
+                            elif source == "GY":
+                                self.gy_download_torrent(selected_result, selected_result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
                             
                             # 下载成功
                             successfully_downloaded_episodes.extend(episode_nums)
                             logging.info(f"成功下载集数: {episode_nums}")
-                            self.send_notification(tvshow, download_result["title"], resolution)
+                            self.send_notification(tvshow, selected_result["title"], resolution)
                             
                             # 标记这个资源已处理
                             processed_resources.add(resource_identifier)
                             
                             # 如果下载的是全集，则标记全集已下载
-                            if item_type == "全集":
+                            if selected_item_type == "全集":
                                 full_season_downloaded = True
                                 logging.info(f"全集已下载，跳过该季其余集数的处理")
                                 # 标记该全集包含的所有集数为已下载
@@ -1234,10 +1255,12 @@ class MediaDownloader:
                             break  # 不再尝试当前来源的其他结果
                             
                         except Exception as e:
-                            logging.error(f"下载失败: {download_result['title']}, 错误: {e}，尝试当前来源的下一个结果")
+                            logging.error(f"下载失败: {selected_result['title']}, 错误: {e}，尝试当前来源的下一个结果")
                             # 标记这个资源已处理，避免重复尝试
                             processed_resources.add(resource_identifier)
                             # 继续尝试当前来源的其他结果
+                    else:
+                        logging.warning(f"在来源 {source} 中未找到任何匹配结果")
                     
                     # 如果当前来源中有成功下载的，就不再尝试其他来源
                     if episode_downloaded:
