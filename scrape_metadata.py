@@ -12,7 +12,7 @@ import random
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,  # 设置日志级别为 INFO
-    format="%(levelname)s - %(message)s",  # 设置日志格式
+    format="%(asctime)s - %(levelname)s - %(message)s",  # 设置日志格式
     handlers=[
         logging.FileHandler("/tmp/log/scrape_metadata.log", mode='w'),  # 输出到文件并清空之前的日志
         logging.StreamHandler()  # 输出到控制台
@@ -820,8 +820,27 @@ def process_season_directory(root, dirs, config):
     parent_name = os.path.basename(parent_dir)
     parent_match = re.match(r'^(.*?)\s*\((\d{4})\)', parent_name)
     
+    # 多种季目录命名格式
+    season_patterns = [
+        re.compile(r'^Season\s+(\d+)$', re.IGNORECASE),    # Season 1
+        re.compile(r'^S(\d+)$', re.IGNORECASE),            # S01
+        re.compile(r'^Season\.?(\d+)$', re.IGNORECASE),    # Season1 or Season.1
+        re.compile(r'^第(\d+)季$', re.IGNORECASE),          # 第1季 (中文)
+    ]
+    
     dir_name = os.path.basename(root)
-    if not (parent_match and re.match(r'^season\s*\d+$', dir_name, re.IGNORECASE)):
+    if not parent_match:
+        return  # 没有找到父目录中的剧集信息，跳过
+    
+    # 检查是否为季目录
+    season_number = None
+    for pattern in season_patterns:
+        match = pattern.match(dir_name)
+        if match:
+            season_number = int(match.group(1))
+            break
+    
+    if season_number is None:
         return  # 不是季目录，跳过
     
     season_nfo_path = os.path.join(root, 'season.nfo')
@@ -838,19 +857,42 @@ def process_season_directory(root, dirs, config):
     if tmdb_id:
         info = get_tv_info_from_tmdb(tmdb_id, config)
         if info:
-            season_match = re.match(r'^season\s*(\d+)$', dir_name, re.IGNORECASE)
-            season_number = int(season_match.group(1)) if season_match else 1
             generate_season_nfo(season_nfo_path, info, season_number=season_number)
 
 def process_episode_files(root, files, media_extensions, config):
     """处理单集文件"""
+    
+    # 多种剧集文件命名格式
+    episode_patterns = [
+        re.compile(r'^(.*) - S(\d{1,2})E(\d{1,4}) - (.*)$', re.IGNORECASE),  # 格式: Show Name - S1E1 - Episode Title
+        re.compile(r'^(.*)\.S(\d{1,2})E(\d{1,4})\.(.*)$', re.IGNORECASE),    # 格式: Show.Name.S1E1.Episode.Title
+        re.compile(r'^(.*) - (\d{1,2})x(\d{1,4}) - (.*)$', re.IGNORECASE),   # 格式: Show Name - 1x1 - Episode Title
+        re.compile(r'^(.*)\.(\d{1,2})x(\d{1,4})\.(.*)$', re.IGNORECASE),     # 格式: Show.Name.1x1.Episode.Title
+        re.compile(r'^(.*) - S(\d{1,2})E(\d{1,4})$', re.IGNORECASE),         # 格式: Show Name - S1E1 (无标题)
+        re.compile(r'^(.*)\.S(\d{1,2})E(\d{1,4})$', re.IGNORECASE),          # 格式: Show.Name.S1E1 (无标题)
+    ]
+    
     for file in files:
-        ep_match = re.match(r'.*S(\d{2})E(\d{2}).*', file, re.IGNORECASE)
-        if not (ep_match and any(file.lower().endswith(ext) for ext in media_extensions)):
-            continue  # 不是剧集文件，跳过
+        # 首先检查是否为支持的媒体文件
+        if not any(file.lower().endswith(ext) for ext in media_extensions):
+            logging.debug(f"文件不是媒体文件，跳过: {file}")
+            continue
+            
+        # 对于媒体文件，检查是否符合剧集命名规范
+        episode_match = None
+        for pattern in episode_patterns:
+            episode_match = pattern.match(os.path.splitext(file)[0])
+            if episode_match:
+                break
+                
+        if not episode_match:
+            # 不是剧集文件命名格式，跳过
+            logging.debug(f"文件不符合剧集命名格式，跳过: {file}")
+            continue
         
-        season_num = int(ep_match.group(1))
-        episode_num = int(ep_match.group(2))
+        show_name = episode_match.group(1).strip()
+        season_num = int(episode_match.group(2))
+        episode_num = int(episode_match.group(3))
         episode_nfo_path = os.path.join(root, os.path.splitext(file)[0] + '.nfo')
         
         if os.path.exists(episode_nfo_path):
@@ -897,7 +939,7 @@ def process_episode_files(root, files, media_extensions, config):
                     episode_info["studio"] = info.get("studios", [""])[0] if info.get("studios") else ""
                 generate_episode_nfo(episode_nfo_path, episode_info)
         else:
-            logging.warning(f"未找到TMDB_ID，跳过NFO生成")
+            logging.warning(f"未找到TMDB_ID，跳过NFO生成: {file}")
 
 def query_tmdb_id(title, year, media_type, config):
     """通过数据库查询获取tmdb_id"""
@@ -985,12 +1027,20 @@ def main():
         
     movies_path = config['movies_path']
     episodes_path = config['episodes_path']
+    anime_path = config['anime_path']
+    variety_path = config['variety_path']
     
     # 扫描电影路径（指定path_type为'movie'）
     scan_metadata(movies_path, config, path_type='movie')
     
     # 扫描剧集路径（指定path_type为'tv'）
     scan_metadata(episodes_path, config, path_type='tv')
+
+    # 扫描动漫路径（指定path_type为'tv'）
+    scan_metadata(anime_path, config, path_type='tv')
+
+    # 扫描综艺路径（指定path_type为'variety'）
+    scan_metadata(variety_path, config, path_type='tv')
 
 if __name__ == "__main__":
     main()

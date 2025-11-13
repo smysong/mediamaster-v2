@@ -7,7 +7,7 @@ import time
 import threading
 
 # 配置日志记录
-logging.basicConfig(level=logging.INFO, format="%(levelname)s - %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # 定义版本号
 def get_app_version():

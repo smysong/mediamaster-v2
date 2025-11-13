@@ -246,6 +246,28 @@
     animation: none;
 }
 
+/* 刷新站点状态图标旋转动画 */
+@keyframes rotateIcon {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+#refresh-site-status.rotating {
+    animation: rotateIcon 1s linear infinite;
+    cursor: wait !important;
+    opacity: 0.8 !important;
+    display: inline-block; /* 确保transform生效 */
+}
+
+/* 确保旋转时保持原有样式 */
+#refresh-site-status.rotating {
+    color: #ffffff !important;
+}
+
 .visually-hidden,
 .ms-2,
 .text-muted {
@@ -333,11 +355,11 @@
                         <div class="col-md-4 col-sm-12">
                             <div class="stat-item" data-target="/library?type=tvs">
                                 <div class="stat-icon">
-                                    <img src="{{ url_for('static', filename='img/tv.png') }}" alt="电视剧图标">
+                                    <img src="{{ url_for('static', filename='img/tv.png') }}" alt="电视图标">
                                 </div>
                                 <div class="stat-info">
                                     <div class="stat-number">{{ total_tvs }}</div>
-                                    <div class="stat-name">电视剧</div>
+                                    <div class="stat-name">电视</div>
                                 </div>
                             </div>
                         </div>
@@ -835,14 +857,18 @@ $(document).ready(function() {
         $('#site-status-content').html(html);
     }
 
+    // 站点状态检测刷新函数
     function checkSiteStatus() {
+        // 添加图标旋转动画
+        $('#refresh-site-status').addClass('rotating');
+        
         // 显示检测中状态（只在内容区域）
         $('#site-status-content').html(`
             <div class="d-flex justify-content-center align-items-center">
                 <div class="spinner-border text-primary" role="status">
-                    <span class="visually-hidden">后台检测中...预计2分钟,可以执行其他操作或等待检测完成</span>
+                    <span class="visually-hidden">后台检测中...预计1分钟,可以执行其他操作或等待检测完成</span>
                 </div>
-                <span class="ms-2">后台检测中...预计2分钟,可以执行其他操作或等待检测完成</span>
+                <span class="ms-2">后台检测中...预计1分钟,可以执行其他操作或等待检测完成</span>
             </div>
         `);
         
@@ -863,6 +889,8 @@ $(document).ready(function() {
                     renderSiteStatus(data);
                     showToast('站点状态检查完成', 'success');
                 }
+                // 移除图标旋转动画
+                $('#refresh-site-status').removeClass('rotating');
             },
             error: function(xhr, status, error) {
                 showToast('检查失败: ' + error, 'error');
@@ -872,6 +900,8 @@ $(document).ready(function() {
                         <i class="fas fa-exclamation-triangle"></i> 检查失败: ${error}
                     </div>
                 `);
+                // 移除图标旋转动画
+                $('#refresh-site-status').removeClass('rotating');
             }
         });
     }

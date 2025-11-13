@@ -46,7 +46,7 @@ if not logger.handlers:
     stream_handler = logging.StreamHandler()
 
     # 设置日志格式
-    formatter = logging.Formatter("%(levelname)s - %(message)s")
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
     file_handler.setFormatter(formatter)
     stream_handler.setFormatter(formatter)
 
@@ -1738,18 +1738,33 @@ GROUP_MAPPING = {
     },
     "媒体库目录": {
         "media_dir": {"type": "text", "label": "主目录"},
-        "movies_path": {"type": "text", "label": "电影目录"},
-        "episodes_path": {"type": "text", "label": "电视剧目录"},
-        "unknown_path": {"type": "text", "label": "未识别目录"}
+        "movies_path": {"type": "text", "label": "电影"},
+        "anime_path": {"type": "text", "label": "动漫"},
+        "variety_path": {"type": "text", "label": "综艺"},
+        "episodes_path": {"type": "text", "label": "电视剧"},
+        "unknown_path": {"type": "text", "label": "未识别"}
     },
     "资源下载设置": {
-        "download_dir": {"type": "text", "label": "下载目录"},
-        "download_action": {"type": "select", "label": "文件入库转移方式", "options": ["移动", "复制", "软链接", "硬链接"]},
-        "download_excluded_filenames": {"type": "text", "label": "下载转移排除的文件名"},
         "preferred_resolution": {"type": "text", "label": "资源下载首选分辨率"},
         "fallback_resolution": {"type": "text", "label": "资源下载备选分辨率"},
         "resources_exclude_keywords": {"type": "text", "label": "资源搜索排除关键词"},
         "resources_prefer_keywords": {"type": "text", "label": "资源下载偏好关键词"}
+    },
+    "文件转移设置": {
+        "download_dir": {"type": "text", "label": "下载监控目录"},
+        "download_action": {"type": "select", "label": "入库转移方式", "options": ["move", "copy", "softlink", "hardlink"]},
+        "download_excluded_filenames": {"type": "text", "label": "下载转移排除的文件名"},
+        "file_overwrite_option": {"type": "select", "label": "文件覆盖选项", "options": ["skip", "size", "always"]},
+        "enable_multithread_transfer": {"type": "switch", "label": "启用多线程文件转移"},
+        "transfer_thread_count": {"type": "text", "label": "批量文件转移线程数"},
+        "movie_folder_naming_format": {"type": "text", "label": "电影目录命名规则"},
+        "tv_folder_naming_format": {"type": "text", "label": "电视剧目录命名规则"},
+        "anime_folder_naming_format": {"type": "text", "label": "动漫目录命名规则"},
+        "variety_folder_naming_format": {"type": "text", "label": "综艺目录命名规则"},
+        "movie_naming_format": {"type": "text", "label": "电影文件命名规则"},
+        "tv_naming_format": {"type": "text", "label": "电视剧文件命名规则"},
+        "anime_naming_format": {"type": "text", "label": "动漫文件命名规则"},
+        "variety_naming_format": {"type": "text", "label": "综艺文件命名格式"}        
     },
     "豆瓣设置": {
         "douban_api_key": {"type": "password", "label": "豆瓣API密钥"},
@@ -2042,23 +2057,58 @@ def get_downloader_client():
 
     config = {row['OPTION']: row['VALUE'] for row in config_rows}
 
-    if not all(config.values()):
-        raise ValueError("下载器配置不完整，请检查数据库中的配置项。")
+    download_type = config.get('download_type')
+    
+    # 如果下载器类型是xunlei，直接返回None
+    if download_type == 'xunlei':
+        return None
 
-    download_type = config['download_type']
-    host = config['download_host']
-    port = config['download_port']
-    username = config['download_username']
-    password = config['download_password']
+    # 检查下载器类型是否存在
+    if not download_type:
+        raise ValueError("未配置下载器类型，请在系统设置中配置下载器。")
 
+    host = config.get('download_host')
+    port = config.get('download_port')
+    username = config.get('download_username')
+    password = config.get('download_password')
+
+    # 根据不同下载器类型检查必需的配置项
     if download_type == 'transmission':
+        # transmission只需要host和port是必填的
+        if not host:
+            raise ValueError("Transmission配置不完整：缺少主机地址")
+        if not port:
+            raise ValueError("Transmission配置不完整：缺少端口号")
+        
+        # 尝试转换端口为整数
+        try:
+            port = int(port)
+        except (ValueError, TypeError):
+            raise ValueError("Transmission配置错误：端口号必须是数字")
+        
         return TransmissionClient(
             host=host,
             port=port,
-            username=username,
-            password=password
+            username=username if username else None,
+            password=password if password else None
         )
     elif download_type == 'qbittorrent':
+        # qbittorrent需要所有配置项都是必填的
+        if not host:
+            raise ValueError("qBittorrent配置不完整：缺少主机地址")
+        if not port:
+            raise ValueError("qBittorrent配置不完整：缺少端口号")
+        if not username:
+            raise ValueError("qBittorrent配置不完整：缺少用户名")
+        if not password:
+            raise ValueError("qBittorrent配置不完整：缺少密码")
+            
+        # 尝试转换端口为整数
+        try:
+            port = int(port)
+        except (ValueError, TypeError):
+            raise ValueError("qBittorrent配置错误：端口号必须是数字")
+        
         return QbittorrentClient(
             host=f"http://{host}:{port}",
             username=username,

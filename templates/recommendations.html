@@ -794,11 +794,6 @@
 
     // 获取国内最新电影
     function fetchChinaMovies(apiKey) {
-        // 使用 Discover API 并设置地区为中国 (CN)
-        // 添加更多筛选条件：
-        // 1. 限定发布日期范围为最近1年
-        // 2. 要求有评分和投票数
-        // 3. 限定语言为中文或英语（避免纯地区筛选问题）
         const endDate = new Date().toISOString().split('T')[0];
         const startDate = new Date();
         startDate.setFullYear(startDate.getFullYear() - 1);
@@ -811,13 +806,17 @@
             .then(data => {
                 console.log('国内最新电影数据:', data.results);
                 // 过滤掉没有海报或评分过低的电影
-                const filteredResults = data.results.filter(movie => 
+                let filteredResults = data.results.filter(movie => 
                     movie.poster_path && 
                     movie.vote_average > 0 && 
                     movie.vote_count > 0 &&
                     movie.release_date &&
                     movie.release_date <= endDate
                 ).slice(0, 20); // 只取前20个结果
+                
+                // 添加随机排序
+                filteredResults = filteredResults.sort(() => 0.5 - Math.random());
+                
                 displayRecommendations(filteredResults, 'china-movies-list');
                 return filteredResults;
             })
@@ -829,17 +828,11 @@
 
     // 获取中国国内最新剧集（包括正在播出和完结的剧集）
     function fetchChinaTVShows(apiKey) {
-        // 使用 Discover API 并设置更多筛选条件
         const endDate = new Date().toISOString().split('T')[0];
         const startDate = new Date();
         startDate.setMonth(startDate.getMonth() - 6);
         const startDateStr = startDate.toISOString().split('T')[0];
         
-        // 添加更多筛选条件：
-        // 1. 限定首播日期范围为最近3个月
-        // 2. 要求有评分和投票数
-        // 3. 限定原始语言为中文
-        // 4. 可以添加 with_origin_country=CN 或使用 region=CN
         const url = `https://api.tmdb.org/3/discover/tv?api_key=${apiKey}&language=zh-CN&sort_by=first_air_date.desc&first_air_date.gte=${startDateStr}&first_air_date.lte=${endDate}&with_original_language=zh&vote_count.gte=2&vote_average=5`;
         
         return fetch(url)
@@ -847,13 +840,17 @@
             .then(data => {
                 console.log('国内最新剧集数据:', data.results);
                 // 过滤掉没有海报或评分过低的剧集
-                const filteredResults = data.results.filter(show => 
+                let filteredResults = data.results.filter(show => 
                     show.poster_path && 
                     show.vote_average > 0 && 
                     show.vote_count > 0 &&
                     show.first_air_date &&
                     show.first_air_date <= endDate
                 ).slice(0, 20); // 只取前20个结果
+                
+                // 添加随机排序
+                filteredResults = filteredResults.sort(() => 0.5 - Math.random());
+                
                 displayRecommendations(filteredResults, 'china-tv-shows-list');
                 return filteredResults;
             })

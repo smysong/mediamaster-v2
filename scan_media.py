@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,  # 设置日志级别为 INFO
-    format="%(levelname)s - %(message)s",  # 设置日志格式
+    format="%(asctime)s - %(levelname)s - %(message)s",  # 设置日志格式
     handlers=[
         logging.FileHandler("/tmp/log/scan_media.log", mode='w'),  # 输出到文件并清空之前的日志
         logging.StreamHandler()  # 输出到控制台
@@ -359,11 +359,16 @@ def delete_obsolete_episodes(db_path, current_episodes):
     conn.commit()
     conn.close()
 
-def update_tv_year(episodes_path, db_path):
+def update_tv_year(base_path, db_path):
     # 正则表达式用于匹配电视剧标题和年份
     pattern = re.compile(r'^(.*)\s+\((\d{4})\)')
-
+    
     def scan_directories(path):
+        # 检查路径是否存在
+        if not os.path.exists(path):
+            logging.warning(f"路径不存在，跳过扫描: {path}")
+            return []
+        
         # 获取所有文件夹名称
         directories = [name for name in os.listdir(path) if os.path.isdir(os.path.join(path, name))]
         
@@ -412,35 +417,73 @@ def update_tv_year(episodes_path, db_path):
         conn.close()
 
     # 扫描目录并提取信息
-    shows = scan_directories(episodes_path)
+    shows = scan_directories(base_path)
     
     # 更新数据库
-    update_database(db_path, shows)
+    if shows:  # 只有当有数据时才更新数据库
+        update_database(db_path, shows)
 
 def main():
     db_path = '/config/data.db'
     config = load_config(db_path)
     movies_path = config['movies_path']
     episodes_path = config['episodes_path']
+    anime_path = config.get('anime_path', episodes_path)  # 如果没有设置动漫路径，则使用电视剧路径
+    variety_path = config.get('variety_path', episodes_path)  # 如果没有设置综艺路径，则使用电视剧路径
 
     # 扫描电影目录
-    movies = scan_movies(movies_path)
+    if os.path.exists(movies_path):
+        movies = scan_movies(movies_path)
+        # 插入或更新电影数据
+        insert_or_update_movies(db_path, movies)
+        # 删除数据库中多余的电影记录
+        delete_obsolete_movies(db_path, movies)
+    else:
+        logging.warning(f"电影目录不存在: {movies_path}")
+
+    # 收集所有电视剧类型的媒体（电视剧、动漫、综艺）
+    all_episodes = {}
 
     # 扫描电视剧目录
-    episodes = scan_episodes(episodes_path)
+    if os.path.exists(episodes_path):
+        episodes = scan_episodes(episodes_path)
+        # 合并到all_episodes
+        for show_name, show_info in episodes.items():
+            all_episodes[show_name] = show_info
+    else:
+        logging.warning(f"电视剧目录不存在: {episodes_path}")
 
-    # 插入或更新电影数据
-    insert_or_update_movies(db_path, movies)
+    # 扫描动漫目录
+    if os.path.exists(anime_path) and anime_path != episodes_path:
+        anime_episodes = scan_episodes(anime_path)
+        # 合并到all_episodes
+        for show_name, show_info in anime_episodes.items():
+            all_episodes[show_name] = show_info
+    elif anime_path != episodes_path:
+        logging.warning(f"动漫目录不存在: {anime_path}")
+
+    # 扫描综艺目录
+    if os.path.exists(variety_path) and variety_path != episodes_path:
+        variety_episodes = scan_episodes(variety_path)
+        # 合并到all_episodes
+        for show_name, show_info in variety_episodes.items():
+            all_episodes[show_name] = show_info
+    elif variety_path != episodes_path:
+        logging.warning(f"综艺目录不存在: {variety_path}")
 
     # 插入或更新电视剧数据
-    insert_or_update_episodes(db_path, episodes)
-    update_tv_year(episodes_path, db_path)
-
-    # 删除数据库中多余的电影记录
-    delete_obsolete_movies(db_path, movies)
-
-    # 删除数据库中多余的电视剧记录
-    delete_obsolete_episodes(db_path, episodes)
+    if all_episodes:
+        insert_or_update_episodes(db_path, all_episodes)
+        # 删除数据库中多余的电视剧记录
+        delete_obsolete_episodes(db_path, all_episodes)
+    
+    # 更新电视剧年份信息（对所有目录进行操作）
+    if os.path.exists(episodes_path):
+        update_tv_year(episodes_path, db_path)
+    if os.path.exists(anime_path):
+        update_tv_year(anime_path, db_path)
+    if os.path.exists(variety_path):
+        update_tv_year(variety_path, db_path)
 
 if __name__ == "__main__":
     main()

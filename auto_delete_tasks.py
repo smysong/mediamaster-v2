@@ -8,7 +8,7 @@ from qbittorrentapi import Client as QBittorrentClient, LoginFailed
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,  # 修改为 INFO 级别
-    format="%(levelname)s - %(message)s",
+    format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
         logging.FileHandler("/tmp/log/auto_delete_tasks.log", mode='w'),
         logging.StreamHandler()

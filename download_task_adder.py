@@ -8,7 +8,7 @@ from qbittorrentapi import Client as QBittorrentClient, LoginFailed
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
-    format="%(levelname)s - %(message)s",
+    format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
         logging.FileHandler("/tmp/log/download_task_adder.log", mode='w'),
         logging.StreamHandler()

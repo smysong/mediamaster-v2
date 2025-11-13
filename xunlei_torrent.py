@@ -7,7 +7,7 @@ import subprocess
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
-    format="%(levelname)s - %(message)s",
+    format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
         logging.FileHandler("/tmp/log/xunlei_torrent.log", mode='w'),
         logging.StreamHandler()

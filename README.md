@@ -4,7 +4,7 @@
   <img src="img/logo.png" alt="MediaMaster Logo" width="120">
 </div>
 
-> 🎬 **MediaMaster V2** 是一个开箱即用的影视自动化订阅管理系统。它基于 **Python** 构建，支持X86_64、ARM64架构，支持多站点资源订阅、自动化下载、媒体库管理，让你可以轻松管理和享受个人媒体内容。
+> 🎬 **MediaMaster V2** 是一个开箱即用的影视自动化订阅管理系统。基于 **Python** 构建，支持X86_64、ARM64架构，支持多站点资源订阅、自动化下载、媒体库管理，让你可以轻松管理和享受个人媒体内容。
 
 <div align="center">
 

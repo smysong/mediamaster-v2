@@ -14,7 +14,7 @@
 </style>
 
     {% if media_type == 'movies' %}
-        <h3>电影库&emsp;&emsp;共计 {{ total_movies }} 部影片</h3>
+        <h3>共计 {{ total_movies }} 部影片</h3>
         <div class="poster-wall-container">
             <div class="poster-wall" id="movieWall">
                 {% for movie in movies %}
@@ -29,7 +29,7 @@
             </div>
         </div>
     {% elif media_type == 'tvs' %}
-        <h3>电视剧库&emsp;&emsp;共计 {{ total_tvs }} 部剧集</h3>
+        <h3>共计 {{ total_tvs }} 部电视节目</h3>
         <div class="poster-wall-container">
             <div class="poster-wall" id="tvWall">
                 {% for tv in tv_data %}

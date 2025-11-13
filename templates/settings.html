@@ -56,6 +56,28 @@
         color: #ffc107;
     }
     
+    /* 简约统一的目录加载器样式 */
+    .directory-loader {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 20px;
+    }
+    
+    .directory-loader .spinner {
+        width: 20px;
+        height: 20px;
+        border: 2px solid #f3f3f3;
+        border-top: 2px solid #0d6efd;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
     /* 使用Bootstrap的form-switch样式 */
     .form-check-input:checked {
         background-color: #0d6efd;
@@ -238,6 +260,15 @@
         margin: 0;
         font-weight: normal;
     }
+    
+    /* 命名格式帮助文本 */
+    .naming-format-help {
+        background-color: #e9f7fe;
+        border-left: 4px solid #0d6efd;
+        padding: 10px;
+        margin-top: 5px;
+        font-size: 12px;
+    }
 </style>
 <main class="container-fluid px-4 py-4 main-content">
     <div class="row g-4">
@@ -344,28 +375,56 @@
                             </div>
                             <div class="card-body">
                                 <div class="row">
-                                    {% for key, field in config['媒体库目录'].items() %}
+                                    <!-- 先显示主目录（media_dir） -->
+                                    {% if 'media_dir' in config['媒体库目录'] %}
+                                    {% set field = config['媒体库目录']['media_dir'] %}
                                     <div class="col-md-6 col-lg-3">
-                                        <div class="mb-3 setting-item" id="form-group-{{ key }}">
-                                            <label for="{{ key }}" class="form-label fw-medium">{{ field.label }}</label>
+                                        <div class="mb-3 setting-item" id="form-group-media_dir">
+                                            <label for="media_dir" class="form-label fw-medium">{{ field.label }}</label>
                                             
                                             <!-- 隐藏字段存储 ID -->
-                                            <input type="hidden" name="{{ key }}_id" value="{{ field.id }}">
+                                            <input type="hidden" name="media_dir_id" value="{{ field.id }}">
                                             
                                             <div class="input-group">
-                                                <input type="text" class="form-control" name="{{ key }}" id="{{ key }}" value="{{ field.value }}">
+                                                <input type="text" class="form-control" name="media_dir" id="media_dir" value="{{ field.value }}">
                                                 <button class="btn btn-sm btn-outline-primary directory-selector-btn" 
-                                                        type="button" data-target="{{ key }}">
+                                                        type="button" data-target="media_dir">
                                                     <i class="bi bi-folder" style="margin-right:0px;"></i>
                                                 </button>
                                             </div>
                                         </div>
                                     </div>
+                                    {% endif %}
+                                    
+                                    <!-- 按指定顺序显示媒体库目录 -->
+                                    {% set media_dirs_order = ['movies_path', 'episodes_path', 'anime_path', 'variety_path', 'unknown_path'] %}
+                                    
+                                    <!-- 显示媒体目录 -->
+                                    {% for key in media_dirs_order %}
+                                        {% if key in config['媒体库目录'] %}
+                                        {% set field = config['媒体库目录'][key] %}
+                                        <div class="col-md-6 col-lg-3">
+                                            <div class="mb-3 setting-item" id="form-group-{{ key }}">
+                                                <label for="{{ key }}" class="form-label fw-medium">{{ field.label }}</label>
+                                                
+                                                <!-- 隐藏字段存储 ID -->
+                                                <input type="hidden" name="{{ key }}_id" value="{{ field.id }}">
+                                                
+                                                <div class="input-group">
+                                                    <input type="text" class="form-control" name="{{ key }}" id="{{ key }}" value="{{ field.value }}">
+                                                    <button class="btn btn-sm btn-outline-primary directory-selector-btn" 
+                                                            type="button" data-target="{{ key }}">
+                                                        <i class="bi bi-folder" style="margin-right:0px;"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {% endif %}
                                     {% endfor %}
                                 </div>
                             </div>
                         </div>
-                    </div>                    
+                    </div>                 
 
                     <!-- 豆瓣设置 -->
                     <div class="col-12">
@@ -557,27 +616,23 @@
                                                     <span class="slider"></span>
                                                 </label>
                                             </div>
-                                            {% else %}
+                                            {% elif field.type == 'text' %}
                                             <label for="{{ key }}" class="form-label fw-medium">{{ field.label }}</label>
                                             
                                             <!-- 隐藏字段存储 ID -->
                                             <input type="hidden" name="{{ key }}_id" value="{{ field.id }}">
                                             
-                                            {% if field.type == 'select' %}
-                                                <select class="form-select" name="{{ key }}" id="{{ key }}">
-                                                    <option value="move" {% if field.value == 'move' %}selected{% endif %}>移动</option>
-                                                    <option value="copy" {% if field.value == 'copy' %}selected{% endif %}>复制</option>
-                                                    <option value="softlink" {% if field.value == 'softlink' %}selected{% endif %}>软链接</option>
-                                                    <option value="hardlink" {% if field.value == 'hardlink' %}selected{% endif %}>硬链接</option>
-                                                </select>
-                                            {% elif field.type == 'text' %}
-                                                <input type="text" class="form-control" name="{{ key }}" id="{{ key }}" value="{{ field.value }}">
-                                                {% if ',' in field.value %}
-                                                <div class="form-text">
-                                                    <i class="bi bi-info-circle me-1"></i> 多个值可以用,逗号分隔
-                                                </div>
-                                                {% endif %}
+                                            <input type="text" class="form-control" name="{{ key }}" id="{{ key }}" value="{{ field.value }}">
+                                            {% if ',' in field.value %}
+                                            <div class="form-text">
+                                                <i class="bi bi-info-circle me-1"></i> 多个值可以用,逗号分隔
+                                            </div>
                                             {% endif %}
+                                            {% else %}
+                                            <label for="{{ key }}" class="form-label fw-medium">{{ field.label }}</label>
+                                            
+                                            <!-- 隐藏字段存储 ID -->
+                                            <input type="hidden" name="{{ key }}_id" value="{{ field.id }}">
                                             {% endif %}
                                             
                                             {% if key == 'preferred_resolution' %}
@@ -657,6 +712,100 @@
                                         <i class="bi bi-wifi"></i> 测试连接
                                     </button>
                                     <span id="testResult" class="ms-2"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 文件转移设置 -->
+                    <div class="col-12">
+                        <h5 class="section-title">文件转移</h5>
+                    </div>
+                    <div class="col-12">
+                        <div class="card shadow-sm">
+                            <div class="card-header text-white d-flex align-items-center">
+                                <i class="bi bi-folder-symlink me-2"></i>文件转移设置
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    {% for key, field in config['文件转移设置'].items() %}
+                                    <div class="col-md-6 col-lg-4">
+                                        <div class="mb-3 setting-item" id="form-group-{{ key }}">
+                                            {% if field.type == 'switch' %}
+                                            <div class="switch-container">
+                                                <label for="{{ key }}" class="form-label fw-medium">{{ field.label }}</label>
+                                                
+                                                <!-- 隐藏字段存储 ID -->
+                                                <input type="hidden" name="{{ key }}_id" value="{{ field.id }}">
+                                                
+                                                <label class="switch">
+                                                    <input type="checkbox" name="{{ key }}" id="{{ key }}" {% if field.value == 'True' %}checked{% endif %}>
+                                                    <span class="slider"></span>
+                                                </label>
+                                            </div>
+                                            {% elif field.type == 'select' %}
+                                            <label for="{{ key }}" class="form-label fw-medium">{{ field.label }}</label>
+                                            
+                                            <!-- 隐藏字段存储 ID -->
+                                            <input type="hidden" name="{{ key }}_id" value="{{ field.id }}">
+                                            
+                                            {% if key == 'download_action' %}
+                                            <select class="form-select" name="{{ key }}" id="{{ key }}">
+                                                <option value="move" {% if field.value == 'move' %}selected{% endif %}>移动</option>
+                                                <option value="copy" {% if field.value == 'copy' %}selected{% endif %}>复制</option>
+                                                <option value="softlink" {% if field.value == 'softlink' %}selected{% endif %}>软链接</option>
+                                                <option value="hardlink" {% if field.value == 'hardlink' %}selected{% endif %}>硬链接</option>
+                                            </select>
+                                            {% elif key == 'file_overwrite_option' %}
+                                            <select class="form-select" name="{{ key }}" id="{{ key }}">
+                                                <option value="skip" {% if field.value == 'skip' %}selected{% endif %}>跳过</option>
+                                                <option value="size" {% if field.value == 'size' %}selected{% endif %}>智能</option>
+                                                <option value="always" {% if field.value == 'always' %}selected{% endif %}>强制</option>
+                                            </select>
+                                            {% else %}
+                                            <select class="form-select" name="{{ key }}" id="{{ key }}">
+                                                {% for option in field.options %}
+                                                <option value="{{ option }}" {% if field.value == option %}selected{% endif %}>{{ option }}</option>
+                                                {% endfor %}
+                                            </select>
+                                            {% endif %}
+                                            {% else %}
+                                            <label for="{{ key }}" class="form-label fw-medium">{{ field.label }}</label>
+                                            
+                                            <!-- 隐藏字段存储 ID -->
+                                            <input type="hidden" name="{{ key }}_id" value="{{ field.id }}">
+                                            
+                                            <input type="text" class="form-control" name="{{ key }}" id="{{ key }}" value="{{ field.value }}">
+                                            {% endif %}
+                                            
+                                            {% if key == 'download_dir' %}
+                                            <div class="form-text">
+                                                <i class="bi bi-info-circle me-1"></i> 下载监控目录，系统会监控此目录中的文件变化并进行处理
+                                            </div>
+                                            {% elif key == 'download_excluded_filenames' %}
+                                            <div class="form-text">
+                                                <i class="bi bi-info-circle me-1"></i> 下载转移时排除的文件名，多个文件名用逗号分隔
+                                            </div>
+                                            {% elif key in ['movie_folder_naming_format', 'tv_folder_naming_format', 'anime_folder_naming_format', 'variety_folder_naming_format'] %}
+                                            <div class="form-text">
+                                                <i class="bi bi-info-circle me-1"></i> 可用变量以及使用说明请查看：<a target="_blank" href="http://wiki.songmy.top:8080/web/#/686311457/102215728">使用帮助</a>
+                                            </div>
+                                            {% elif key in ['movie_naming_format', 'tv_naming_format', 'anime_naming_format', 'variety_naming_format'] %}
+                                            <div class="form-text">
+                                                <i class="bi bi-info-circle me-1"></i> 可用变量以及使用说明请查看：<a target="_blank" href="http://wiki.songmy.top:8080/web/#/686311457/102215728">使用帮助</a>
+                                            </div>
+                                            {% elif key == 'file_overwrite_option' %}
+                                            <div class="form-text">
+                                                <i class="bi bi-info-circle me-1"></i> 跳过：已存在则不操作 | 智能：仅当新文件更大时才覆盖 | 强制：强制覆盖旧文件；
+                                            </div>
+                                            {% elif key == 'transfer_thread_count' %}
+                                            <div class="form-text">
+                                                <i class="bi bi-info-circle me-1"></i> 建议将并发任务数设置为 2-6，实际效果受磁盘性能与系统资源影响。
+                                            </div>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    {% endfor %}
                                 </div>
                             </div>
                         </div>
@@ -943,6 +1092,22 @@
                 checkbox.remove();
             });
         });
+
+        // 动态显示/隐藏文件转移线程数设置项
+        function toggleTransferThreadCount() {
+            var multithreadChecked = $('#enable_multithread_transfer').is(':checked');
+            if (multithreadChecked) {
+                $('#form-group-transfer_thread_count').show();
+            } else {
+                $('#form-group-transfer_thread_count').hide();
+            }
+        }
+
+        // 绑定多线程文件转移开关事件
+        $('#enable_multithread_transfer').on('change', toggleTransferThreadCount);
+
+        // 页面加载时初始化
+        toggleTransferThreadCount();
 
         // 动态显示/隐藏下载器相关配置项
         function toggleDownloaderFields() {
@@ -1231,7 +1396,7 @@
     // 加载目录内容
     function loadDirectory(path) {
         $('#currentPath').val(path);
-        $('#directoryList').html('<div class="text-center"><div class="spinner-border" role="status"></div></div>');
+        $('#directoryList').html('<div class="directory-loader"><div class="spinner" role="status"></div></div>');
         
         $.get('/api/browse_directory', {path: path})
             .done(function(data) {
@@ -1245,7 +1410,7 @@
                     if (item.is_dir) {
                         html += `
                             <a href="#" class="list-group-item list-group-item-action directory-item" 
-                               data-path="${item.path}">
+                            data-path="${item.path}">
                                 <i class="bi bi-folder me-2"></i>${item.name}
                             </a>
                         `;

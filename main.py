@@ -12,7 +12,7 @@ import threading
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
-    format="%(levelname)s - %(message)s",
+    format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
         logging.FileHandler("/tmp/log/main.log", mode='w'),
         logging.StreamHandler()
@@ -55,13 +55,24 @@ def start_app():
         sys.exit(0)
 
 def start_sync():
-    try:
-        process = subprocess.Popen(['python', 'sync.py'])
-        logging.info("目录监控服务已启动。")
-        return process.pid
-    except Exception as e:
-        logging.error(f"无法启动目录监控服务: {e}")
-        sys.exit(0)
+    def delayed_start():
+        try:
+            # 延时2分钟启动
+            time.sleep(120)
+            process = subprocess.Popen(['python', 'sync.py'])
+            logging.info("目录监控服务已启动。")
+            # 保存进程ID供后续使用
+            global sync_pid
+            sync_pid = process.pid
+        except Exception as e:
+            logging.error(f"无法启动目录监控服务: {e}")
+    
+    # 使用线程启动延时任务，不阻塞主线程
+    thread = threading.Thread(target=delayed_start, daemon=True)
+    thread.start()
+    logging.info("目录监控服务将在2分钟后启动...")
+    # 返回None，因为实际的PID会在延时后设置
+    return None
 
 def start_xunlei_torrent():
     try:
