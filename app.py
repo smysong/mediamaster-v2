@@ -2378,34 +2378,6 @@ def compare_versions(current, latest):
     latest_parts = list(map(int, latest.split('.')))
     return latest_parts > current_parts
 
-def get_fastest_proxy(original_url):
-    """
-    测试所有代理站点的响应时间，返回最快的代理地址
-    """
-    proxy_sites = [
-        "https://gh-proxy.net/",
-        "https://gitproxy.click/",
-        "https://github-proxy.lixxing.top/",
-        "https://tvv.tw/"
-    ]
-    response_times = {}
-
-    for proxy in proxy_sites:
-        proxy_url = proxy + original_url
-        try:
-            start_time = time.time()
-            response = requests.head(proxy_url, timeout=5)  # 使用 HEAD 请求测试响应时间
-            response_times[proxy_url] = time.time() - start_time
-            if response.status_code != 200:
-                response_times[proxy_url] = float('inf')  # 如果响应状态码不是 200，视为不可用
-        except requests.RequestException:
-            response_times[proxy_url] = float('inf')  # 如果请求失败，视为不可用
-
-    # 找到响应时间最短的代理地址
-    fastest_proxy = min(response_times, key=response_times.get)
-    logger.info(f"最快的代理地址是: {fastest_proxy}，响应时间: {response_times[fastest_proxy]:.2f} 秒")
-    return fastest_proxy
-
 @app.route('/health_check', methods=['GET'])
 def health_check():
     return jsonify({"status": "ok"}), 200
@@ -2633,172 +2605,214 @@ def perform_update():
 
         logger.info(f"开始执行更新操作，更新类型: {update_type}")
 
-        # 步骤1: 设置 Git 代理加速地址
+        # 步骤1: 获取所有代理并按速度排序
         original_url = "https://github.com/smysong/mediamaster-v2.git"
-        proxy_url = get_fastest_proxy(original_url)
-        logger.info(f"正在设置 Git 远程仓库代理地址: {proxy_url}")
-        subprocess.run(
-            ['git', 'remote', 'set-url', 'origin', proxy_url],
-            capture_output=True,
-            text=True,
-            cwd='/app'
-        )
-
-        # 步骤2: 根据更新类型执行不同的更新操作
-        if update_type == 'prerelease':
-            # 更新到最新的预发布版本
-            logger.info("正在获取最新的预发布版本标签...")
-            
-            # 先获取所有发布版本信息
-            repo_url = "https://api.github.com/repos/smysong/mediamaster-v2/releases"
-            proxy_url = "https://gh.llkk.cc/https://api.github.com/repos/smysong/mediamaster-v2/releases"
-            
+        proxy_list = get_all_proxies_sorted(original_url)
+        
+        # 步骤2: 尝试每个代理进行更新
+        git_pull_success = False
+        last_error = ""
+        
+        for proxy_url in proxy_list:
             try:
-                response = requests.get(repo_url, timeout=5)
+                logger.info(f"尝试使用地址: {proxy_url}")
+                
+                # 设置 Git 远程仓库地址
+                logger.info(f"正在设置 Git 远程仓库地址: {proxy_url}")
+                set_remote_result = subprocess.run(
+                    ['git', 'remote', 'set-url', 'origin', proxy_url],
+                    capture_output=True,
+                    text=True,
+                    cwd='/app'
+                )
+                
+                if set_remote_result.returncode != 0:
+                    logger.warning(f"设置远程仓库地址失败: {set_remote_result.stderr}")
+                    continue
+                
+                # 根据更新类型执行不同的更新操作
+                if update_type == 'prerelease':
+                    # 更新到最新的预发布版本
+                    logger.info("正在获取最新的预发布版本标签...")
+                    
+                    # 先获取所有发布版本信息
+                    repo_urls = [
+                        "https://api.github.com/repos/smysong/mediamaster-v2/releases",
+                        "https://gh.llkk.cc/https://api.github.com/repos/smysong/mediamaster-v2/releases"
+                    ]
+                    
+                    releases = None
+                    for repo_url in repo_urls:
+                        try:
+                            response = requests.get(repo_url, timeout=8)
+                            if response.status_code == 200:
+                                releases = response.json()
+                                break
+                            else:
+                                logger.warning(f"获取版本信息失败: {response.text}")
+                        except Exception as e:
+                            logger.warning(f"连接 {repo_url} 失败: {e}")
+                            continue
+                    
+                    if not releases:
+                        error_message = "无法获取 GitHub 版本信息"
+                        logger.error(error_message)
+                        return jsonify({"error": error_message}), 500
+                    
+                    # 查找最新的预发布版本
+                    latest_prerelease_release = None
+                    for release in releases:
+                        if release.get("prerelease"):
+                            latest_prerelease_release = release
+                            break
+                    
+                    if not latest_prerelease_release:
+                        error_message = "未找到任何预发布版本"
+                        logger.error(error_message)
+                        return jsonify({"error": error_message}), 500
+                    
+                    prerelease_version_tag = latest_prerelease_release.get("tag_name")
+                    logger.info(f"最新的预发布版本标签: {prerelease_version_tag}")
+                    
+                    # 拉取指定标签的代码
+                    logger.info("正在从 Git 仓库拉取最新预发布版本代码...")
+                    fetch_result = subprocess.run(
+                        ['git', 'fetch', '--all'],
+                        capture_output=True,
+                        text=True,
+                        cwd='/app'
+                    )
+                    
+                    if fetch_result.returncode != 0:
+                        error_message = f"Git fetch 失败: {fetch_result.stderr}"
+                        logger.error(error_message)
+                        continue
+                    
+                    # 检出特定标签
+                    logger.info(f"正在检出预发布版本 {prerelease_version_tag}...")
+                    checkout_result = subprocess.run(
+                        ['git', 'checkout', prerelease_version_tag],
+                        capture_output=True,
+                        text=True,
+                        cwd='/app'
+                    )
+                    
+                    if checkout_result.returncode != 0:
+                        error_message = f"Git checkout 失败: {checkout_result.stderr}"
+                        logger.error(error_message)
+                        continue
+                    
+                    # 拉取代码
+                    pull_result = subprocess.run(
+                        ['git', 'pull', 'origin', prerelease_version_tag],
+                        capture_output=True,
+                        text=True,
+                        cwd='/app'
+                    )
+                    
+                    if pull_result.returncode == 0:
+                        logger.info(f"Git 拉取预发布版本成功: {pull_result.stdout}")
+                        git_pull_success = True
+                        break
+                    else:
+                        last_error = pull_result.stderr
+                        logger.warning(f"Git 拉取预发布版本失败: {last_error}")
+                else:
+                    # 更新到最新稳定版本（默认行为）
+                    logger.info("正在获取最新的稳定版本标签...")
+                    
+                    # 获取所有发布版本信息
+                    repo_urls = [
+                        "https://api.github.com/repos/smysong/mediamaster-v2/releases",
+                        "https://gh.llkk.cc/https://api.github.com/repos/smysong/mediamaster-v2/releases"
+                    ]
+                    
+                    releases = None
+                    for repo_url in repo_urls:
+                        try:
+                            response = requests.get(repo_url, timeout=8)
+                            if response.status_code == 200:
+                                releases = response.json()
+                                break
+                            else:
+                                logger.warning(f"获取版本信息失败: {response.text}")
+                        except Exception as e:
+                            logger.warning(f"连接 {repo_url} 失败: {e}")
+                            continue
+                    
+                    if not releases:
+                        error_message = "无法获取 GitHub 版本信息"
+                        logger.error(error_message)
+                        return jsonify({"error": error_message}), 500
+                    
+                    # 查找最新的稳定版本
+                    latest_stable_release = None
+                    for release in releases:
+                        if not release.get("prerelease"):
+                            latest_stable_release = release
+                            break
+                    
+                    if not latest_stable_release:
+                        error_message = "未找到任何稳定版本"
+                        logger.error(error_message)
+                        return jsonify({"error": error_message}), 500
+                    
+                    stable_version_tag = latest_stable_release.get("tag_name")
+                    logger.info(f"最新的稳定版本标签: {stable_version_tag}")
+                    
+                    # 拉取指定标签的代码
+                    logger.info("正在从 Git 仓库拉取最新稳定版本代码...")
+                    fetch_result = subprocess.run(
+                        ['git', 'fetch', '--all'],
+                        capture_output=True,
+                        text=True,
+                        cwd='/app'
+                    )
+                    
+                    if fetch_result.returncode != 0:
+                        error_message = f"Git fetch 失败: {fetch_result.stderr}"
+                        logger.error(error_message)
+                        continue
+                    
+                    # 检出特定标签
+                    logger.info(f"正在检出稳定版本 {stable_version_tag}...")
+                    checkout_result = subprocess.run(
+                        ['git', 'checkout', stable_version_tag],
+                        capture_output=True,
+                        text=True,
+                        cwd='/app'
+                    )
+                    
+                    if checkout_result.returncode != 0:
+                        error_message = f"Git checkout 失败: {checkout_result.stderr}"
+                        logger.error(error_message)
+                        continue
+                    
+                    # 拉取代码
+                    pull_result = subprocess.run(
+                        ['git', 'pull', 'origin', stable_version_tag],
+                        capture_output=True,
+                        text=True,
+                        cwd='/app'
+                    )
+                    
+                    if pull_result.returncode == 0:
+                        logger.info(f"Git 拉取稳定版本成功: {pull_result.stdout}")
+                        git_pull_success = True
+                        break
+                    else:
+                        last_error = pull_result.stderr
+                        logger.warning(f"Git 拉取稳定版本失败: {last_error}")
+                        
             except Exception as e:
-                logger.warning(f"主地址连接失败，尝试代理: {e}")
-                response = requests.get(proxy_url, timeout=8)
-            
-            if response.status_code != 200:
-                error_message = f"无法获取 GitHub 版本信息: {response.text}"
-                logger.error(error_message)
-                return jsonify({"error": error_message}), 500
-            
-            releases = response.json()
-            
-            # 查找最新的预发布版本
-            latest_prerelease_release = None
-            for release in releases:
-                if release.get("prerelease"):
-                    latest_prerelease_release = release
-                    break
-            
-            if not latest_prerelease_release:
-                error_message = "未找到任何预发布版本"
-                logger.error(error_message)
-                return jsonify({"error": error_message}), 500
-            
-            prerelease_version_tag = latest_prerelease_release.get("tag_name")
-            logger.info(f"最新的预发布版本标签: {prerelease_version_tag}")
-            
-            # 拉取指定标签的代码
-            logger.info("正在从 Git 仓库拉取最新预发布版本代码...")
-            fetch_result = subprocess.run(
-                ['git', 'fetch', '--all'],
-                capture_output=True,
-                text=True,
-                cwd='/app'
-            )
-            
-            if fetch_result.returncode != 0:
-                error_message = f"Git fetch 失败: {fetch_result.stderr}"
-                logger.error(error_message)
-                return jsonify({"error": error_message}), 500
-            
-            # 检出预发布版本
-            checkout_result = subprocess.run(
-                ['git', 'checkout', prerelease_version_tag],
-                capture_output=True,
-                text=True,
-                cwd='/app'
-            )
-            
-            if checkout_result.returncode != 0:
-                error_message = f"Git checkout 失败: {checkout_result.stderr}"
-                logger.error(error_message)
-                return jsonify({"error": error_message}), 500
-            
-            # 拉取最新代码
-            pull_result = subprocess.run(
-                ['git', 'pull', 'origin', prerelease_version_tag],
-                capture_output=True,
-                text=True,
-                cwd='/app'
-            )
-            
-            if pull_result.returncode != 0:
-                error_message = f"Git pull 失败: {pull_result.stderr}"
-                logger.error(error_message)
-                return jsonify({"error": error_message}), 500
-            
-            logger.info(f"Git 拉取预发布版本成功: {pull_result.stdout}")
-        else:
-            # 更新到最新稳定版本（默认行为）
-            logger.info("正在获取最新的稳定版本标签...")
-            
-            # 先获取所有发布版本信息
-            repo_url = "https://api.github.com/repos/smysong/mediamaster-v2/releases"
-            proxy_url = "https://gh.llkk.cc/https://api.github.com/repos/smysong/mediamaster-v2/releases"
-            
-            try:
-                response = requests.get(repo_url, timeout=5)
-            except Exception as e:
-                logger.warning(f"主地址连接失败，尝试代理: {e}")
-                response = requests.get(proxy_url, timeout=8)
-            
-            if response.status_code != 200:
-                error_message = f"无法获取 GitHub 版本信息: {response.text}"
-                logger.error(error_message)
-                return jsonify({"error": error_message}), 500
-            
-            releases = response.json()
-            
-            # 查找最新的稳定版本
-            latest_stable_release = None
-            for release in releases:
-                if not release.get("prerelease"):
-                    latest_stable_release = release
-                    break
-            
-            if not latest_stable_release:
-                error_message = "未找到任何稳定版本"
-                logger.error(error_message)
-                return jsonify({"error": error_message}), 500
-            
-            stable_version_tag = latest_stable_release.get("tag_name")
-            logger.info(f"最新的稳定版本标签: {stable_version_tag}")
-            
-            # 拉取指定标签的代码
-            logger.info("正在从 Git 仓库拉取最新稳定版本代码...")
-            fetch_result = subprocess.run(
-                ['git', 'fetch', '--all'],
-                capture_output=True,
-                text=True,
-                cwd='/app'
-            )
-            
-            if fetch_result.returncode != 0:
-                error_message = f"Git fetch 失败: {fetch_result.stderr}"
-                logger.error(error_message)
-                return jsonify({"error": error_message}), 500
-            
-            # 检出稳定版本
-            checkout_result = subprocess.run(
-                ['git', 'checkout', stable_version_tag],
-                capture_output=True,
-                text=True,
-                cwd='/app'
-            )
-            
-            if checkout_result.returncode != 0:
-                error_message = f"Git checkout 失败: {checkout_result.stderr}"
-                logger.error(error_message)
-                return jsonify({"error": error_message}), 500
-            
-            # 拉取最新代码
-            pull_result = subprocess.run(
-                ['git', 'pull', 'origin', stable_version_tag],
-                capture_output=True,
-                text=True,
-                cwd='/app'
-            )
-            
-            if pull_result.returncode != 0:
-                error_message = f"Git pull 失败: {pull_result.stderr}"
-                logger.error(error_message)
-                return jsonify({"error": error_message}), 500
-            
-            logger.info(f"Git 拉取稳定版本成功: {pull_result.stdout}")
+                last_error = str(e)
+                logger.warning(f"使用地址 {proxy_url} 更新失败: {e}")
+                continue
+        
+        if not git_pull_success:
+            error_message = f"所有地址更新均失败，最后错误信息: {last_error}"
+            logger.error(error_message)
+            return jsonify({"error": error_message}), 500
 
         # 步骤3: 安装依赖（如果有新的依赖）
         logger.info("正在安装新依赖...")
@@ -2854,6 +2868,50 @@ def perform_update():
     except Exception as e:
         logger.error(f"执行更新失败: {e}")
         return jsonify({"error": "更新失败，请稍后再试。"}), 500
+
+
+def get_all_proxies_sorted(original_url):
+    """
+    测试所有代理站点的响应时间，按速度排序返回代理地址列表
+    """
+    proxy_sites = [
+        "https://github.dpik.top/",
+        "https://gitproxy.click/",
+        "https://github-proxy.lixxing.top/",
+        "https://tvv.tw/"
+    ]
+    
+    response_times = {}
+    
+    # 首先测试所有代理
+    for proxy in proxy_sites:
+        proxy_url = proxy + original_url
+        try:
+            start_time = time.time()
+            response = requests.head(proxy_url, timeout=5)  # 使用 HEAD 请求测试响应时间
+            elapsed_time = time.time() - start_time
+            if response.status_code == 200:
+                response_times[proxy] = elapsed_time
+            else:
+                response_times[proxy] = float('inf')  # 如果响应状态码不是 200，视为不可用
+        except requests.RequestException:
+            response_times[proxy] = float('inf')  # 如果请求失败，视为不可用
+    
+    # 添加原始地址作为后备选项
+    response_times[original_url] = float('inf')  # 原始地址没有测试时间，设为最大值
+    
+    # 按响应时间排序，排除不可用的代理
+    sorted_proxies = [proxy for proxy, time in sorted(response_times.items(), key=lambda x: x[1]) if time != float('inf')]
+    
+    # 如果所有代理都不可用，则至少保留原始地址
+    if not sorted_proxies:
+        sorted_proxies = [original_url]
+    else:
+        # 将原始地址添加为最后一个选项
+        sorted_proxies.append(original_url)
+    
+    logger.info(f"地址按优先级排序: {sorted_proxies}")
+    return sorted_proxies
 
 if __name__ == '__main__':
     logger.info("程序已启动")
