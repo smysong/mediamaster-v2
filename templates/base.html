@@ -927,7 +927,7 @@
     <!-- 系统升级加载指示器遮罩层 -->
     <div class="loader-container" id="loading-overlay">
         <div class="loader"></div>
-        <div class="loading-text">请稍后...</div>
+        <div class="loading-text" id="loading-text">请稍后...</div>
     </div>
 
 <script src="/static/js/popper.min.js"></script>
@@ -1086,7 +1086,7 @@
 
             if (data.error) {
                 console.error('检查更新失败:', data.error);
-                showToast(`检查更新失败: ${data.error}`, 'error');
+                // showToast(`检查更新失败: ${data.error}`, 'error');
                 return;
             }
 
@@ -1100,7 +1100,7 @@
             }
         } catch (error) {
             console.error('检查更新失败:', error);
-            showToast('检查更新失败，请稍后再试。', 'error');
+            // showToast('检查更新失败，请稍后再试。', 'error');
         }
     });
 
@@ -1184,6 +1184,15 @@
         modal.show();
     });
 
+    // 绑定更新按钮事件
+    document.getElementById('perform-latest-update-btn').addEventListener('click', function() {
+        performUpdate('latest');
+    });
+
+    document.getElementById('perform-prerelease-update-btn').addEventListener('click', function() {
+        performUpdate('prerelease');
+    });
+
     // 执行更新按钮点击事件
     async function performUpdate(updateType) {
         let confirmMessage = '确定要执行更新吗？更新后系统将自动重启。';
@@ -1203,8 +1212,9 @@
 
         // 显示加载遮罩层
         const loadingOverlay = document.getElementById('loading-overlay');
-        const loadingText = document.querySelector('.loading-text');
-        showLoadingIndicator(loadingOverlay, loadingText, '系统更新中...');
+        const loadingText = document.getElementById('loading-text');
+        loadingText.textContent = '系统更新中...'; // 直接设置文本
+        loadingOverlay.style.display = 'flex'; // 显示遮罩层
 
         try {
             // 发送更新请求，包含更新类型
@@ -1215,41 +1225,39 @@
                 },
                 body: JSON.stringify({type: updateType})
             });
+            
             const data = await response.json();
 
             if (data.error) {
                 showToast(data.error, 'error');
-            } else {
-                showToast(data.message, 'success');
+                loadingOverlay.style.display = 'none'; // 隐藏遮罩层
+                return;
+            }
 
-                // 修改加载指示器文字提示
-                showLoadingIndicator(loadingOverlay, loadingText, '系统重启中...');
+            // 显示更新成功的消息
+            showToast(data.message, 'success');
 
-                // 检查后端服务状态
-                const isBackendUp = await waitForBackendRestart();
-                if (isBackendUp) {
+            // 修改加载指示器文字提示
+            loadingText.textContent = '系统重启中...'; // 更新文本
+
+            // 检查后端服务状态
+            const isBackendUp = await waitForBackendRestart();
+            if (isBackendUp) {
+                loadingText.textContent = '系统重启成功！'; // 更新文本
+                // 2秒后刷新页面
+                setTimeout(() => {
                     location.reload(); // 刷新页面
-                } else {
-                    showToast('系统重启超时，请手动刷新页面。', 'warning');
-                }
+                }, 2000);
+            } else {
+                showToast('系统重启超时，请手动刷新页面。', 'warning');
+                loadingOverlay.style.display = 'none'; // 隐藏遮罩层
             }
         } catch (error) {
             console.error('执行更新失败:', error);
             showToast('执行更新失败，请稍后再试。', 'error');
-        } finally {
-            // 隐藏加载遮罩层
-            hideLoadingIndicator(loadingOverlay);
+            loadingOverlay.style.display = 'none'; // 隐藏遮罩层
         }
     }
-
-    // 绑定更新按钮事件
-    document.getElementById('perform-latest-update-btn').addEventListener('click', function() {
-        performUpdate('latest');
-    });
-
-    document.getElementById('perform-prerelease-update-btn').addEventListener('click', function() {
-        performUpdate('prerelease');
-    });
 
     // 显示加载指示器
     function showLoadingIndicator(overlay, textElement, message) {
@@ -1268,8 +1276,8 @@
         const checkInterval = 3000; // 检查间隔：3秒
         const startTime = Date.now();
 
-        // 先等待5秒，让系统有时间开始重启
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        // 先等待30秒，让系统有时间重启
+        await new Promise(resolve => setTimeout(resolve, 30000));
 
         while (Date.now() - startTime < maxWaitTime) {
             const isBackendUp = await checkBackendStatus();
@@ -1290,6 +1298,7 @@
             return false; // 忽略错误，返回未启动状态
         }
     }
+
     // 微信公众号二维码显示
     document.addEventListener('DOMContentLoaded', function () {
         const wechatContainer = document.getElementById('wechat-container');

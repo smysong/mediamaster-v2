@@ -2,6 +2,20 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.5.14] - beta  - 2025-11-21
+
+### ⚠️ 重要提示
+- ⚠️ 由于之前使用的Github代理服务器出现问题，导致在线升级失败，如遇在线升级失败的用户请重新拉取 Docker 镜像进行更新或使用手动拉取GitHub代码进行更新。参考文档：[在线升级失败时如何解决？](http://wiki.songmy.top:8080/web/#/686311457/102215688)
+
+#### 在线升级
+- 优化在线升级逻辑，提升稳定性与成功率。
+- 移除自动检测版本更新的错误信息弹窗提示。
+
+#### 下载转移
+- 修复下载转移批量处理时可能导致同一文件被多次添加到批处理队列导致重复处理的问题。
+
+#### PS：近期工作繁忙，项目开发进度暂作延缓，谢谢！
+
 ## [2.5.13] - 2025-11-14
 
 ### ⚠️ 重要提示
@@ -772,3 +786,4 @@
 [2.5.11]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.11
 [2.5.12]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.12
 [2.5.13]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.13
+[2.5.14]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.14

@@ -2588,6 +2588,50 @@ def check_update():
         logger.error(f"检查更新失败: {e}")
         return jsonify({"error": "检查更新失败，请稍后再试。"}), 500
 
+def get_all_proxies_sorted(original_url):
+    """
+    测试所有代理站点的响应时间，按速度排序返回代理地址列表
+    """
+    proxy_sites = [
+        "https://github.dpik.top/",
+        "https://gitproxy.click/",
+        "https://github-proxy.lixxing.top/",
+        "https://tvv.tw/"
+    ]
+    
+    response_times = {}
+    proxy_urls = {}  # 存储完整的代理URL
+    
+    # 首先测试所有代理
+    for proxy in proxy_sites:
+        proxy_url = proxy + original_url
+        proxy_urls[proxy] = proxy_url  # 保存完整URL
+        try:
+            start_time = time.time()
+            # 使用 GET 请求
+            response = requests.get(proxy_url, timeout=10)
+            elapsed_time = time.time() - start_time
+            # 更宽松的判断条件，接受 2xx 和 3xx 状态码
+            if response.status_code < 400:
+                response_times[proxy] = elapsed_time
+            else:
+                # 即使状态码不是 200，也给予较低优先级而非完全排除
+                response_times[proxy] = float('inf')
+        except requests.RequestException as e:
+            # 即使请求失败，也给予较低优先级而非完全排除
+            response_times[proxy] = float('inf')
+            logger.warning(f"代理 {proxy} 测试失败: {e}")
+    
+    # 原始地址作为后备选项
+    response_times[original_url] = float('inf')  # 设为最低优先级
+    proxy_urls[original_url] = original_url  # 原始URL
+    
+    # 按响应时间排序，但保留所有代理（包括响应时间为无穷大的）
+    sorted_proxies = [proxy for proxy, time in sorted(response_times.items(), key=lambda x: x[1])]
+    
+    # 返回代理标识符和完整URL的映射
+    return [(proxy, proxy_urls[proxy]) for proxy in sorted_proxies]
+
 @app.route('/perform_update', methods=['POST'])
 @login_required
 def perform_update():
@@ -2604,7 +2648,7 @@ def perform_update():
             return jsonify({"error": "未授权的操作"}), 403
 
         logger.info(f"开始执行更新操作，更新类型: {update_type}")
-
+        
         # 步骤1: 获取所有代理并按速度排序
         original_url = "https://github.com/smysong/mediamaster-v2.git"
         proxy_list = get_all_proxies_sorted(original_url)
@@ -2613,7 +2657,7 @@ def perform_update():
         git_pull_success = False
         last_error = ""
         
-        for proxy_url in proxy_list:
+        for proxy_identifier, proxy_url in proxy_list:
             try:
                 logger.info(f"尝试使用地址: {proxy_url}")
                 
@@ -2628,8 +2672,23 @@ def perform_update():
                 
                 if set_remote_result.returncode != 0:
                     logger.warning(f"设置远程仓库地址失败: {set_remote_result.stderr}")
+                    last_error = set_remote_result.stderr
                     continue
                 
+                # 重置本地更改，确保干净的更新环境
+                logger.info("正在放弃本地更改...")
+                checkout_result = subprocess.run(
+                    ['git', 'checkout', '.'],
+                    capture_output=True,
+                    text=True,
+                    cwd='/app'
+                )
+                
+                if checkout_result.returncode != 0:
+                    logger.warning(f"放弃本地更改失败: {checkout_result.stderr}")
+                    last_error = checkout_result.stderr
+                    continue
+                           
                 # 根据更新类型执行不同的更新操作
                 if update_type == 'prerelease':
                     # 更新到最新的预发布版本
@@ -2648,30 +2707,29 @@ def perform_update():
                             if response.status_code == 200:
                                 releases = response.json()
                                 break
-                            else:
-                                logger.warning(f"获取版本信息失败: {response.text}")
                         except Exception as e:
-                            logger.warning(f"连接 {repo_url} 失败: {e}")
+                            logger.warning(f"获取release信息失败: {e}")
                             continue
                     
                     if not releases:
-                        error_message = "无法获取 GitHub 版本信息"
-                        logger.error(error_message)
-                        return jsonify({"error": error_message}), 500
+                        logger.error("无法获取 GitHub 版本信息")
+                        last_error = "无法获取 GitHub 版本信息"
+                        continue
                     
                     # 查找最新的预发布版本
-                    latest_prerelease_release = None
+                    prerelease_version = None
+                    prerelease_version_tag = None
                     for release in releases:
-                        if release.get("prerelease"):
-                            latest_prerelease_release = release
+                        if release.get('prerelease'):
+                            prerelease_version = release
+                            prerelease_version_tag = release.get('tag_name')
                             break
                     
-                    if not latest_prerelease_release:
-                        error_message = "未找到任何预发布版本"
-                        logger.error(error_message)
-                        return jsonify({"error": error_message}), 500
+                    if not prerelease_version_tag:
+                        logger.warning("未找到预发布版本")
+                        last_error = "未找到预发布版本"
+                        continue
                     
-                    prerelease_version_tag = latest_prerelease_release.get("tag_name")
                     logger.info(f"最新的预发布版本标签: {prerelease_version_tag}")
                     
                     # 拉取指定标签的代码
@@ -2686,6 +2744,7 @@ def perform_update():
                     if fetch_result.returncode != 0:
                         error_message = f"Git fetch 失败: {fetch_result.stderr}"
                         logger.error(error_message)
+                        last_error = fetch_result.stderr
                         continue
                     
                     # 检出特定标签
@@ -2700,6 +2759,7 @@ def perform_update():
                     if checkout_result.returncode != 0:
                         error_message = f"Git checkout 失败: {checkout_result.stderr}"
                         logger.error(error_message)
+                        last_error = checkout_result.stderr
                         continue
                     
                     # 拉取代码
@@ -2723,40 +2783,26 @@ def perform_update():
                     
                     # 获取所有发布版本信息
                     repo_urls = [
-                        "https://api.github.com/repos/smysong/mediamaster-v2/releases",
-                        "https://gh.llkk.cc/https://api.github.com/repos/smysong/mediamaster-v2/releases"
+                        "https://api.github.com/repos/smysong/mediamaster-v2/releases/latest",
+                        "https://gh.llkk.cc/https://api.github.com/repos/smysong/mediamaster-v2/releases/latest"
                     ]
                     
-                    releases = None
+                    latest_stable_release = None
                     for repo_url in repo_urls:
                         try:
                             response = requests.get(repo_url, timeout=8)
                             if response.status_code == 200:
-                                releases = response.json()
+                                latest_stable_release = response.json()
                                 break
-                            else:
-                                logger.warning(f"获取版本信息失败: {response.text}")
                         except Exception as e:
-                            logger.warning(f"连接 {repo_url} 失败: {e}")
+                            logger.warning(f"获取latest release失败: {e}")
                             continue
                     
-                    if not releases:
-                        error_message = "无法获取 GitHub 版本信息"
-                        logger.error(error_message)
-                        return jsonify({"error": error_message}), 500
-                    
-                    # 查找最新的稳定版本
-                    latest_stable_release = None
-                    for release in releases:
-                        if not release.get("prerelease"):
-                            latest_stable_release = release
-                            break
-                    
                     if not latest_stable_release:
-                        error_message = "未找到任何稳定版本"
-                        logger.error(error_message)
-                        return jsonify({"error": error_message}), 500
-                    
+                        logger.error("无法获取最新的稳定版本信息")
+                        last_error = "无法获取最新的稳定版本信息"
+                        continue
+                        
                     stable_version_tag = latest_stable_release.get("tag_name")
                     logger.info(f"最新的稳定版本标签: {stable_version_tag}")
                     
@@ -2772,6 +2818,7 @@ def perform_update():
                     if fetch_result.returncode != 0:
                         error_message = f"Git fetch 失败: {fetch_result.stderr}"
                         logger.error(error_message)
+                        last_error = fetch_result.stderr
                         continue
                     
                     # 检出特定标签
@@ -2786,6 +2833,7 @@ def perform_update():
                     if checkout_result.returncode != 0:
                         error_message = f"Git checkout 失败: {checkout_result.stderr}"
                         logger.error(error_message)
+                        last_error = checkout_result.stderr
                         continue
                     
                     # 拉取代码
@@ -2836,18 +2884,18 @@ def perform_update():
             "message": "更新成功！系统将结束主进程并自动重启。如未自动重启，请手动重启容器。",
             "current_version": current_version
         }), 200
-
-        # 步骤5: 异步查找并结束 python main.py 进程
-        def terminate_main_process():
-            logger.info("正在查找并结束 python main.py 进程...")
+        
+        # 异步重启容器
+        def restart_container():
+            logger.info("正在重启容器...")
             time.sleep(2)
+            # 查找并结束主进程
             target_process_name = "main.py"
             found_process = False
-
             for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
                 try:
                     # 检查进程是否运行了 main.py
-                    if target_process_name in proc.info['cmdline']:
+                    if target_process_name in (proc.info['cmdline'] or []):
                         logger.info(f"找到目标进程: PID={proc.info['pid']}, CMD={proc.info['cmdline']}")
                         proc.terminate()  # 发送终止信号
                         proc.wait(timeout=5)  # 等待进程结束
@@ -2858,60 +2906,15 @@ def perform_update():
 
             if not found_process:
                 logger.warning("未找到运行中的 python main.py 进程")
-
-        # 启动一个后台线程来执行终止 main.py 的操作
-        threading.Thread(target=terminate_main_process).start()
-
-        # 返回成功消息
+        
+        # 启动后台线程执行重启操作
+        threading.Thread(target=restart_container, daemon=True).start()
+        
         return response
-
+        
     except Exception as e:
         logger.error(f"执行更新失败: {e}")
-        return jsonify({"error": "更新失败，请稍后再试。"}), 500
-
-
-def get_all_proxies_sorted(original_url):
-    """
-    测试所有代理站点的响应时间，按速度排序返回代理地址列表
-    """
-    proxy_sites = [
-        "https://github.dpik.top/",
-        "https://gitproxy.click/",
-        "https://github-proxy.lixxing.top/",
-        "https://tvv.tw/"
-    ]
-    
-    response_times = {}
-    
-    # 首先测试所有代理
-    for proxy in proxy_sites:
-        proxy_url = proxy + original_url
-        try:
-            start_time = time.time()
-            response = requests.head(proxy_url, timeout=5)  # 使用 HEAD 请求测试响应时间
-            elapsed_time = time.time() - start_time
-            if response.status_code == 200:
-                response_times[proxy] = elapsed_time
-            else:
-                response_times[proxy] = float('inf')  # 如果响应状态码不是 200，视为不可用
-        except requests.RequestException:
-            response_times[proxy] = float('inf')  # 如果请求失败，视为不可用
-    
-    # 添加原始地址作为后备选项
-    response_times[original_url] = float('inf')  # 原始地址没有测试时间，设为最大值
-    
-    # 按响应时间排序，排除不可用的代理
-    sorted_proxies = [proxy for proxy, time in sorted(response_times.items(), key=lambda x: x[1]) if time != float('inf')]
-    
-    # 如果所有代理都不可用，则至少保留原始地址
-    if not sorted_proxies:
-        sorted_proxies = [original_url]
-    else:
-        # 将原始地址添加为最后一个选项
-        sorted_proxies.append(original_url)
-    
-    logger.info(f"地址按优先级排序: {sorted_proxies}")
-    return sorted_proxies
+        return jsonify({"error": "更新过程中发生未知错误，请查看日志了解详情。"}), 500
 
 if __name__ == '__main__':
     logger.info("程序已启动")
