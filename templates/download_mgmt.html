@@ -93,9 +93,16 @@
                     <div class="modal-body">
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" id="deleteWithFilesSwitch" {% if delete_with_files %}checked{% endif %}>
-                            <label class="form-check-label" for="deleteWithFilesSwitch">删除任务时同步删除本地文件</label>
+                            <label class="form-check-label" for="deleteWithFilesSwitch">删除任务时同步删除数据</label>
                             <div class="form-text text-muted mt-1">
-                                开启后，删除下载任务时将同步删除下载目录中的本地文件
+                                开启后，删除任务时将同步删除下载任务对应的数据文件
+                            </div>
+                        </div>
+                        <div class="form-check form-switch mt-3">
+                            <input class="form-check-input" type="checkbox" id="autoDeleteCompletedTasksSwitch" {% if auto_delete_completed_tasks %}checked{% endif %}>
+                            <label class="form-check-label" for="autoDeleteCompletedTasksSwitch">自动清理已完成做种任务</label>
+                            <div class="form-text text-muted mt-1">
+                                开启后，将按照系统定时任务间隔时长自动清理已完成做种的任务
                             </div>
                         </div>
                     </div>
@@ -180,8 +187,12 @@
             paused_download: '暂停',
             stopped: '停止',
             checking: '检查',
+            checking_download: '校验',
+            queued_upload:'等待做种',
             downloading: '下载',
             seeding: '做种',
+            uploading: '做种',
+            stalled_upload: '做种停滞',
             completed: '完成',
             stopped_upload: '完成',
             paused: '暂停',
@@ -433,6 +444,27 @@
         }
     }
 
+    // 切换自动删除已完成任务设置
+    async function toggleAutoDeleteCompletedTasksSetting(enabled) {
+        try {
+            const response = await fetch('/api/download/toggle_auto_delete_completed_tasks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: enabled })
+            });
+            
+            if (!response.ok) {
+                throw new Error('设置更新失败');
+            }
+            
+            showToast(enabled ? '已开启：自动删除已完成任务' : '已关闭：不自动删除已完成任务');
+        } catch (error) {
+            showToast(`设置更新失败: ${error.message}`);
+            // 恢复开关状态
+            document.getElementById('autoDeleteCompletedTasksSwitch').checked = !enabled;
+        }
+    }
+
     // 初始化
     document.addEventListener('DOMContentLoaded', function() {
         setInterval(getTorrents, refreshInterval);
@@ -443,6 +475,14 @@
         if (switchElement) {
             switchElement.addEventListener('change', function() {
                 toggleDeleteWithFilesSetting(this.checked);
+            });
+        }
+        
+        // 添加自动删除已完成任务开关事件监听器
+        const autoDeleteSwitchElement = document.getElementById('autoDeleteCompletedTasksSwitch');
+        if (autoDeleteSwitchElement) {
+            autoDeleteSwitchElement.addEventListener('change', function() {
+                toggleAutoDeleteCompletedTasksSetting(this.checked);
             });
         }
     });

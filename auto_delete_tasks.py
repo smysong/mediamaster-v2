@@ -35,6 +35,7 @@ config = load_config()
 
 # 获取下载管理相关配置
 download_mgmt = config.get('download_mgmt', 'False').lower() == 'true'
+auto_delete_completed_tasks = config.get('auto_delete_completed_tasks', 'False').lower() == 'true'  # 新增配置项
 download_type = config.get('download_type', 'transmission').lower()
 download_host = config.get('download_host', '127.0.0.1')
 download_port = int(config.get('download_port', 9091))
@@ -43,6 +44,9 @@ download_password = config.get('download_password', '')
 
 # 获取文件转移方式配置
 transfer_type = config.get('download_action', '')
+
+# 获取是否删除文件配置
+delete_with_files = config.get('delete_with_files', 'False').lower() == 'true'
 
 # Torrent目录路径
 TORRENT_DIR = '/Torrent'
@@ -104,10 +108,10 @@ class DownloadManager:
             logging.error(f"获取种子任务失败: {e}")
             return []
 
-    def delete_stopped_torrents(self, torrents):
+    def delete_stopped_torrents(self, torrents, delete_data=True):
         """
         删除下载进度为100%并且是停止状态的种子任务，
-        同时删除任务下载的文件和所有未使用的标签（qBittorrent支持标签直接删除）。
+        同时根据delete_data参数决定是否删除任务下载的文件和所有未使用的标签（qBittorrent支持标签直接删除）。
         增加连接失败的保护。
         """
         if not download_mgmt or not self.client:
@@ -124,13 +128,15 @@ class DownloadManager:
                 if is_stopped and is_finished:
                     try:
                         if download_type == 'transmission':
-                            self.client.remove_torrent(torrent['id'], delete_data=True)
-                            logging.info(f"任务 {torrent['name']} 已删除（含数据）")
+                            self.client.remove_torrent(torrent['id'], delete_data=delete_data)
+                            action = "已删除（含数据）" if delete_data else "已删除（不含数据）"
+                            logging.info(f"任务 {torrent['name']} {action}")
                             # Transmission标签随任务删除自动消失
                         elif download_type == 'qbittorrent':
                             # 删除任务及数据
-                            self.client.torrents_delete(delete_files=True, torrent_hashes=torrent['id'])
-                            logging.info(f"任务 {torrent['name']} 已删除（含数据）")
+                            self.client.torrents_delete(delete_files=delete_data, torrent_hashes=torrent['id'])
+                            action = "已删除（含数据）" if delete_data else "已删除（不含数据）"
+                            logging.info(f"任务 {torrent['name']} {action}")
                     except Exception as e:
                         logging.error(f"删除任务失败: {e}")
                 else:
@@ -178,8 +184,8 @@ def check_and_delete_torrent_files():
         logging.info(f"{TORRENT_DIR} 目录不存在或不是一个目录")
 
 # 主流程
-if download_mgmt:
-    logging.info("下载管理功能已启用，开始执行主流程")
+if download_mgmt and auto_delete_completed_tasks:  # 修改条件，同时检查两个配置项
+    logging.info("下载管理功能和自动删除已完成任务功能已启用，开始执行主流程")
     
     # 检查转移方式，如果是软链接或硬链接，则不执行自动删除
     if transfer_type in ['softlink', 'hardlink']:
@@ -193,10 +199,12 @@ if download_mgmt:
     manager = DownloadManager()
     if manager.client:
         torrents = manager.get_torrents()
-        manager.delete_stopped_torrents(torrents)
+        manager.delete_stopped_torrents(torrents, delete_with_files)  # 传递删除文件配置
     else:
         logging.error("未能连接到下载器，跳过后续操作")
     # 可选：如需清理Torrent目录
     check_and_delete_torrent_files()
+elif download_mgmt and not auto_delete_completed_tasks:
+    logging.info("下载管理功能已启用，但自动删除已完成任务功能未启用，程序退出")
 else:
     logging.info("下载管理功能未启用，程序退出")

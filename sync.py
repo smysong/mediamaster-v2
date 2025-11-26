@@ -94,6 +94,8 @@ def apply_naming_format(format_string, media_info):
         'audio_codec': media_info.get('audio_codec', ''),      # 音频编码 (AAC, DTS, etc.)
         'audio_channels': media_info.get('audio_channels', ''), # 音频声道 (5.1, 7.1, etc.)
         'bit_depth': media_info.get('bit_depth', ''),          # 位深度 (10bit, etc.)
+        'original_filename': os.path.splitext(media_info.get('original_filename', ''))[0],  # 原始文件名（不带扩展名）
+        'original_filename_no_chinese': re.sub(r'[^\x00-\x7F]', '', os.path.splitext(media_info.get('original_filename', ''))[0]) # 原始文件名，移除中文字符和扩展名
     }
     
     # 应用命名格式
@@ -122,9 +124,16 @@ def apply_naming_format(format_string, media_info):
     
     # 清理多余的空格和括号
     filename = re.sub(r'\s+', ' ', filename)  # 合并多个空格
+    filename = filename.strip()
+    
+    # 移除空括号和空方括号
     filename = re.sub(r'\(\s*\)', '', filename)  # 移除空括号
     filename = re.sub(r'\[\s*\]', '', filename)  # 移除空方括号
     filename = filename.strip()
+    
+    # 修复多余的点号问题
+    filename = re.sub(r'\.{2,}', '.', filename)  # 将多个连续的点替换为单个点
+    filename = re.sub(r'\.+$', '', filename)     # 移除末尾的点
     
     return filename
 
@@ -175,12 +184,18 @@ def generate_filename(media_info, media_type, classification):
     
     # 添加文件扩展名
     if 'extension' in media_info and media_info['extension']:
+        # 确保文件名末尾没有点，然后再添加扩展名
+        filename = filename.rstrip('.')
         filename += f".{media_info['extension']}"
     
     # 清理文件名中的非法字符
     illegal_chars = '<>:"/\\|?*'
     for char in illegal_chars:
         filename = filename.replace(char, '')
+    
+    # 修复多余的点号问题
+    filename = re.sub(r'\.{2,}', '.', filename)  # 将多个连续的点替换为单个点
+    filename = re.sub(r'\.+$', '', filename)     # 移除末尾的点
     
     # 限制文件名长度
     if len(filename) > 200:
@@ -374,57 +389,134 @@ def get_tmdb_info(title, year, media_type, season=None):
             result = search_results[0]
             tmdb_title = result.get('title', '') if media_type == 'movie' else result.get('name', '')
             tmdb_year = result.get('release_date', '')[:4] if media_type == 'movie' else result.get('first_air_date', '')[:4]
-            cache[media_type][(title, tmdb_year)] = (result['id'], tmdb_title, tmdb_year)
-            return result['id'], tmdb_title, tmdb_year
+            
+            # 只有当本地年份无效时才用TMDB年份覆盖
+            if not year or not str(year).isdigit() or int(year) < 1900 or int(year) > 2030:
+                year = tmdb_year
+            
+            cache[media_type][(title, year)] = (result['id'], tmdb_title, year)
+            return result['id'], tmdb_title, year
 
         # 2. 多结果时，优先用标题和年份精确匹配
+        best_match = None
+        best_score = 0
+        
         for result in search_results:
             tmdb_title = result.get('title', '') if media_type == 'movie' else result.get('name', '')
+            tmdb_original_title = result.get('original_title', '') if media_type == 'movie' else result.get('original_name', '')
             tmdb_year = result.get('release_date', '')[:4] if media_type == 'movie' else result.get('first_air_date', '')[:4]
-            if tmdb_title == title and tmdb_year == str(year):
-                cache[media_type][(title, tmdb_year)] = (result['id'], tmdb_title, tmdb_year)
-                return result['id'], tmdb_title, tmdb_year
+            
+            # 计算匹配分数
+            score = 0
+            
+            # 标题匹配度评分
+            if title and (tmdb_title == title or tmdb_original_title == title):
+                score += 10  # 完全匹配
+            elif title and (title in tmdb_title or tmdb_title in title or 
+                           title in tmdb_original_title or tmdb_original_title in title):
+                score += 5   # 部分匹配
+                
+            # 年份匹配度评分
+            if year and tmdb_year and str(year) == tmdb_year:
+                score += 5
+            elif year and tmdb_year:
+                # 年份接近（±1年）也算匹配
+                try:
+                    if abs(int(str(year)) - int(tmdb_year)) <= 1:
+                        score += 3
+                except ValueError:
+                    pass
+                    
+            # 更新最佳匹配
+            if score > best_score:
+                best_score = score
+                best_match = result
 
-        # 如果zh-CN没找到标题精确匹配，再用zh-SG查一次
+        if best_match:
+            result = best_match
+            tmdb_title = result.get('title', '') if media_type == 'movie' else result.get('name', '')
+            tmdb_original_title = result.get('original_title', '') if media_type == 'movie' else result.get('original_name', '')
+            tmdb_year = result.get('release_date', '')[:4] if media_type == 'movie' else result.get('first_air_date', '')[:4]
+            
+            # 只有当本地年份无效时才用TMDB年份覆盖
+            if not year or not str(year).isdigit() or int(year) < 1900 or int(year) > 2030:
+                year = tmdb_year
+                
+            cache[media_type][(title, year)] = (result['id'], tmdb_title, year)
+            return result['id'], tmdb_title, year
+
+        # 如果zh-CN没找到合适的匹配，再用zh-SG查一次
         search_results_sg = search_tmdb('zh-SG')
         for result in search_results_sg:
             tmdb_title = result.get('title', '') if media_type == 'movie' else result.get('name', '')
+            tmdb_original_title = result.get('original_title', '') if media_type == 'movie' else result.get('original_name', '')
             tmdb_year = result.get('release_date', '')[:4] if media_type == 'movie' else result.get('first_air_date', '')[:4]
-            if tmdb_title == title and tmdb_year == str(year):
-                cache[media_type][(title, tmdb_year)] = (result['id'], tmdb_title, tmdb_year)
-                return result['id'], tmdb_title, tmdb_year
+            
+            if tmdb_title == title or tmdb_original_title == title:
+                # 只有当本地年份无效时才用TMDB年份覆盖
+                if not year or not str(year).isdigit() or int(year) < 1900 or int(year) > 2030:
+                    year = tmdb_year
+                    
+                cache[media_type][(title, year)] = (result['id'], tmdb_title, year)
+                return result['id'], tmdb_title, year
 
         # 3. 针对电视剧多季情况：如果有季号，且没找到年份匹配，则只用名称匹配首个有首播年份的结果
         if media_type == 'tv' and season:
             for result in search_results:
                 tmdb_title = result.get('name', '')
+                tmdb_original_title = result.get('original_name', '')
                 tmdb_year = result.get('first_air_date', '')[:4]
-                if tmdb_title == title and tmdb_year:
-                    cache[media_type][(title, tmdb_year, season)] = (result['id'], tmdb_title, tmdb_year)
-                    return result['id'], tmdb_title, tmdb_year
+                
+                if (tmdb_title == title or tmdb_original_title == title) and tmdb_year:
+                    # 只有当本地年份无效时才用TMDB年份覆盖
+                    if not year or not str(year).isdigit() or int(year) < 1900 or int(year) > 2030:
+                        year = tmdb_year
+                        
+                    cache[media_type][(title, year, season)] = (result['id'], tmdb_title, year)
+                    return result['id'], tmdb_title, year
+                    
             for result in search_results_sg:
                 tmdb_title = result.get('name', '')
+                tmdb_original_title = result.get('original_name', '')
                 tmdb_year = result.get('first_air_date', '')[:4]
-                if tmdb_title == title and tmdb_year:
-                    cache[media_type][(title, tmdb_year, season)] = (result['id'], tmdb_title, tmdb_year)
-                    return result['id'], tmdb_title, tmdb_year
+                
+                if (tmdb_title == title or tmdb_original_title == title) and tmdb_year:
+                    # 只有当本地年份无效时才用TMDB年份覆盖
+                    if not year or not str(year).isdigit() or int(year) < 1900 or int(year) > 2030:
+                        year = tmdb_year
+                        
+                    cache[media_type][(title, year, season)] = (result['id'], tmdb_title, year)
+                    return result['id'], tmdb_title, year
 
         # 4. 只用名称匹配首个有年份的结果
         for result in search_results:
             tmdb_title = result.get('title', '') if media_type == 'movie' else result.get('name', '')
+            tmdb_original_title = result.get('original_title', '') if media_type == 'movie' else result.get('original_name', '')
             tmdb_year = result.get('release_date', '')[:4] if media_type == 'movie' else result.get('first_air_date', '')[:4]
-            if tmdb_title == title and tmdb_year:
-                cache[media_type][(title, tmdb_year)] = (result['id'], tmdb_title, tmdb_year)
-                return result['id'], tmdb_title, tmdb_year
+            
+            if (tmdb_title == title or tmdb_original_title == title) and tmdb_year:
+                # 只有当本地年份无效时才用TMDB年份覆盖
+                if not year or not str(year).isdigit() or int(year) < 1900 or int(year) > 2030:
+                    year = tmdb_year
+                    
+                cache[media_type][(title, year)] = (result['id'], tmdb_title, year)
+                return result['id'], tmdb_title, year
+                
         # 如果zh-CN没找到标题匹配，再用zh-SG查一次
         for result in search_results_sg:
             tmdb_title = result.get('title', '') if media_type == 'movie' else result.get('name', '')
+            tmdb_original_title = result.get('original_title', '') if media_type == 'movie' else result.get('original_name', '')
             tmdb_year = result.get('release_date', '')[:4] if media_type == 'movie' else result.get('first_air_date', '')[:4]
-            if tmdb_title == title and tmdb_year:
-                cache[media_type][(title, tmdb_year)] = (result['id'], tmdb_title, tmdb_year)
-                return result['id'], tmdb_title, tmdb_year
+            
+            if (tmdb_title == title or tmdb_original_title == title) and tmdb_year:
+                # 只有当本地年份无效时才用TMDB年份覆盖
+                if not year or not str(year).isdigit() or int(year) < 1900 or int(year) > 2030:
+                    year = tmdb_year
+                    
+                cache[media_type][(title, year)] = (result['id'], tmdb_title, year)
+                return result['id'], tmdb_title, year
 
-        # 如果中文查询都没有结果，尝试用英文(en-US)查询
+        # 5. 如果中文查询都没有结果，尝试用英文(en-US)查询
         search_results_en = search_tmdb('en-US')
         if search_results_en:
             # 英文查询结果处理逻辑
@@ -433,28 +525,121 @@ def get_tmdb_info(title, year, media_type, season=None):
                 result = search_results_en[0]
                 tmdb_title = result.get('title', '') if media_type == 'movie' else result.get('name', '')
                 tmdb_year = result.get('release_date', '')[:4] if media_type == 'movie' else result.get('first_air_date', '')[:4]
-                cache[media_type][(title, tmdb_year)] = (result['id'], tmdb_title, tmdb_year)
-                return result['id'], tmdb_title, tmdb_year
+                
+                # 只有当本地年份无效时才用TMDB年份覆盖
+                if not year or not str(year).isdigit() or int(year) < 1900 or int(year) > 2030:
+                    year = tmdb_year
+                    
+                cache[media_type][(title, year)] = (result['id'], tmdb_title, year)
+                return result['id'], tmdb_title, year
 
             # 2. 多结果时，优先用标题和年份精确匹配
+            best_match = None
+            best_score = 0
+            
             for result in search_results_en:
                 tmdb_title = result.get('title', '') if media_type == 'movie' else result.get('name', '')
+                tmdb_original_title = result.get('original_title', '') if media_type == 'movie' else result.get('original_name', '')
                 tmdb_year = result.get('release_date', '')[:4] if media_type == 'movie' else result.get('first_air_date', '')[:4]
-                if tmdb_title.lower() == title.lower() and tmdb_year == str(year):
-                    cache[media_type][(title, tmdb_year)] = (result['id'], tmdb_title, tmdb_year)
-                    return result['id'], tmdb_title, tmdb_year
+                
+                # 计算匹配分数
+                score = 0
+                
+                # 标题匹配度评分
+                if title and (tmdb_title.lower() == title.lower() or tmdb_original_title.lower() == title.lower()):
+                    score += 10  # 完全匹配
+                elif title and (title.lower() in tmdb_title.lower() or tmdb_title.lower() in title.lower() or 
+                               title.lower() in tmdb_original_title.lower() or tmdb_original_title.lower() in title.lower()):
+                    score += 5   # 部分匹配
+                    
+                # 年份匹配度评分
+                if year and tmdb_year and str(year) == tmdb_year:
+                    score += 5
+                elif year and tmdb_year:
+                    # 年份接近（±1年）也算匹配
+                    try:
+                        if abs(int(str(year)) - int(tmdb_year)) <= 1:
+                            score += 3
+                    except ValueError:
+                        pass
+                        
+                # 更新最佳匹配
+                if score > best_score:
+                    best_score = score
+                    best_match = result
 
-            # 3. 只用名称匹配首个有年份的结果
-            for result in search_results_en:
+            if best_match:
+                result = best_match
                 tmdb_title = result.get('title', '') if media_type == 'movie' else result.get('name', '')
                 tmdb_year = result.get('release_date', '')[:4] if media_type == 'movie' else result.get('first_air_date', '')[:4]
-                if tmdb_title and tmdb_year == str(year):
-                    cache[media_type][(title, tmdb_year)] = (result['id'], tmdb_title, tmdb_year)
-                    return result['id'], tmdb_title, tmdb_year
+                
+                # 只有当本地年份无效时才用TMDB年份覆盖
+                if not year or not str(year).isdigit() or int(year) < 1900 or int(year) > 2030:
+                    year = tmdb_year
+                    
+                cache[media_type][(title, year)] = (result['id'], tmdb_title, year)
+                return result['id'], tmdb_title, year
 
     except requests.RequestException as e:
         logging.error(f"请求错误: {e}")
     return None, None, year
+
+def get_first_season_year(tmdb_id, config):
+    """
+    获取电视剧第一季的首播年份
+    
+    Args:
+        tmdb_id: TMDB ID
+        config: 配置对象
+        
+    Returns:
+        str: 第一季的首播年份，如 '2022'
+    """
+    try:
+        TMDB_API_KEY = config.get("tmdb_api_key", "")
+        TMDB_BASE_URL = config.get("tmdb_base_url", "")
+        
+        if not TMDB_API_KEY:
+            logging.warning("缺少 TMDB API 密钥")
+            return None
+            
+        # 构建请求URL获取电视剧详情
+        url = f"{TMDB_BASE_URL}/3/tv/{tmdb_id}"
+        params = {
+            'api_key': TMDB_API_KEY,
+            'language': 'zh-CN',
+            'append_to_response': 'seasons'
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        # 获取所有季信息
+        seasons = data.get('seasons', [])
+        if not seasons:
+            return None
+            
+        # 查找第一季（season_number为1的季）
+        for season_info in seasons:
+            if season_info.get('season_number') == 1 and season_info.get('air_date'):
+                first_season_year = season_info['air_date'][:4]
+                logging.debug(f"获取到第一季年份: {first_season_year}")
+                return first_season_year
+                
+        # 如果找不到season_number为1的季，查找最早的一季
+        valid_seasons = [s for s in seasons if s.get('air_date')]
+        if valid_seasons:
+            earliest_season = min(valid_seasons, key=lambda x: x['air_date'])
+            if earliest_season and earliest_season.get('air_date'):
+                first_season_year = earliest_season['air_date'][:4]
+                logging.debug(f"获取到最早季年份: {first_season_year}")
+                return first_season_year
+            
+    except Exception as e:
+        logging.warning(f"获取第一季年份失败: {e}")
+    
+    return None
 
 def get_media_genre_classification(tmdb_id, media_type):
     """
@@ -1197,48 +1382,183 @@ def extract_info(filename, folder_name=None, label_info=None):
 
     return raw_info
 
-def move_or_copy_file(src, dst, action, media_type):
+def is_same_media_content(file1_path, file2_path):
+    """
+    判断两个文件是否为同一媒体内容（基于文件名的核心信息）
+    """
+    # 提取文件名核心部分（去除后缀）
+    name1 = os.path.splitext(os.path.basename(file1_path))[0]
+    name2 = os.path.splitext(os.path.basename(file2_path))[0]
+    
+    logging.debug(f"比较文件内容: {name1} vs {name2}")
+    
+    # 提取核心标识（电影名或剧集标识）
+    # 对于剧集：提取 SxxExx 部分
+    episode_pattern = r'(S\d{1,2}E\d{1,2})'
+    episode_match1 = re.search(episode_pattern, name1, re.IGNORECASE)
+    episode_match2 = re.search(episode_pattern, name2, re.IGNORECASE)
+    
+    if episode_match1 and episode_match2:
+        # 如果都是剧集，比较剧集标识
+        result = episode_match1.group(1).upper() == episode_match2.group(1).upper()
+        logging.debug(f"剧集比较结果: {result}")
+        return result
+    
+    # 对于电影：使用更宽松的比较方式
+    # 提取主要标题部分（移除年份、质量等信息）
+    def extract_movie_title(name):
+        # 移除年份 (如 2025)
+        name = re.sub(r'[\. _\-]?(?:19|20)\d{2}[\. _\-]?', ' ', name)
+        # 移除质量信息 (如 2160p, 1080p, 4k等)
+        name = re.sub(r'[\. _\-]?\d{3,4}[ip][\. _\-]?', ' ', name)
+        # 移除其他技术信息
+        name = re.sub(r'[\. _\-]?(?:web-dl|webdl|webrip|bluray|brrip|hdtv|hdr|hevc|h264|h265)[\. _\-]?', ' ', name, flags=re.IGNORECASE)
+        # 移除帧率信息
+        name = re.sub(r'[\. _\-]?\d{1,2}fps[\. _\-]?', ' ', name, flags=re.IGNORECASE)
+        # 移除音频信息
+        name = re.sub(r'[\. _\-]?(?:aac|ac3|ddp|dts)[\. _\-]?', ' ', name, flags=re.IGNORECASE)
+        # 清理多余空格和分隔符
+        name = re.sub(r'[\. _\-]+', ' ', name)
+        name = name.strip()
+        return name.lower()
+    
+    title1 = extract_movie_title(name1)
+    title2 = extract_movie_title(name2)
+    
+    logging.debug(f"电影标题比较: '{title1}' vs '{title2}'")
+    
+    # 如果提取后的标题相同，或者一个包含另一个，则认为是相同内容
+    result = (title1 == title2) or (title1 in title2) or (title2 in title1)
+    logging.debug(f"电影比较结果: {result}")
+    
+    # 如果上述方法都不行，尝试更宽松的匹配
+    if not result:
+        # 提取中文部分进行比较
+        chinese1 = re.findall(r'[\u4e00-\u9fff]+', name1)
+        chinese2 = re.findall(r'[\u4e00-\u9fff]+', name2)
+        if chinese1 and chinese2:
+            chinese_title1 = ''.join(chinese1)
+            chinese_title2 = ''.join(chinese2)
+            result = chinese_title1 == chinese_title2
+            logging.debug(f"中文标题比较: '{chinese_title1}' vs '{chinese_title2}', 结果: {result}")
+    
+    return result
+
+def move_or_copy_file(src, dst, action, media_type, config):
+    """
+    执行文件转移操作，增加完善的错误处理和冲突解决机制
+    根据配置决定文件覆盖策略
+    """
     try:
-        # 检查目标文件是否已存在
-        if os.path.exists(dst):
-            overwrite_option = config.get("file_overwrite_option", "skip")
+        # 检查源文件是否存在
+        if not os.path.exists(src):
+            logging.error(f"源文件不存在: {src}")
+            return False
             
-            # 获取源文件和目标文件大小
-            src_size = os.path.getsize(src)
-            dst_size = os.path.getsize(dst)
+        # 获取文件覆盖选项
+        file_overwrite_option = config.get("file_overwrite_option", "skip")
+        logging.debug(f"文件覆盖选项: {file_overwrite_option}")
             
-            # 根据覆盖选项处理
-            if overwrite_option == "skip":
-                logging.info(f"目标文件已存在，跳过处理: {dst}")
-                return
-            elif overwrite_option == "size":
-                if src_size <= dst_size:
-                    logging.info(f"新文件不大于已存在文件，跳过处理: {dst}")
-                    return
+        # 检查目标目录是否存在，不存在则创建
+        dst_dir = os.path.dirname(dst)
+        if not os.path.exists(dst_dir):
+            os.makedirs(dst_dir)
+            
+        # 查找同内容文件（处理不同后缀或质量的同一内容）
+        existing_file_path = None
+        if os.path.exists(dst_dir):
+            src_basename = os.path.basename(src)
+            logging.debug(f"在目录 {dst_dir} 中查找相同内容的文件")
+            for existing_file in os.listdir(dst_dir):
+                existing_file_full_path = os.path.join(dst_dir, existing_file)
+                if os.path.isfile(existing_file_full_path) and not existing_file_full_path.endswith('.nfo'):
+                    is_same = is_same_media_content(src, existing_file_full_path)
+                    logging.debug(f"比较文件 {src_basename} 与 {existing_file}: {'相同' if is_same else '不同'}")
+                    if is_same:
+                        existing_file_path = existing_file_full_path
+                        logging.debug(f"找到相同内容的已存在文件: {existing_file_path}")
+                        break
+        
+        # 处理文件冲突
+        target_file = existing_file_path if existing_file_path else dst
+        logging.debug(f"目标文件路径: {target_file}")
+        logging.debug(f"源文件路径: {src}")
+        
+        if os.path.exists(target_file) and os.path.abspath(target_file) != os.path.abspath(src):  # 确保不是同一个文件
+            try:
+                src_size = os.path.getsize(src)
+                target_size = os.path.getsize(target_file)
+                logging.debug(f"源文件大小: {src_size}, 目标文件大小: {target_size}")
+                
+                # 根据配置选项决定处理方式
+                if file_overwrite_option == "skip":
+                    logging.info(f"文件已存在，根据配置跳过处理: {target_file}")
+                    return False
+                elif file_overwrite_option == "size":
+                    # 智能模式：仅当新文件更大时才覆盖
+                    if src_size < target_size:
+                        logging.info(f"新文件 ({src_size} bytes) 小于已存在文件 ({target_size} bytes)，根据配置跳过处理: {target_file}")
+                        return False
+                    elif src_size == target_size:
+                        logging.info(f"新文件与已存在文件大小相同 ({src_size} bytes)，根据配置跳过处理: {target_file}")
+                        return False
+                    else:
+                        logging.info(f"新文件 ({src_size} bytes) 大于已存在文件 ({target_size} bytes)，将覆盖: {target_file}")
+                        os.remove(target_file)
+                elif file_overwrite_option == "always":
+                    # 强制覆盖模式
+                    logging.info(f"根据配置强制覆盖已存在文件: {target_file}")
+                    os.remove(target_file)
                 else:
-                    logging.info(f"新文件大于已存在文件，将覆盖: {dst}")
-                    os.remove(dst)
-            elif overwrite_option == "always":
-                logging.info(f"覆盖已存在文件: {dst}")
-                os.remove(dst)
+                    # 默认行为（兼容旧版本）
+                    if src_size < target_size:
+                        logging.info(f"新文件 ({src_size} bytes) 小于已存在文件 ({target_size} bytes)，跳过处理: {target_file}")
+                        return False
+                    elif src_size == target_size:
+                        logging.info(f"新文件与已存在文件大小相同 ({src_size} bytes)，跳过处理: {target_file}")
+                        return False
+                    else:
+                        logging.info(f"新文件 ({src_size} bytes) 大于已存在文件 ({target_size} bytes)，将覆盖: {target_file}")
+                        os.remove(target_file)
+            except OSError as e:
+                logging.error(f"检查文件大小时出错: {e}")
+                return False
+        elif os.path.abspath(target_file) == os.path.abspath(src):
+            logging.info(f"源文件和目标文件是同一个文件，跳过处理: {src}")
+            return False
         
         # 执行文件转移操作
         if action == 'move':
-            shutil.move(src, dst)
-            logging.info(f"文件已移动: {src} -> {dst}")
+            shutil.move(src, target_file)
+            logging.info(f"文件已移动: {src} -> {target_file}")
+            # 新增：移动完成后尝试清理源目录
+            try_clean_source_directory(src, config)
         elif action == 'copy':
-            shutil.copy2(src, dst)
-            logging.info(f"文件已复制: {src} -> {dst}")
+            shutil.copy2(src, target_file)
+            logging.info(f"文件已复制: {src} -> {target_file}")
         elif action == 'softlink':
-            os.symlink(src, dst)
-            logging.info(f"已创建软链接: {src} -> {dst}")
+            os.symlink(src, target_file)
+            logging.info(f"已创建软链接: {src} -> {target_file}")
         elif action == 'hardlink':
-            os.link(src, dst)
-            logging.info(f"已创建硬链接: {src} -> {dst}")
+            os.link(src, target_file)
+            logging.info(f"已创建硬链接: {src} -> {target_file}")
         else:
-            logging.error(f"未知操作: {action}")
+            raise ValueError(f"不支持的操作类型: {action}")
+            
+        return True
+        
+    except FileNotFoundError as e:
+        logging.error(f"文件未找到错误: {e}")
+        return False
+    except PermissionError as e:
+        logging.error(f"权限错误: {e}")
+        return False
+    except OSError as e:
+        logging.error(f"操作系统错误: {e}")
+        return False
     except Exception as e:
-        logging.error(f"文件操作失败: {e}")
+        logging.error(f"文件转移过程中发生未知错误: {e}")
+        return False
 
 def is_common_video_file(filename):
     common_video_extensions = ['.mkv', '.mp4', '.avi', '.mov', '.flv', '.wmv', '.iso']
@@ -1262,6 +1582,184 @@ def is_small_file(file_path, min_size_mb=5):
         return os.path.getsize(file_path) < min_size_mb * 1024 * 1024
     except FileNotFoundError:
         return False
+
+def is_ignored_video_file(file_path, config):
+    """
+    检查视频文件是否为应被忽略的文件
+    """
+    filename = os.path.basename(file_path)
+    
+    # 忽略隐藏文件
+    if filename.startswith('.'):
+        return True
+    
+    # 忽略小于5MB的文件
+    if is_small_file(file_path):
+        return True
+    
+    # 棣查是否在排除文件名列表中
+    excluded_filenames = config.get("download_excluded_filenames", "").split(',')
+    if filename in excluded_filenames:
+        return True
+    
+    # 检查是否在排除扩展名列表中
+    extension = os.path.splitext(filename)[1].lower()
+    excluded_extensions = ['.cfg', '.txt', '.pdf','.doc','.docx', '.html']
+    if extension in excluded_extensions:
+        return True
+    
+    # 检查是否包含特定字符
+    if '【更多' in filename:
+        return True
+        
+    # 检查是否为未完成下载的文件
+    if is_unfinished_download_file(filename):
+        return True
+    
+    return False
+
+def is_ignored_non_video_file(filename):
+    """
+    检查非视频文件是否为应被忽略的文件（如广告图片等）
+    """
+    # 忽略隐藏文件
+    if filename.startswith('.'):
+        return True
+    
+    # 忽略常见的广告关键词
+    ad_keywords = [
+        '更多',
+        'www.',
+        '.com',
+        '.cn',
+        '.net'
+    ]
+    
+    for keyword in ad_keywords:
+        if keyword in filename:
+            return True
+    
+    # 忽略特定类型的文件
+    ignored_extensions = ['.url', '.lnk', '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico']
+    extension = os.path.splitext(filename)[1].lower()
+    if extension in ignored_extensions:
+        return True
+    
+    return False
+
+def try_clean_source_directory(file_path, config):
+    """
+    尝试清理源目录：当文件被移动后，检查源目录是否可以被删除
+    只有当目录中所有文件都被处理完成且没有未完成下载文件时才删除
+    """
+    source_dir = os.path.dirname(file_path)
+    download_dir = config.get("download_dir", "")
+    
+    # 确保不删除下载根目录
+    if source_dir == download_dir:
+        logging.debug(f"不会清理下载根目录: {source_dir}")
+        return
+    
+    try:
+        # 检查目录是否存在
+        if not os.path.exists(source_dir):
+            logging.debug(f"源目录不存在: {source_dir}")
+            return
+            
+        # 检查目录是否可以被删除
+        can_delete = True
+        
+        for item in os.listdir(source_dir):
+            item_path = os.path.join(source_dir, item)
+            
+            # 如果是目录，不能删除父目录
+            if os.path.isdir(item_path):
+                logging.debug(f"源目录包含子目录，不能删除: {item_path}")
+                can_delete = False
+                break
+            
+            # 如果是文件，检查是否可以忽略
+            if os.path.isfile(item_path):
+                # 忽略隐藏文件
+                if item.startswith('.'):
+                    continue
+                    
+                # 检查是否为未完成下载的文件
+                if is_unfinished_download_file(item):
+                    logging.debug(f"源目录包含未完成下载文件: {item_path}")
+                    can_delete = False
+                    break
+                    
+                # 检查是否为视频文件
+                if is_common_video_file(item):
+                    # 如果是视频文件，检查是否为可忽略的视频文件
+                    if is_ignored_video_file(item_path, config):
+                        # 可忽略的视频文件不影响目录删除
+                        logging.debug(f"源目录包含可忽略的视频文件: {item_path}")
+                        continue
+                    else:
+                        # 不可忽略的视频文件说明还有未处理的视频文件
+                        logging.debug(f"源目录包含未处理的视频文件: {item_path}")
+                        can_delete = False
+                        break
+                        
+                # 检查是否为可忽略的非视频文件（如广告图片等）
+                if is_ignored_non_video_file(item):
+                    logging.debug(f"源目录包含可忽略的非视频文件: {item_path}")
+                    # 这些文件可以被删除，不影响目录删除
+                    continue
+                else:
+                    # 其他非视频文件会影响目录删除
+                    logging.debug(f"源目录包含其他非视频文件: {item_path}")
+                    can_delete = False
+                    break
+        
+        # 如果目录中有未完成下载的文件或未处理的视频文件，则不能删除目录
+        if not can_delete:
+            logging.debug(f"源目录不能删除: {source_dir}")
+            return
+        
+        # 尝试删除源目录（只有当目录为空或只包含可忽略的文件时才能删除成功）
+        try:
+            # 检查目录是否为空或只包含隐藏文件和可忽略的文件
+            items = os.listdir(source_dir)
+            can_delete_dir = True
+            files_to_delete = []
+            
+            for item in items:
+                item_path = os.path.join(source_dir, item)
+                # 检查是否为可忽略的文件（包括隐藏文件、可忽略的视频文件和可忽略的非视频文件）
+                if item.startswith('.') or \
+                   (os.path.isfile(item_path) and is_common_video_file(item) and is_ignored_video_file(item_path, config)) or \
+                   (os.path.isfile(item_path) and not is_common_video_file(item) and is_ignored_non_video_file(item)):
+                    # 记录可删除的文件
+                    if os.path.isfile(item_path):
+                        files_to_delete.append(item_path)
+                    continue
+                else:
+                    # 还有不可忽略的文件
+                    can_delete_dir = False
+                    break
+            
+            # 删除可忽略的文件
+            if can_delete_dir:
+                for file_path_to_delete in files_to_delete:
+                    try:
+                        os.remove(file_path_to_delete)
+                        logging.debug(f"已删除可忽略文件: {file_path_to_delete}")
+                    except Exception as e:
+                        logging.warning(f"删除可忽略文件失败: {file_path_to_delete}, 错误: {e}")
+                
+                # 删除目录
+                os.rmdir(source_dir)
+                logging.info(f"已删除源目录: {source_dir}")
+            else:
+                logging.debug(f"源目录不为空，未删除: {source_dir}")
+        except Exception as e:
+            logging.error(f"删除源目录失败: {source_dir}, 错误: {e}")
+            
+    except Exception as e:
+        logging.error(f"检查源目录清理条件时出错: {e}")
 
 def load_processed_files():
     processed_filenames = set()
@@ -1307,7 +1805,7 @@ def process_file(file_path, processed_filenames):
     3. 若 result 字典关键字段（如"名称"）为 None，也直接转移文件夹。
     4. 识别成功则清零计数。
     5. 其它原有逻辑保持不变。
-    6. 优化：无论本地是否有年份，均尝试 TMDB 查询，并用 TMDB 年份覆盖本地年份（只要查到）。
+    6. 优化：年份、标题智能匹配度评分，智能年份覆盖、多语言标题匹配、模糊年份匹配。
     7. 优化：避免使用根下载目录名作为媒体标题
     """
     # 使用文件绝对路径作为唯一标识
@@ -1390,6 +1888,12 @@ def process_file(file_path, processed_filenames):
                         if not os.path.exists(dst_folder):
                             os.makedirs(dst_folder)
                         dst_file_path = os.path.join(dst_folder, filename)
+                        # 检查目标文件是否已存在
+                        if os.path.exists(dst_file_path):
+                            logging.info(f"未识别目录中已存在同名文件，跳过处理: {dst_file_path}")
+                            processed_filenames.add(filename)
+                            save_processed_files(processed_filenames)
+                            return
                         # 只复制/移动当前文件
                         if action == 'copy':
                             shutil.copy2(file_path, dst_file_path)
@@ -1409,75 +1913,258 @@ def process_file(file_path, processed_filenames):
                         logging.error(f"转移未识别文件失败: {e}")
                 return
 
-            if result:
-                logging.info(f"文件名: {filename}")
-                # 分别显示guessit解析结果和常规解析结果
-                guessit_keys = [key for key in result.keys() if key.startswith('guessit_')]
-                if guessit_keys:
-                    guessit_result = {key: result[key] for key in guessit_keys}
-                    logging.debug(f"Guessit解析结果: {guessit_result}")
-                    
-                    # 创建不包含guessit前缀的常规结果用于显示
-                    final_result = {key: value for key, value in result.items() if not key.startswith('guessit_')}
-                    logging.info(f"常规解析结果: {final_result}")
-                else:
-                    logging.info(f"解析结果: {result}")
+            # 分别显示guessit解析结果和常规解析结果
+            guessit_keys = [key for key in result.keys() if key.startswith('guessit_')]
+            if guessit_keys:
+                guessit_result = {key: result[key] for key in guessit_keys}
+                logging.debug(f"Guessit解析结果: {guessit_result}")
+                
+                # 创建不包含guessit前缀的常规结果用于显示
+                final_result = {key: value for key, value in result.items() if not key.startswith('guessit_')}
+                logging.info(f"常规解析结果: {final_result}")
+            else:
+                logging.info(f"解析结果: {result}")
 
-                media_type = result.get('类型') or ('tv' if '季' in result and '集' in result else 'movie')
-                
-                # 获取TMDB信息
-                season = result.get('季') if media_type == 'tv' else None
-                tmdb_id, tmdb_name, tmdb_year = get_tmdb_info(result['名称'], result.get('发行年份'), media_type, season)
-                
-                # 新增：如果未能获取到 TMDB ID，且名称包含"第X季"，则去掉"第X季"再查一次
-                if not tmdb_id and media_type == 'tv' and result['名称']:
-                    import re
-                    new_title = re.sub(r'\s*第[一二三四五六七八九十1234567890]+季', '', result['名称'])
-                    if new_title != result['名称']:
-                        logging.info(f"尝试去除季信息后再次查询TMDB: {new_title}")
-                        tmdb_id, tmdb_name, tmdb_year = get_tmdb_info(new_title, result.get('发行年份'), media_type, season)
-                        if tmdb_id:
-                            result['名称'] = new_title
-                            if tmdb_year and result.get('发行年份') != tmdb_year:
-                                result['发行年份'] = tmdb_year
+            media_type = result.get('类型') or ('tv' if '季' in result and '集' in result else 'movie')
+            
+            # 获取TMDB信息
+            season = result.get('季') if media_type == 'tv' else None
+            tmdb_id, tmdb_name, tmdb_year = get_tmdb_info(result['名称'], result.get('发行年份'), media_type, season)
 
-                # 根据TMDB信息判断具体分类
-                classification = media_type  # 默认分类
-                if tmdb_id and media_type == 'tv':
-                    logging.info(f"开始分类处理 - TMDB ID: {tmdb_id}, 媒体类型: {media_type}")
-                    classification = get_media_genre_classification(tmdb_id, media_type)
-                    logging.debug(f"媒体分类结果: {classification}")
-                else:
-                    logging.info(f"跳过分类处理 - TMDB ID: {tmdb_id}, 媒体类型: {media_type}")
-                
-                # 只要本地年份与tmdb年份不一致，就用tmdb年份覆盖
-                if tmdb_year and result.get('发行年份') != tmdb_year:
+            # 只有当本地年份无效时才用TMDB年份覆盖
+            local_year = result.get('发行年份')
+            if not local_year or not str(local_year).isdigit() or int(local_year) < 1900 or int(local_year) > 2030:
+                if tmdb_year:
                     result['发行年份'] = tmdb_year
+            else:
+                # 本地年份有效，优先使用本地年份
+                result['发行年份'] = local_year
+            
+            # 新增：如果未能获取到 TMDB ID，且名称包含"第X季"，则去掉"第X季"再查一次
+            if not tmdb_id and media_type == 'tv' and result['名称']:
+                import re
+                new_title = re.sub(r'\s*第[一二三四五六七八九十1234567890]+季', '', result['名称'])
+                if new_title != result['名称']:
+                    logging.info(f"尝试去除季信息后再次查询TMDB: {new_title}")
+                    tmdb_id, tmdb_name, tmdb_year = get_tmdb_info(new_title, result.get('发行年份'), media_type, season)
+                    if tmdb_id:
+                        result['名称'] = new_title
+                        if tmdb_year and result.get('发行年份') != tmdb_year:
+                            result['发行年份'] = tmdb_year
 
-                # 根据分类选择目标目录
-                if classification == 'movie':
-                    target_directory = movie_directory
-                    logging.info("目标目录: 电影目录")
-                elif classification == 'anime':
-                    target_directory = anime_directory
-                    logging.info("目标目录: 动漫目录")
-                elif classification == 'variety':
-                    target_directory = variety_directory
-                    logging.info("目标目录: 综艺目录")
-                else:  # 普通电视剧
-                    target_directory = episode_directory
-                    logging.info("目标目录: 电视剧目录")
+            # 根据TMDB信息判断具体分类
+            classification = media_type  # 默认分类
+            if tmdb_id and media_type == 'tv':
+                logging.info(f"开始分类处理 - TMDB ID: {tmdb_id}, 媒体类型: {media_type}")
+                classification = get_media_genre_classification(tmdb_id, media_type)
+                logging.debug(f"媒体分类结果: {classification}")
+            else:
+                logging.info(f"跳过分类处理 - TMDB ID: {tmdb_id}, 媒体类型: {media_type}")
+            
+            # 只要本地年份与tmdb年份不一致，就用tmdb年份覆盖
+            if tmdb_year and result.get('发行年份') != tmdb_year:
+                result['发行年份'] = tmdb_year
 
-                # 如果TMDB查不到年份，且本地也没有，则判定为关键信息缺失
-                if not result.get('发行年份'):
-                    logging.warning(f"无法识别文件或关键信息缺失: {filename}，解析结果: {result}")
-                    if unknown_directory:
+            # 根据分类选择目标目录
+            if classification == 'movie':
+                target_directory = movie_directory
+                logging.info("目标目录: 电影目录")
+            elif classification == 'anime':
+                target_directory = anime_directory
+                logging.info("目标目录: 动漫目录")
+            elif classification == 'variety':
+                target_directory = variety_directory
+                logging.info("目标目录: 综艺目录")
+            else:  # 普通电视剧
+                target_directory = episode_directory
+                logging.info("目标目录: 电视剧目录")
+
+            # 如果TMDB查不到年份，且本地也没有，则判定为关键信息缺失
+            if not result.get('发行年份'):
+                logging.warning(f"无法识别文件或关键信息缺失: {filename}，解析结果: {result}")
+                if unknown_directory:
+                    src_folder = os.path.dirname(file_path)
+                    dst_folder = os.path.join(unknown_directory, os.path.basename(src_folder))
+                    try:
+                        if not os.path.exists(dst_folder):
+                            os.makedirs(dst_folder)
+                        dst_file_path = os.path.join(dst_folder, filename)
+                        # 检查目标文件是否已存在
+                        if os.path.exists(dst_file_path):
+                            logging.info(f"未识别目录中已存在同名文件，跳过处理: {dst_file_path}")
+                            processed_filenames.add(filename)
+                            save_processed_files(processed_filenames)
+                            # 清零计数
+                            unrecognized_count.pop(folder_name, None)
+                            return
+                        if action == 'copy':
+                            shutil.copy2(file_path, dst_file_path)
+                            logging.info(f"已将无法识别的文件复制到未识别目录: {dst_file_path}")
+                        elif action == 'softlink':
+                            os.symlink(file_path, dst_file_path)
+                            logging.info(f"已将无法识别的文件创建软链接到未识别目录: {dst_file_path}")
+                        elif action == 'hardlink':
+                            os.link(file_path, dst_file_path)
+                            logging.info(f"已将无法识别的文件创建硬链接到未识别目录: {dst_file_path}")
+                        else:  # move
+                            shutil.move(file_path, dst_file_path)
+                            logging.info(f"已将无法识别的文件移动到未识别目录: {dst_file_path}")
+                        processed_filenames.add(filename)
+                        save_processed_files(processed_filenames)
+                        # 清零计数
+                        unrecognized_count.pop(folder_name, None)
+                    except Exception as e:
+                        logging.error(f"转移未识别文件失败: {e}")
+                return
+
+            if tmdb_id:
+                logging.info(f"获取到 TMDB ID: {tmdb_id}，名称：{tmdb_name}")
+
+                # 识别成功，清零该文件夹的未识别计数
+                unrecognized_count.pop(folder_name, None)
+
+                # 获取媒体的中文和英文信息
+                title_cn, title_en = get_media_titles_with_language(tmdb_id, media_type)
+                
+                # 优先使用中文标题，如果没有则使用英文标题
+                title = title_cn if title_cn else (title_en if title_en else result['名称'])
+                year = result['发行年份']
+
+                # 对于电视剧，检查是否需要使用第一季年份而不是当前季年份
+                if media_type == 'tv' and classification != 'movie' and tmdb_id:
+                    try:
+                        first_season_year = get_first_season_year(tmdb_id, config)
+                        if first_season_year and first_season_year != str(year):
+                            logging.info(f"检测到多季剧集，使用第一季年份: {first_season_year} 替代当前季年份: {year}")
+                            year = first_season_year
+                    except Exception as e:
+                        logging.warning(f"检查多季剧集年份时出错: {e}")
+
+                # 创建媒体信息字典用于命名
+                media_info_for_naming = {
+                    'title': title,
+                    'year': year,
+                    'resolution': result.get('视频质量', ''),
+                    'season': str(result.get('季', '01')).zfill(2) if media_type == 'tv' else '',
+                    'episode': str(result.get('集', '01')).zfill(2) if media_type == 'tv' else '',
+                    'episode_title': '',
+                    'video_codec': result.get('guessit_video_codec', ''),
+                    'audio_codec': result.get('guessit_audio_codec', ''),
+                    'extension': result.get('后缀名', ''),
+                    'tmdb_id': tmdb_id,
+                    'original_filename': filename  # 添加原始文件名（带扩展名）
+                }
+
+                # 获取剧集中文名称
+                if media_type == 'tv':
+                    season_number = int(result.get('季', 1))
+                    episode_number = int(result.get('集', 1))
+                    # 获取剧集中文名称
+                    episode_name_cn = get_tv_episode_name_with_language(tmdb_id, season_number, episode_number, 'zh-CN')
+                    # 如果没有中文名称，则获取英文名称
+                    episode_name = episode_name_cn if episode_name_cn else get_tv_episode_name(tmdb_id, season_number, episode_number)
+                    media_info_for_naming['episode_title'] = episode_name
+
+                # 生成目标文件夹名称
+                folder_name_for_path = generate_folder_name(media_info_for_naming, media_type, classification)
+                target_base_dir = os.path.join(target_directory, folder_name_for_path)
+
+                # 修复：使用 exist_ok=True 避免多线程环境下创建目录冲突
+                if not os.path.exists(target_base_dir):
+                    os.makedirs(target_base_dir, exist_ok=True)
+                    logging.info(f"创建目录: {target_base_dir}")
+                else:
+                    logging.debug(f"目录已存在，跳过创建: {target_base_dir}")
+
+                if media_type == 'tv':
+                    season_number = str(result.get('季', '01')).zfill(2)
+                    episode_number = str(result.get('集', '01')).zfill(2)
+                    season_dir = os.path.join(target_base_dir, f"Season {int(season_number)}")
+                    # 修复：使用 exist_ok=True 避免多线程环境下创建目录冲突
+                    if not os.path.exists(season_dir):
+                        os.makedirs(season_dir, exist_ok=True)
+                        logging.info(f"创建目录: {season_dir}")
+                    else:
+                        logging.debug(f"目录已存在，跳过创建: {season_dir}")
+
+                    # 生成文件名
+                    new_filename = generate_filename(media_info_for_naming, media_type, classification)
+                    target_file_path = os.path.join(season_dir, new_filename)
+                else:
+                    # 生成文件名
+                    new_filename = generate_filename(media_info_for_naming, media_type, classification)
+                    target_file_path = os.path.join(target_base_dir, new_filename)
+
+                if filename in processed_filenames:
+                    logging.debug(f"文件已处理，跳过: {filename}")
+                    return
+
+                # 执行文件转移操作并检查结果
+                move_result = move_or_copy_file(file_path, target_file_path, action, media_type, config)
+                if move_result:
+                    # 成功转移后，检查是否有对应的.nfo文件也需要转移
+                    nfo_file_path = os.path.splitext(file_path)[0] + ".nfo"
+                    if os.path.exists(nfo_file_path):
+                        nfo_target_path = os.path.splitext(target_file_path)[0] + ".nfo"
+                        move_or_copy_file(nfo_file_path, nfo_target_path, action, media_type, config)
+                        logging.info(f"转移NFO文件: {nfo_file_path} -> {nfo_target_path}")
+
+                    send_notification(new_filename)
+                    logging.info(f"文件处理完成，刷新本地数据库")
+                    refresh_media_library()
+
+                    # 保存已处理的文件列表
+                    processed_filenames.add(filename)
+                    save_processed_files(processed_filenames)
+                else:
+                    # 文件转移被跳过（因为已存在相同文件），这里不应该再尝试移动到未识别目录
+                    logging.info(f"文件转移被跳过，因为已存在相同内容的文件: {filename}")
+                    # 但是我们仍然需要将文件标记为已处理，避免重复处理
+                    processed_filenames.add(filename)
+                    save_processed_files(processed_filenames)
+                    # 清零计数，因为文件实际上已经被正确处理了
+                    unrecognized_count.pop(folder_name, None)
+            else:
+                # 未能获取到 TMDB ID，计数+1
+                count = unrecognized_count.get(folder_name, 0) + 1
+                unrecognized_count[folder_name] = count
+                logging.warning(f"未能获取到 TMDB ID: {result['名称']} ({result['发行年份']})，累计失败次数: {count}")
+
+                # 超过3次则移动/复制当前文件到 unknown_directory 下以文件夹名为名的文件夹
+                # 或者如果这是单个文件（不是文件夹中的多个文件），即使失败1次也转移
+                should_move = count >= 3
+                
+                # 对于单个文件的情况，即使失败1次也应该移动
+                if unknown_directory:
+                    # 检查当前文件夹下是否有其他视频文件
+                    folder_path = os.path.dirname(file_path)
+                    other_video_files = []
+                    
+                    if os.path.exists(folder_path):
+                        for f in os.listdir(folder_path):
+                            if is_common_video_file(f) and f != filename:
+                                other_video_files.append(f)
+                    
+                    # 如果文件夹中没有其他视频文件，则即使失败1次也应该移动
+                    if len(other_video_files) == 0:
+                        should_move = True
+                        logging.debug(f"文件夹中无其他视频文件，立即转移未识别文件")
+                    
+                    if should_move:
                         src_folder = os.path.dirname(file_path)
                         dst_folder = os.path.join(unknown_directory, os.path.basename(src_folder))
                         try:
                             if not os.path.exists(dst_folder):
                                 os.makedirs(dst_folder)
                             dst_file_path = os.path.join(dst_folder, filename)
+                            # 检查目标文件是否已存在
+                            if os.path.exists(dst_file_path):
+                                logging.info(f"未识别目录中已存在同名文件，跳过处理: {dst_file_path}")
+                                processed_filenames.add(filename)
+                                save_processed_files(processed_filenames)
+                                # 清零计数
+                                unrecognized_count.pop(folder_name, None)
+                                return
                             if action == 'copy':
                                 shutil.copy2(file_path, dst_file_path)
                                 logging.info(f"已将无法识别的文件复制到未识别目录: {dst_file_path}")
@@ -1492,150 +2179,10 @@ def process_file(file_path, processed_filenames):
                                 logging.info(f"已将无法识别的文件移动到未识别目录: {dst_file_path}")
                             processed_filenames.add(filename)
                             save_processed_files(processed_filenames)
+                            # 清零计数
+                            unrecognized_count.pop(folder_name, None)
                         except Exception as e:
                             logging.error(f"转移未识别文件失败: {e}")
-                    return
-
-                if tmdb_id:
-                    logging.info(f"获取到 TMDB ID: {tmdb_id}，名称：{tmdb_name}")
-
-                    # 识别成功，清零该文件夹的未识别计数
-                    unrecognized_count.pop(folder_name, None)
-
-                    # 获取媒体的中文和英文信息
-                    title_cn, title_en = get_media_titles_with_language(tmdb_id, media_type)
-                    
-                    # 优先使用中文标题，如果没有则使用英文标题
-                    title = title_cn if title_cn else (title_en if title_en else result['名称'])
-                    year = result['发行年份']
-
-                    # 创建媒体信息字典用于命名
-                    media_info_for_naming = {
-                        'title': title,
-                        'year': year,
-                        'resolution': result.get('视频质量', ''),
-                        'season': str(result.get('季', '01')).zfill(2) if media_type == 'tv' else '',
-                        'episode': str(result.get('集', '01')).zfill(2) if media_type == 'tv' else '',
-                        'episode_title': '',
-                        'quality': result.get('视频质量', ''),
-                        'extension': result.get('后缀名', ''),
-                        'tmdb_id': tmdb_id,
-                        'video_codec': result.get('video_codec', '') or result.get('guessit_video_codec', ''),
-                        'video_dynamic_range': result.get('video_dynamic_range', '') or result.get('guessit_video_dynamic_range', ''),
-                        'source': result.get('source', '') or result.get('guessit_source', ''),
-                        'audio_codec': result.get('audio_codec', '') or result.get('guessit_audio_codec', ''),
-                        'audio_channels': result.get('audio_channels', '') or result.get('guessit_audio_channels', ''),
-                        'bit_depth': result.get('bit_depth', '') or result.get('guessit_bit_depth', ''),
-                    }
-
-                    # 为电视剧获取剧集标题
-                    if media_type == 'tv':
-                        season_number = str(result.get('季', '01')).zfill(2)
-                        episode_number = str(result.get('集', '01')).zfill(2)
-                        # 获取剧集中文名称
-                        episode_name_cn = get_tv_episode_name_with_language(tmdb_id, season_number, episode_number, 'zh-CN')
-                        # 如果没有中文名称，则获取英文名称
-                        episode_name = episode_name_cn if episode_name_cn else get_tv_episode_name(tmdb_id, season_number, episode_number)
-                        media_info_for_naming['episode_title'] = episode_name
-
-                    # 生成目标文件夹名称
-                    folder_name = generate_folder_name(media_info_for_naming, media_type, classification)
-                    target_base_dir = os.path.join(target_directory, folder_name)
-
-                    if not os.path.exists(target_base_dir):
-                        os.makedirs(target_base_dir)
-                        logging.info(f"创建目录: {target_base_dir}")
-
-                    if media_type == 'tv':
-                        season_number = str(result.get('季', '01')).zfill(2)
-                        episode_number = str(result.get('集', '01')).zfill(2)
-                        # 补零：始终保证季号为两位数
-                        season_number_str = str(season_number).zfill(2)
-                        season_dir = os.path.join(target_base_dir, f"Season {int(season_number)}")
-                        if not os.path.exists(season_dir):
-                            os.makedirs(season_dir)
-                            logging.info(f"创建目录: {season_dir}")
-
-                        # 生成文件名
-                        new_filename = generate_filename(media_info_for_naming, media_type, classification)
-                        target_file_path = os.path.join(season_dir, new_filename)
-                    else:
-                        # 生成文件名
-                        new_filename = generate_filename(media_info_for_naming, media_type, classification)
-                        target_file_path = os.path.join(target_base_dir, new_filename)
-
-                    if filename in processed_filenames:
-                        logging.debug(f"文件已处理，跳过: {filename}")
-                        return
-
-                    move_or_copy_file(file_path, target_file_path, action, media_type)
-                    processed_filenames.add(filename)
-
-                    video_dir = os.path.dirname(file_path)
-                    nfo_filename = os.path.splitext(filename)[0] + '.nfo'
-                    nfo_file_path = os.path.join(video_dir, nfo_filename)
-                    if os.path.exists(nfo_file_path):
-                        new_nfo_filename = f"{title} - S{season_number_str}E{str(episode_number).zfill(2)} - {episode_name}.nfo" if media_type == 'tv' else f"{title} - ({year}) {result['视频质量']}.nfo"
-                        nfo_target_path = os.path.join(target_base_dir if media_type == 'movie' else season_dir, new_nfo_filename)
-                        move_or_copy_file(nfo_file_path, nfo_target_path, action, media_type)
-                        logging.info(f"转移NFO文件: {nfo_file_path} -> {nfo_target_path}")
-
-                    send_notification(new_filename)
-                    logging.info(f"文件处理完成，刷新本地数据库")
-                    refresh_media_library()
-
-                    # 保存已处理的文件列表
-                    save_processed_files(processed_filenames)
-                else:
-                    # 未能获取到 TMDB ID，计数+1
-                    count = unrecognized_count.get(folder_name, 0) + 1
-                    unrecognized_count[folder_name] = count
-                    logging.warning(f"未能获取到 TMDB ID: {result['名称']} ({result['发行年份']})，累计失败次数: {count}")
-
-                    # 超过3次则移动/复制当前文件到 unknown_directory 下以文件夹名为名的文件夹
-                    # 或者如果这是单个文件（不是文件夹中的多个文件），即使失败1次也转移
-                    should_move = count >= 3
-                    
-                    # 对于单个文件的情况，即使失败1次也应该移动
-                    if unknown_directory:
-                        # 检查文件夹中是否还有其他视频文件
-                        folder_path = os.path.dirname(file_path)
-                        other_video_files = []
-                        if os.path.exists(folder_path):
-                            for f in os.listdir(folder_path):
-                                if is_common_video_file(f) and f != filename:
-                                    other_video_files.append(f)
-                        
-                        # 如果文件夹中没有其他视频文件，则即使失败1次也应该移动
-                        if len(other_video_files) == 0:
-                            should_move = True
-                            logging.debug(f"文件夹中无其他视频文件，立即转移未识别文件")
-                        
-                        if should_move:
-                            src_folder = os.path.dirname(file_path)
-                            dst_folder = os.path.join(unknown_directory, os.path.basename(src_folder))
-                            try:
-                                if not os.path.exists(dst_folder):
-                                    os.makedirs(dst_folder)
-                                dst_file_path = os.path.join(dst_folder, filename)
-                                if action == 'copy':
-                                    shutil.copy2(file_path, dst_file_path)
-                                    logging.info(f"已将无法识别的文件复制到未识别目录: {dst_file_path}")
-                                elif action == 'softlink':
-                                    os.symlink(file_path, dst_file_path)
-                                    logging.info(f"已将无法识别的文件创建软链接到未识别目录: {dst_file_path}")
-                                elif action == 'hardlink':
-                                    os.link(file_path, dst_file_path)
-                                    logging.info(f"已将无法识别的文件创建硬链接到未识别目录: {dst_file_path}")
-                                else:  # move
-                                    shutil.move(file_path, dst_file_path)
-                                    logging.info(f"已将无法识别的文件移动到未识别目录: {dst_file_path}")
-                                processed_filenames.add(filename)
-                                save_processed_files(processed_filenames)
-                                # 清零计数
-                                unrecognized_count.pop(folder_name, None)
-                            except Exception as e:
-                                logging.error(f"转移未识别文件失败: {e}")
         except Exception as e:
             logging.error(f"处理文件时发生错误: {file_path}, 错误信息: {e}")
     finally:
@@ -1683,6 +2230,27 @@ def process_files_in_batch(file_paths, processed_filenames):
     # 处理每个目录中的文件
     for directory, files in files_by_directory.items():
         logging.debug(f"处理目录: {directory}，包含 {len(files)} 个文件")
+        
+        # 检查文件是否都存在
+        existing_files = []
+        missing_files = []
+        for file_path in files:
+            if os.path.exists(file_path):
+                existing_files.append(file_path)
+            else:
+                missing_files.append(file_path)
+                logging.warning(f"文件不存在，跳过处理: {file_path}")
+        
+        if missing_files:
+            logging.info(f"目录 {directory} 中有 {len(missing_files)} 个文件不存在")
+            
+        if not existing_files:
+            logging.info(f"目录 {directory} 中没有可处理的文件，跳过")
+            continue
+            
+        # 更新files为存在的文件列表
+        files = existing_files
+        
         if len(files) >= 2:
             # 检查是否为相似文件（电视剧、动漫、综艺等）
             if are_similar_media_files(files):
@@ -1698,7 +2266,7 @@ def process_files_in_batch(file_paths, processed_filenames):
                             for file_path in files
                         }
                         
-                        # 等待任务完成
+                        # 等待任务完成并检查结果
                         for future in as_completed(future_to_file):
                             file_path = future_to_file[future]
                             try:

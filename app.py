@@ -2032,6 +2032,16 @@ def download_mgmt_page():
         delete_with_files = False
     else:
         delete_with_files = delete_with_files_config['VALUE'] == 'True'
+        
+    # 获取 auto_delete_completed_tasks 配置
+    auto_delete_completed_tasks_config = db.execute('SELECT VALUE FROM CONFIG WHERE OPTION = ?', ('auto_delete_completed_tasks',)).fetchone()
+    if not auto_delete_completed_tasks_config:
+        # 如果配置项不存在，创建默认配置
+        db.execute('INSERT INTO CONFIG (OPTION, VALUE) VALUES (?, ?)', ('auto_delete_completed_tasks', 'False'))
+        db.commit()
+        auto_delete_completed_tasks = False
+    else:
+        auto_delete_completed_tasks = auto_delete_completed_tasks_config['VALUE'] == 'True'
 
     # 从会话中获取用户昵称和头像
     nickname = session.get('nickname')
@@ -2044,7 +2054,9 @@ def download_mgmt_page():
         template_name = 'download_mgmt.html'
 
     # 将信息传递给模板
-    return render_template(template_name, nickname=nickname, avatar_url=avatar_url, download_mgmt=download_mgmt_config, delete_with_files=delete_with_files, version=APP_VERSION)
+    return render_template(template_name, nickname=nickname, avatar_url=avatar_url, 
+                         download_mgmt=download_mgmt_config, delete_with_files=delete_with_files,
+                         auto_delete_completed_tasks=auto_delete_completed_tasks, version=APP_VERSION)
 
 
 # 获取下载器客户端
@@ -2274,6 +2286,26 @@ def toggle_delete_with_files():
         db.commit()
         
         logger.info(f"删除任务时同时删除本地文件设置已更新为: {enabled}")
+        return jsonify({"message": "设置已更新"})
+    except Exception as e:
+        logger.error(f"更新设置失败: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# 用于切换 auto_delete_completed_tasks 设置
+@app.route('/api/download/toggle_auto_delete_completed_tasks', methods=['POST'])
+@login_required
+def toggle_auto_delete_completed_tasks():
+    try:
+        data = request.json
+        enabled = data.get("enabled", False)
+        
+        db = get_db()
+        # 更新配置
+        db.execute('UPDATE CONFIG SET VALUE = ? WHERE OPTION = ?', 
+                  ('True' if enabled else 'False', 'auto_delete_completed_tasks'))
+        db.commit()
+        
+        logger.info(f"自动删除已完成任务设置已更新为: {enabled}")
         return jsonify({"message": "设置已更新"})
     except Exception as e:
         logger.error(f"更新设置失败: {e}")
