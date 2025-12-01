@@ -768,44 +768,79 @@ def scan_metadata(path, config, path_type):
 
 def process_movies(root, files, media_extensions, config):
     """处理电影文件"""
+    
+    # 多种电影命名格式（与 scan_media.py 保持一致）
+    movie_patterns = [
+        re.compile(r'^(.*?)\s*-\s*\((\d{4})\)'),     # Title - (Year)
+        re.compile(r'^(.*?)\s*\((\d{4})\)'),         # Title (Year)
+        re.compile(r'^(.*?)\s*\[([12]\d{3})\]'),     # Title [Year]
+        re.compile(r'^(.*?)\s*([12]\d{3})\s*-'),     # Title Year -
+        re.compile(r'^(.*?)\s*\.\s*([12]\d{3})\s*\.'), # Title.Year.
+    ]
+
     for file in files:
         if any(file.lower().endswith(ext) for ext in media_extensions):
-            match = re.match(r'^(.*?)\s*-\s*\((\d{4})\)', file)
-            if match:
-                movie_name = match.group(1).strip()
-                year = int(match.group(2))
-                media_file_name = os.path.splitext(file)[0]
-                nfo_file_path = os.path.join(root, media_file_name + '.nfo')
-                
-                if os.path.exists(nfo_file_path):
-                    logging.debug(f"电影NFO已存在，跳过: {nfo_file_path}")
-                    continue
-                
-                tmdb_id = query_tmdb_id(movie_name, year, 'movie', config)
-                if not tmdb_id:
-                    tmdb_id = query_tmdb_api(movie_name, year, 'movie', config)
-                if tmdb_id:
-                    info = get_movie_info_from_tmdb(tmdb_id, config)
-                    if info:
-                        generate_movie_nfo(nfo_file_path, info, config)  # 传递配置
-                else:
-                    logging.warning(f"未找到TMDB_ID: {movie_name} ({year})，跳过NFO生成")
+            matched = False
+            for pattern in movie_patterns:
+                match = pattern.match(os.path.splitext(file)[0])
+                if match:
+                    movie_name = match.group(1).strip()
+                    year = int(match.group(2))
+                    media_file_name = os.path.splitext(file)[0]
+                    nfo_file_path = os.path.join(root, media_file_name + '.nfo')
+                    
+                    if os.path.exists(nfo_file_path):
+                        logging.debug(f"电影NFO已存在，跳过: {nfo_file_path}")
+                        matched = True
+                        break
+                    
+                    tmdb_id = query_tmdb_id(movie_name, year, 'movie', config)
+                    if not tmdb_id:
+                        tmdb_id = query_tmdb_api(movie_name, year, 'movie', config)
+                    if tmdb_id:
+                        info = get_movie_info_from_tmdb(tmdb_id, config)
+                        if info:
+                            generate_movie_nfo(nfo_file_path, info, config)  # 传递配置
+                    else:
+                        logging.warning(f"未找到TMDB_ID: {movie_name} ({year})，跳过NFO生成")
+                    
+                    matched = True
+                    break
+            
+            if not matched:
+                logging.warning(f"无法从文件名提取标题和年份: {file}")
 
 def process_tvshow_directory(root, dirs, config):
     """处理剧集主目录"""
+    
+    # 多种电视剧目录命名格式（与 scan_media.py 保持一致）
+    tv_patterns = [
+        re.compile(r'^(.*?)\s*-\s*\((\d{4})\)'),     # Title - (Year)
+        re.compile(r'^(.*?)\s*\((\d{4})\)'),         # Title (Year)
+        re.compile(r'^(.*?)\s*\[([12]\d{3})\]'),     # Title [Year]
+        re.compile(r'^(.*?)\s*([12]\d{3})\s*-'),     # Title Year -
+        re.compile(r'^(.*?)\s*\.\s*([12]\d{3})\s*\.'), # Title.Year.
+    ]
+    
     dir_name = os.path.basename(root)
-    dir_match = re.match(r'^(.*?)\s*\((\d{4})\)', dir_name)
-    if not dir_match:
+    dir_matched = False
+    
+    for pattern in tv_patterns:
+        dir_match = pattern.match(dir_name)
+        if dir_match:
+            tv_name = dir_match.group(1).strip()
+            tv_year = int(dir_match.group(2))
+            dir_matched = True
+            break
+    
+    if not dir_matched:
         return  # 不是剧集主目录，跳过
     
     tvshow_nfo_path = os.path.join(root, 'tvshow.nfo')
     if os.path.exists(tvshow_nfo_path):
         logging.debug(f"剧集NFO已存在，跳过: {tvshow_nfo_path}")
         return  # 跳出函数，不处理此目录
-    
-    tv_name = dir_match.group(1).strip()
-    tv_year = int(dir_match.group(2))
-    
+
     tmdb_id = query_tmdb_id(tv_name, tv_year, 'tv', config)
     if not tmdb_id:
         tmdb_id = query_tmdb_api(tv_name, tv_year, 'tv', config)
@@ -818,9 +853,29 @@ def process_season_directory(root, dirs, config):
     """处理剧集季目录"""
     parent_dir = os.path.dirname(root)
     parent_name = os.path.basename(parent_dir)
-    parent_match = re.match(r'^(.*?)\s*\((\d{4})\)', parent_name)
     
-    # 多种季目录命名格式
+    # 多种电视剧目录命名格式（与 scan_media.py 保持一致）
+    tv_patterns = [
+        re.compile(r'^(.*?)\s*-\s*\((\d{4})\)'),     # Title - (Year)
+        re.compile(r'^(.*?)\s*\((\d{4})\)'),         # Title (Year)
+        re.compile(r'^(.*?)\s*\[([12]\d{3})\]'),     # Title [Year]
+        re.compile(r'^(.*?)\s*([12]\d{3})\s*-'),     # Title Year -
+        re.compile(r'^(.*?)\s*\.\s*([12]\d{3})\s*\.'), # Title.Year.
+    ]
+    
+    parent_matched = False
+    for pattern in tv_patterns:
+        parent_match = pattern.match(parent_name)
+        if parent_match:
+            tv_name = parent_match.group(1).strip()
+            tv_year = int(parent_match.group(2))
+            parent_matched = True
+            break
+    
+    if not parent_matched:
+        return  # 没有找到父目录中的剧集信息，跳过
+    
+    # 多种季目录命名格式（与 scan_media.py 保持一致）
     season_patterns = [
         re.compile(r'^Season\s+(\d+)$', re.IGNORECASE),    # Season 1
         re.compile(r'^S(\d+)$', re.IGNORECASE),            # S01
@@ -829,8 +884,6 @@ def process_season_directory(root, dirs, config):
     ]
     
     dir_name = os.path.basename(root)
-    if not parent_match:
-        return  # 没有找到父目录中的剧集信息，跳过
     
     # 检查是否为季目录
     season_number = None
@@ -847,10 +900,7 @@ def process_season_directory(root, dirs, config):
     if os.path.exists(season_nfo_path):
         logging.debug(f"季NFO已存在，跳过: {season_nfo_path}")
         return  # 跳出函数，不处理此目录
-    
-    tv_name = parent_match.group(1).strip()
-    tv_year = int(parent_match.group(2))
-    
+
     tmdb_id = query_tmdb_id(tv_name, tv_year, 'tv', config)
     if not tmdb_id:
         tmdb_id = query_tmdb_api(tv_name, tv_year, 'tv', config)
@@ -862,7 +912,7 @@ def process_season_directory(root, dirs, config):
 def process_episode_files(root, files, media_extensions, config):
     """处理单集文件"""
     
-    # 多种剧集文件命名格式
+    # 多种剧集文件命名格式（扩展自 scan_media.py 的模式）
     episode_patterns = [
         re.compile(r'^(.*) - S(\d{1,2})E(\d{1,4}) - (.*)$', re.IGNORECASE),  # 格式: Show Name - S1E1 - Episode Title
         re.compile(r'^(.*)\.S(\d{1,2})E(\d{1,4})\.(.*)$', re.IGNORECASE),    # 格式: Show.Name.S1E1.Episode.Title
@@ -902,31 +952,46 @@ def process_episode_files(root, files, media_extensions, config):
         # 向上查找剧集主目录
         parent = root
         info = None
-        while True:
+        found_tv = False
+        
+        # 多种电视剧目录命名格式（用于向上搜索）
+        tv_patterns = [
+            re.compile(r'^(.*?)\s*-\s*\((\d{4})\)'),     # Title - (Year)
+            re.compile(r'^(.*?)\s*\((\d{4})\)'),         # Title (Year)
+            re.compile(r'^(.*?)\s*\[([12]\d{3})\]'),     # Title [Year]
+            re.compile(r'^(.*?)\s*([12]\d{3})\s*-'),     # Title Year -
+            re.compile(r'^(.*?)\s*\.\s*([12]\d{3})\s*\.'), # Title.Year.
+        ]
+        
+        while not found_tv and parent != os.path.dirname(parent):  # 防止无限循环
             parent_dir = os.path.dirname(parent)
             parent_name = os.path.basename(parent_dir)
-            parent_match = re.match(r'^(.*?)\s*\((\d{4})\)', parent_name)
-            if parent_match:
-                tvshow_nfo_path = os.path.join(parent_dir, 'tvshow.nfo')
-                if os.path.exists(tvshow_nfo_path):
-                    tv_name = parent_match.group(1).strip()
-                    tv_year = int(parent_match.group(2))
-                    tmdb_id = query_tmdb_id(tv_name, tv_year, 'tv', config)
-                    if not tmdb_id:
-                        tmdb_id = query_tmdb_api(tv_name, tv_year, 'tv', config)
-                    if tmdb_id:
-                        info = get_tv_info_from_tmdb(tmdb_id, config)
-                    break
-                else:
-                    tv_name = parent_match.group(1).strip()
-                    tv_year = int(parent_match.group(2))
-                    tmdb_id = query_tmdb_id(tv_name, tv_year, 'tv', config)
-                    if not tmdb_id:
-                        tmdb_id = query_tmdb_api(tv_name, tv_year, 'tv', config)
-                    if tmdb_id:
-                        info = get_tv_info_from_tmdb(tmdb_id, config)
-                    break
-            if parent_dir == parent:
+            
+            for pattern in tv_patterns:
+                parent_match = pattern.match(parent_name)
+                if parent_match:
+                    tvshow_nfo_path = os.path.join(parent_dir, 'tvshow.nfo')
+                    if os.path.exists(tvshow_nfo_path):
+                        tv_name = parent_match.group(1).strip()
+                        tv_year = int(parent_match.group(2))
+                        tmdb_id = query_tmdb_id(tv_name, tv_year, 'tv', config)
+                        if not tmdb_id:
+                            tmdb_id = query_tmdb_api(tv_name, tv_year, 'tv', config)
+                        if tmdb_id:
+                            info = get_tv_info_from_tmdb(tmdb_id, config)
+                            found_tv = True
+                        break
+                    else:
+                        tv_name = parent_match.group(1).strip()
+                        tv_year = int(parent_match.group(2))
+                        tmdb_id = query_tmdb_id(tv_name, tv_year, 'tv', config)
+                        if not tmdb_id:
+                            tmdb_id = query_tmdb_api(tv_name, tv_year, 'tv', config)
+                        if tmdb_id:
+                            info = get_tv_info_from_tmdb(tmdb_id, config)
+                            found_tv = True
+                        break
+            if found_tv:
                 break
             parent = parent_dir
         

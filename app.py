@@ -587,9 +587,20 @@ def recommendations():
 @app.route('/search', methods=['GET'])
 @login_required
 def search():
+    query = request.args.get('q', '').strip()
+    nickname = session.get('nickname')
+    avatar_url = session.get('avatar_url')
+    return render_template('search.html', query=query, nickname=nickname, avatar_url=avatar_url, version=APP_VERSION)
+
+@app.route('/api/search', methods=['GET'])
+@login_required
+def api_search():
     db = get_db()
     query = request.args.get('q', '').strip()
-    results = []
+    results = {
+        'movies': [],
+        'tvs': []
+    }
 
     if query:
         # 查询电影并按年份排序
@@ -598,29 +609,39 @@ def search():
         # 查询电视剧并获取其季信息
         tvs = db.execute('SELECT * FROM LIB_TVS WHERE title LIKE ? ORDER BY title ASC', ('%' + query + '%',)).fetchall()
 
-        # 合并结果
+        # 处理电影结果
         for movie in movies:
-            results.append({
+            results['movies'].append({
                 'type': 'movie',
                 'id': movie['id'],
                 'title': movie['title'],
-                'year': movie['year']
+                'year': movie['year'],
+                'tmdb_id': movie['tmdb_id']
             })
 
+        # 处理电视剧结果
         for tv in tvs:
             # 获取该电视剧的所有季信息，并按季数排序
             seasons = db.execute('SELECT season, episodes FROM LIB_TV_SEASONS WHERE tv_id = ? ORDER BY season ASC', (tv['id'],)).fetchall()
-            tv_data = {
+            results['tvs'].append({
                 'type': 'tv',
                 'id': tv['id'],
                 'title': tv['title'],
-                'seasons': seasons
-            }
-            results.append(tv_data)
-    # 从会话中获取用户昵称和头像
-    nickname = session.get('nickname')
-    avatar_url = session.get('avatar_url')
-    return render_template('search_results.html', query=query, results=results, nickname=nickname, avatar_url=avatar_url, version=APP_VERSION)
+                'year': tv['year'],
+                'tmdb_id': tv['tmdb_id'],
+                'seasons': [{'season': s['season'], 'episodes': s['episodes']} for s in seasons]
+            })
+    
+    # 获取TMDB配置信息
+    tmdb_config = {
+        'tmdb_api_key': db.execute('SELECT VALUE FROM CONFIG WHERE OPTION = ?', ('tmdb_api_key',)).fetchone()['VALUE']
+    }
+    
+    return jsonify({
+        'query': query,
+        'results': results,
+        'tmdb_config': tmdb_config
+    })
 
 @app.route('/library')
 @login_required

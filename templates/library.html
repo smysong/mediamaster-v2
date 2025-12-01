@@ -6,15 +6,140 @@
 {% block content %}
 
 <style>
+    /* 响应式设计 */
     @media (max-width: 768px) {
         .modal-header {
             flex-direction: column;
         }
     }
+    
+    /* 分组标题 */
+    .section-title {        
+        border-left: 4px solid #4770dc;        
+        padding-left: 10px;        
+        margin: 20px 0 15px 0;        
+        font-weight: 600;
+    }
+
+    /* 演员和导演信息样式 */
+    .modal-credits {
+        margin-top: 20px;
+    }
+
+    .credits-section h5 {
+        margin-bottom: 15px;
+    }
+
+    .persons-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px; /* 稍微减小间距 */
+    }
+
+    .person-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 65px; /* 减小卡片宽度 */
+        text-align: center;
+    }
+
+    .person-image {
+        width: 50px; /* 减小头像尺寸 */
+        height: 50px;
+        border-radius: 50%;
+        overflow: hidden;
+        margin-bottom: 6px; /* 减小间距 */
+    }
+
+    .person-image img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .person-info {
+        font-size: 0.7rem; /* 减小整体字体大小 */
+        width: 100%;
+    }
+
+    .person-name {
+        font-weight: 600;
+        margin-bottom: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        width: 100%;
+        font-size: 0.75rem; /* 调整名字字体大小 */
+    }
+
+    .person-role {
+        color: #666;
+        font-size: 0.65rem; /* 调整角色字体大小 */
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        width: 100%;
+    }
+
+    /* 小屏幕设备适配 */
+    @media (max-width: 768px) {
+        .person-card {
+            width: 55px; /* 进一步减小宽度 */
+        }
+        
+        .person-image {
+            width: 40px;
+            height: 40px;
+        }
+        
+        .person-info {
+            font-size: 0.65rem;
+        }
+        
+        .person-name {
+            font-size: 0.7rem;
+        }
+        
+        .person-role {
+            font-size: 0.55rem;
+        }
+        
+        .persons-list {
+            gap: 10px;
+        }
+    }
+
+    @media (max-width: 576px) {
+        .person-card {
+            width: 50px;
+        }
+        
+        .person-image {
+            width: 35px;
+            height: 35px;
+        }
+        
+        .person-info {
+            font-size: 0.6rem;
+        }
+        
+        .person-name {
+            font-size: 0.65rem;
+        }
+        
+        .person-role {
+            font-size: 0.5rem;
+        }
+        
+        .persons-list {
+            gap: 8px;
+        }
+    }
 </style>
 
     {% if media_type == 'movies' %}
-        <h3>共计 {{ total_movies }} 部影片</h3>
+        <h3 class="section-title">共计 {{ total_movies }} 部影片</h3>
         <div class="poster-wall-container">
             <div class="poster-wall" id="movieWall">
                 {% for movie in movies %}
@@ -29,7 +154,7 @@
             </div>
         </div>
     {% elif media_type == 'tvs' %}
-        <h3>共计 {{ total_tvs }} 部电视节目</h3>
+        <h3 class="section-title">共计 {{ total_tvs }} 部电视节目</h3>
         <div class="poster-wall-container">
             <div class="poster-wall" id="tvWall">
                 {% for tv in tv_data %}
@@ -53,7 +178,7 @@
 
     <!-- Modal -->
     <div id="mediaDetailsModal" class="modal fade" tabindex="-1" aria-labelledby="InfoCardLabel">
-        <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-dialog modal-dialog-centered modal-xl">
             <div class="modal-content">
                 <div class="InfoCard-header d-flex justify-content-between align-items-center">
                     <h5 class="InfoCard-title" id="InfoCardLabel">影片简介</h5>
@@ -65,12 +190,16 @@
                             <img id="modalPoster" src="" alt="海报">
                         </div>
                         <div class="modal-details">
-                            <h3 id="modalTitle"></h3>
+                            <h3 id="modalTitle" style="font-weight: 600;"></h3>
+                            <p id="modalGenres"></p> <!-- 新增：类型信息 -->
                             <p id="modalEpisodeCount"></p>
                             <p id="modalYear"></p>
+                            <p id="modalRating"></p> <!-- 新增：评分信息 -->
                             <p id="modalOverview"></p>
                         </div>
                     </div>
+                    <!-- 新增：导演和演员信息区域 -->
+                    <div class="modal-credits mt-3"></div>
                 </div>
             </div>
         </div>
@@ -207,11 +336,12 @@
         posterWall.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
     }
 
-    // 显示媒体详情模态框，海报同样优先显示默认图片，成功加载TMDB图片后再替换
+    // 显示媒体详情模态框，增加演职人员等信息
     function showMediaDetails(element) {
         const tmdbId = element.querySelector('.movie-poster, .tv-poster').dataset.tmdbId;
         const mediaType = element.querySelector('.movie-poster') ? 'movie' : 'tv';
-        const url = `https://api.tmdb.org/3/${mediaType}/${tmdbId}?api_key=${apiKey}&language=zh-CN`;
+        // 使用带有credits附加信息的URL
+        const url = `https://api.tmdb.org/3/${mediaType}/${tmdbId}?api_key=${apiKey}&language=zh-CN&append_to_response=credits`;
 
         const title = element.getAttribute('data-title');
         const year = element.getAttribute('data-year');
@@ -238,21 +368,154 @@
                     if (!loaded) loader.onerror();
                 }, 3000);
             }
+            
             document.getElementById('modalTitle').innerText = title;
             document.getElementById('modalYear').innerText = `发行年份: ${year}`;
-            document.getElementById('modalOverview').innerText = `简介: ${data.overview}`;
+            document.getElementById('modalOverview').innerText = data.overview || '暂无简介';
+            
+            // 新增：显示评分信息
+            const rating = data.vote_average ? data.vote_average.toFixed(1) : '暂无评分';
+            document.getElementById('modalRating').innerText = `评分: ${rating}`;
+            
+            // 新增：显示类型信息
+            const genres = data.genres ? data.genres.map(g => g.name).join(', ') : '未知类型';
+            document.getElementById('modalGenres').innerText = `类型: ${genres}`;
+            
             if (mediaType === 'tv') {
                 const totalEpisodes = element.getAttribute('data-total-episodes');
                 document.getElementById('modalEpisodeCount').innerText = `共 ${totalEpisodes} 集`;
             } else {
                 document.getElementById('modalEpisodeCount').innerText = '';
             }
+            
+            // 新增：显示导演和演员信息
+            displayCreditsInfo(data.credits, mediaType);
+            
             $('#mediaDetailsModal').modal('show');
         }).fail(function() {
             // 保持默认图片
             console.log('获取媒体数据时发生错误。');
         });
     }
+
+    // 新增：显示导演和演员信息
+    function displayCreditsInfo(credits, mediaType) {
+        const creditsContainer = document.querySelector('.modal-credits');
+        creditsContainer.innerHTML = ''; // 清空之前的内容
+        
+        if (!credits) return;
+        
+        // 获取导演信息
+        const directors = credits.crew ? credits.crew.filter(person => person.job === "Director") : [];
+        
+        // 获取主要演员信息（按知名度排序，取前6个）
+        const mainCast = credits.cast ? 
+            credits.cast
+                .sort((a, b) => b.popularity - a.popularity)
+                .slice(0, 6) : [];
+        
+        let creditsHtml = '';
+        
+        // 添加导演信息
+        if (directors.length > 0) {
+            creditsHtml += `
+                <div class="credits-section mt-3">
+                    <h5>导演</h5>
+                    <div class="persons-list d-flex flex-wrap gap-3">
+            `;
+            
+            directors.forEach(director => {
+                // 处理过长的名字
+                const maxNameLength = 8;
+                const displayName = director.name.length > maxNameLength ? 
+                    director.name.substring(0, maxNameLength) + '...' : director.name;
+                    
+                const roleName = '导演';
+                const displayRole = roleName.length > 8 ? 
+                    roleName.substring(0, 8) + '...' : roleName;
+                
+                const profileUrl = director.profile_path ? 
+                    `https://image.tmdb.org/t/p/w185${director.profile_path}` : 
+                    '/static/img/avatar.png';
+                    
+                creditsHtml += `
+                    <div class="person-card text-center">
+                        <div class="person-image mx-auto mb-2">
+                            <img src="${profileUrl}" alt="${director.name}" class="rounded-circle" 
+                                style="width: 50px; height: 50px; object-fit: cover;"
+                                onerror="this.src='/static/img/avatar.png'">
+                        </div>
+                        <div class="person-info">
+                            <div class="person-name fw-bold" title="${director.name}">${displayName}</div>
+                            <div class="person-role text-muted small" title="${roleName}">${displayRole}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            creditsHtml += `
+                    </div>
+                </div>
+            `;
+        }
+        
+        // 添加演员信息
+        if (mainCast.length > 0) {
+            creditsHtml += `
+                <div class="credits-section mt-3">
+                    <h5>主要演员</h5>
+                    <div class="persons-list d-flex flex-wrap gap-3">
+            `;
+            
+            mainCast.forEach(person => {
+                // 处理过长的名字
+                const maxNameLength = 8;
+                const displayName = person.name.length > maxNameLength ? 
+                    person.name.substring(0, maxNameLength) + '...' : person.name;
+                    
+                const roleName = person.character || '演员';
+                const displayRole = roleName.length > 8 ? 
+                    roleName.substring(0, 8) + '...' : roleName;
+                
+                const profileUrl = person.profile_path ? 
+                    `https://image.tmdb.org/t/p/w185${person.profile_path}` : 
+                    '/static/img/avatar.png';
+                    
+                creditsHtml += `
+                    <div class="person-card text-center">
+                        <div class="person-image mx-auto mb-2">
+                            <img src="${profileUrl}" alt="${person.name}" class="rounded-circle" 
+                                style="width: 50px; height: 50px; object-fit: cover;"
+                                onerror="this.src='/static/img/avatar.png'">
+                        </div>
+                        <div class="person-info">
+                            <div class="person-name fw-bold" title="${person.name}">${displayName}</div>
+                            <div class="person-role text-muted small" title="${roleName}">${displayRole}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            creditsHtml += `
+                    </div>
+                </div>
+            `;
+        }
+        
+        creditsContainer.innerHTML = creditsHtml;
+    }
+
+    // 关闭模态框时清空内容
+    $('#mediaDetailsModal').on('hidden.bs.modal', function () {
+        document.getElementById('modalPoster').src = '';
+        document.getElementById('modalTitle').innerText = '';
+        document.getElementById('modalGenres').innerText = ''; // 清空类型信息
+        document.getElementById('modalEpisodeCount').innerText = '';
+        document.getElementById('modalYear').innerText = '';
+        document.getElementById('modalRating').innerText = ''; // 清空评分信息
+        document.getElementById('modalOverview').innerText = '';
+        document.querySelector('.modal-credits').innerHTML = ''; // 清空导演和演员信息
+    });
 
     function closeModal() {
         $('#mediaDetailsModal').modal('hide');

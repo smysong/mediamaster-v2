@@ -230,11 +230,34 @@ def insert_or_update_episodes(db_path, episodes):
 
     for show_name, show_info in episodes.items():
         tmdb_id = show_info['tmdb_id']
-        cursor.execute('SELECT id FROM LIB_TVS WHERE title = ?', (show_name,))
-        existing_tv = cursor.fetchone()
-        if existing_tv:
-            tv_id = existing_tv[0]
-            logging.debug(f"电视剧 '{show_name}' 已存在于数据库中。")
+        # 查询所有同名电视剧
+        cursor.execute('SELECT id, tmdb_id FROM LIB_TVS WHERE title = ?', (show_name,))
+        existing_tvs = cursor.fetchall()
+        
+        tv_id = None
+        if existing_tvs:
+            # 优先使用有tmdb_id的条目
+            for existing_tv in existing_tvs:
+                if existing_tv[1] is not None and existing_tv[1] != '':
+                    tv_id = existing_tv[0]
+                    logging.debug(f"电视剧 '{show_name}' 已存在于数据库中。")
+                    break
+            
+            # 如果没有tmdb_id，则使用第一个条目
+            if tv_id is None:
+                tv_id = existing_tvs[0][0]
+                # 如果扫描到tmdb_id而数据库中没有，则更新
+                if tmdb_id:
+                    cursor.execute('UPDATE LIB_TVS SET tmdb_id = ? WHERE id = ?', (tmdb_id, tv_id))
+                    logging.info(f"已更新电视剧 '{show_name}' 的 TMDB ID: {tmdb_id}")
+                
+            # 删除其他重复条目
+            if len(existing_tvs) > 1:
+                for existing_tv in existing_tvs:
+                    if existing_tv[0] != tv_id:
+                        cursor.execute('DELETE FROM LIB_TV_SEASONS WHERE tv_id = ?', (existing_tv[0],))
+                        cursor.execute('DELETE FROM LIB_TVS WHERE id = ?', (existing_tv[0],))
+                        logging.info(f"已删除重复的电视剧条目: {show_name} (ID: {existing_tv[0]})")
         else:
             cursor.execute('INSERT INTO LIB_TVS (title, tmdb_id) VALUES (?, ?)', (show_name, tmdb_id))
             tv_id = cursor.lastrowid
@@ -423,6 +446,63 @@ def update_tv_year(base_path, db_path):
     if shows:  # 只有当有数据时才更新数据库
         update_database(db_path, shows)
 
+def clean_duplicate_tvs(db_path):
+    """
+    清理LIB_TVS表中的重复和无效数据
+    """
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # 查找完全重复的条目(标题相同)
+    cursor.execute('''
+        SELECT TITLE, COUNT(*) as count 
+        FROM LIB_TVS 
+        GROUP BY TITLE 
+        HAVING COUNT(*) > 1
+    ''')
+    
+    duplicates = cursor.fetchall()
+    
+    for title, count in duplicates:
+        # 获取所有同名条目
+        cursor.execute('SELECT id, title, year, tmdb_id FROM LIB_TVS WHERE title = ?', (title,))
+        entries = cursor.fetchall()
+        
+        # 保留第一个有效的条目，删除其他重复项
+        valid_entry = None
+        entries_to_delete = []
+        
+        for entry in entries:
+            entry_id, entry_title, entry_year, entry_tmdb_id = entry
+            
+            # 判断是否为有效条目(有年份或tmdb_id)
+            if entry_year is not None and entry_year != '':
+                if valid_entry is None:
+                    valid_entry = entry
+                else:
+                    # 如果已有有效条目，且当前条目年份更完整，则替换
+                    if valid_entry[2] is None or valid_entry[2] == '':
+                        entries_to_delete.append(valid_entry[0])
+                        valid_entry = entry
+                    else:
+                        entries_to_delete.append(entry_id)
+            else:
+                entries_to_delete.append(entry_id)
+        
+        # 删除重复条目
+        for delete_id in entries_to_delete:
+            cursor.execute('DELETE FROM LIB_TVS WHERE id = ?', (delete_id,))
+            cursor.execute('DELETE FROM LIB_TV_SEASONS WHERE tv_id = ?', (delete_id,))
+            logging.info(f"已删除重复的电视剧条目: {title} (ID: {delete_id})")
+            
+        # 更新保留条目的缺失信息
+        if valid_entry and entries_to_delete:
+            # 这里可以从其他重复条目中获取有用信息来补充
+            pass
+    
+    conn.commit()
+    conn.close()
+
 def main():
     db_path = '/config/data.db'
     config = load_config(db_path)
@@ -484,6 +564,9 @@ def main():
         update_tv_year(anime_path, db_path)
     if os.path.exists(variety_path):
         update_tv_year(variety_path, db_path)
+
+    # 在处理完所有扫描逻辑后，执行数据清理
+    clean_duplicate_tvs(db_path)
 
 if __name__ == "__main__":
     main()

@@ -1,424 +1,539 @@
 {% extends "base.html" %}
 {% block title %}热门推荐{% endblock %}
 {% block content %}
-    <style>
-        /* 全局样式 */
-        body {
-            padding: 0;
+<style>
+    /* 全局样式 */
+    body {
+        padding: 0;
+    }
+
+    h1, h2 {
+        text-align: center;
+        margin: 20px 0;
+        color: #333333; /* 深灰色标题 */
+        text-shadow: none; /* 移除阴影 */
+    }
+
+    section {
+        max-width: 1200px;
+        padding: 0 20px;
+    }
+
+    /* Banner 样式 */
+    .banner {
+        position: relative;
+        width: 100%;
+        height: 400px; /* 固定高度 */
+        margin-top: 40px;
+        overflow: hidden;
+        margin-bottom: 10px;
+        border-radius: 10px; /* 圆角效果 */
+    }
+
+    .banner-item {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-size: cover; /* 保持纵横比缩放填充 */
+        background-position: center top; /* 水平居中，顶部对齐 */
+        opacity: 0;
+        transition: opacity 1s ease-in-out;
+        display: flex;
+        flex-direction: column; /* 垂直排列内容 */
+        justify-content: flex-end; /* 内容对齐到底部 */
+        color: white; /* 白色字体 */
+        padding: 20px; /* 底部内边距 */
+        box-sizing: border-box;
+    }
+
+    .banner-item.active {
+        opacity: 1;
+    }
+
+    .banner-item .textcontent {
+        max-width: 100%;
+        padding: 10px 20px; /* 内容区域内边距 */
+        border-radius: 5px; /* 圆角效果 */
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8); /* 半透明灰色阴影 */
+    }
+
+    .banner-item p.title {
+        font-size: 24px;
+        font-weight: bold;
+        margin: 0 0 5px 0; /* 减小间距 */
+    }
+
+    .banner-item p.overview {
+        font-size: 14px;
+        margin: 0;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 3; /* 限制显示的行数 */
+        line-clamp: 3; /* 标准属性 */
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* 进度条容器样式 */
+    .progress-bar-container {
+        position: absolute;
+        bottom: 0; /* 固定在容器底部 */
+        left: 0;
+        width: 100%;
+        height: 3px; /* 进度条高度 */
+        background: rgba(255, 255, 255, 0.3); /* 半透明背景 */
+        overflow: hidden;
+        border-radius: 3px; /* 圆角效果 */
+    }
+    
+    /* 进度条样式 */
+    .progress-bar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 0%;
+        height: 100%;
+        background: #adb5bd; /* 进度条颜色 */
+        transition: width 0.3s linear; /* 平滑过渡效果 */
+    }
+
+    /* Carousel 容器样式 */
+    .carousel-container {
+        position: relative;
+        overflow: hidden;
+        white-space: nowrap; /* 防止内容换行 */
+    }
+
+    /* 滚动列表样式 */
+    .movie-list, .tv-list {
+        white-space: nowrap;
+        overflow-x: auto;
+        scroll-behavior: smooth;
+        padding: 8px; /* 内边距 */
+    }
+
+    /* 隐藏滚动条 */
+    .movie-list::-webkit-scrollbar, .tv-list::-webkit-scrollbar {
+        display: none;
+    }
+
+    /* 箭头按钮样式 */
+    .carousel-arrow {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        color: rgba(0, 0, 0, 0.5);
+        border: none;
+        font-size: 30px;
+        cursor: pointer;
+        z-index: 10;
+    }
+
+    .carousel-arrow.prev {
+        left: 0px;
+        width: 40px; 
+        height: 100%;
+        background: linear-gradient(to right, #f9f9f9, rgba(249, 249, 249, 0)); /* 从浅灰色到透明 */
+    }
+    
+    .carousel-arrow.next {
+        right: 0px;
+        width: 40px;
+        height: 100%;
+        background: linear-gradient(to left, #f9f9f9, rgba(249, 249, 249, 0)); /* 从浅灰色到透明 */
+    }
+    
+    .carousel-arrow:hover {
+        font-size: 35px;
+    }
+
+    /* 推荐列表样式 */
+    .movie-item, .tv-item {
+        display: inline-block; /* 确保水平排列 */
+        position: relative; /* 为评分和标题定位 */
+        width: 150px; /* 固定宽度 */
+        height: 225px; /* 固定高度 */
+        margin-right: 20px; /* 项目之间的间距 */
+        border-radius: 10px; /* 圆角效果 */
+        overflow: hidden; /* 隐藏溢出内容 */
+        background: #f0f0f0; /* 默认背景色 */
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* 浅色阴影 */
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .movie-item:hover, .tv-item:hover {
+        transform: scale(1.05); /* 鼠标悬停放大效果 */
+        box-shadow: 0 6px 10px rgba(0, 0, 0, 0.2); /* 稍深的阴影 */
+    }
+
+    .movie-item img, .tv-item img {
+        width: 100%; /* 图片宽度填充容器 */
+        height: 100%; /* 图片高度填充容器 */
+        object-fit: cover; /* 保持图片比例裁剪 */
+    }
+
+    /* 评分显示在左上角 */
+    .movie-item .rating, .tv-item .rating, .banner-item .rating {
+        position: absolute;
+        top: 5px;
+        left: 5px; /* 左上角 */
+        background: rgba(0, 0, 0, 0.7); /* 半透明黑色背景 */
+        color: #fff; /* 白色文字 */
+        font-size: 14px;
+        border-radius: 5px; /* 圆角效果 */
+        display: block;
+    }
+
+    /* 标题样式 */
+    .movie-item .title, .tv-item .title {
+        position: absolute;
+        bottom: 0;
+        width: 100%;
+        background: rgba(0, 0, 0, 0.7); /* 半透明黑灰色背景 */
+        color: #fff; /* 白色文字 */
+        font-size: 14px;
+        text-align: center;
+        padding: 5px 0;
+        box-sizing: border-box;
+    }
+
+    button.bi.bi-bookmark-star-fill {
+        color: #495057;
+        border: none;
+        margin: 5px 0;
+        font-size: 0.8em;
+        padding-left: 0;
+        background-color: unset;
+    }
+
+    button.bi.bi-search {
+        color: rgb(25, 135, 84);
+        border: none;
+        margin: 5px 0;
+        font-size: 0.8em;
+        padding-left: 0;
+        background-color: unset;
+    }
+
+    .search {
+        width: 100%;
+        max-width: 600px;
+        margin: 0 auto 0 auto;
+        display: flex;
+        justify-content: center;
+    }
+    .search form {
+        width: 100%;
+        display: flex;
+        gap: 10px;
+    }
+    .inner_search_wrapper {
+        flex: 1;
+    }
+    .k-input-inner {
+        width: 100%;
+        padding: 8px 12px;
+        border-radius: 30px;
+        border: 1px solid transparent;
+        font-size: 16px;
+        background-origin: border-box;
+        background-clip: padding-box, border-box;
+        background-image: linear-gradient(#fff, #fff), linear-gradient(to right,rgba(30,213,169,1) 0%,rgba(1,180,228,1) 100%);
+        /* 第一层白色，第二层为渐变边框 */
+    }
+    /* 保持输入时边框颜色不变 */
+    .k-input-inner:focus {
+        border-color: rgba(1,180,228,1);
+        outline: none;
+    }
+    .k-button {
+        padding: 8px 20px;
+        border-radius: 30px;
+        background: linear-gradient(to right,rgba(30,213,169,1) 0%,rgba(1,180,228,1) 100%);
+        color: #fff;
+        border: none;
+        font-size: 16px;
+        cursor: pointer;
+    }
+    .k-button:hover {
+        color: rgba(3,37,65);
+    }
+    .search-results-section {
+        margin-top: 30px;
+    }
+    .search-list {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 20px 20px;
+        padding: 8px;
+        overflow-x: auto;
+        overflow-y: visible;
+        scroll-behavior: smooth;
+    }
+    .search-list::-webkit-scrollbar {
+        display: none;
+    }
+    .search-item {
+        display: inline-block;
+        position: relative;
+        width: 150px;
+        height: 225px;
+        margin-right: 20px;
+        border-radius: 10px;
+        overflow: hidden;
+        background: #f0f0f0;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        transition: transform 0.3s, box-shadow 0.3s;
+        vertical-align: top;
+    }
+    .search-item:hover {
+        transform: scale(1.05);
+        box-shadow: 0 6px 10px rgba(0,0,0,0.2);
+    }
+    .search-item img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    .search-item .rating {
+        position: absolute;
+        top: 5px;
+        left: 5px;
+        background: rgba(0,0,0,0.7);
+        color: #fff;
+        font-size: 14px;
+        border-radius: 5px;
+        display: block;
+        padding: 2px 6px;
+    }
+    .search-item .title {
+        position: absolute;
+        bottom: 0;
+        width: 100%;
+        background: rgba(0,0,0,0.7);
+        color: #fff;
+        font-size: 14px;
+        text-align: center;
+        padding: 5px 0;
+        box-sizing: border-box;
+    }
+    @media (max-width: 1200px) {
+        .search-list {
+            grid-template-columns: repeat(4, 1fr);
+        }
+    }
+    @media (max-width: 768px) {
+        .search-list {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+    /* 响应式设计 */
+    @media (max-width: 768px) {
+        .movie-item, .tv-item {
+            width: 150px; /* 在小屏幕上适当缩小宽度 */
         }
 
-        h1, h2 {
-            text-align: center;
-            margin: 20px 0;
-            color: #333333; /* 深灰色标题 */
-            text-shadow: none; /* 移除阴影 */
-        }
-
-        section {
-            max-width: 1200px;
-            padding: 0 20px;
-        }
-
-        /* Banner 样式 */
         .banner {
-            position: relative;
-            width: 100%;
-            height: 400px; /* 固定高度 */
-            margin-top: 40px;
-            overflow: hidden;
-            margin-bottom: 10px;
-            border-radius: 10px; /* 圆角效果 */
+            height: 300px; /* 减小高度 */
         }
 
         .banner-item {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-size: cover; /* 保持纵横比缩放填充 */
-            background-position: center top; /* 水平居中，顶部对齐 */
-            opacity: 0;
-            transition: opacity 1s ease-in-out;
-            display: flex;
-            flex-direction: column; /* 垂直排列内容 */
-            justify-content: flex-end; /* 内容对齐到底部 */
-            color: white; /* 白色字体 */
-            padding: 20px; /* 底部内边距 */
-            box-sizing: border-box;
-        }
-
-        .banner-item.active {
-            opacity: 1;
-        }
-
-        .banner-item .textcontent {
-            max-width: 100%;
-            padding: 10px 20px; /* 内容区域内边距 */
-            border-radius: 5px; /* 圆角效果 */
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8); /* 半透明灰色阴影 */
+            padding: 10px; /* 减小内边距 */
         }
 
         .banner-item p.title {
-            font-size: 24px;
-            font-weight: bold;
-            margin: 0 0 5px 0; /* 减小间距 */
+            font-size: 20px; /* 减小标题字体 */
         }
 
         .banner-item p.overview {
-            font-size: 14px;
-            margin: 0;
-            display: -webkit-box;
-            -webkit-box-orient: vertical;
-            -webkit-line-clamp: 3; /* 限制显示的行数 */
-            line-clamp: 3; /* 标准属性 */
-            overflow: hidden;
-            text-overflow: ellipsis;
+            font-size: 14px; /* 减小简介字体 */
         }
+        .modal-header {
+            flex-direction: column;
+        }
+    }
 
-        /* 进度条容器样式 */
-        .progress-bar-container {
-            position: absolute;
-            bottom: 0; /* 固定在容器底部 */
-            left: 0;
-            width: 100%;
-            height: 3px; /* 进度条高度 */
-            background: rgba(255, 255, 255, 0.3); /* 半透明背景 */
-            overflow: hidden;
-            border-radius: 3px; /* 圆角效果 */
+    /* 加载动画 */
+    .loading {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.9); /* 浅色背景 */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+    }
+
+    .loading span {
+        font-size: 24px;
+        color: #333333; /* 深灰色文字 */
+        animation: blink 1s infinite;
+    }
+
+    .api-error {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        padding: 50px 20px;
+        color: #dc3545;
+        font-size: clamp(12px, 1.2vw, 16px);
+        font-weight: bold;
+        width: 100%;
+        max-width: 600px;
+        background: rgba(255, 255, 255, 0.9);
+        z-index: 20;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        border-radius: 10px;
+    }
+
+    @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+
+    /* 季选择模态框样式 */
+    .season-selection {
+        max-height: 300px;
+        overflow-y: auto;
+    }
+    
+    .season-selection .form-check {
+        margin-top: 10px;
+        margin-left: 10px;
+        border-bottom: 1px solid #eee;
+    }
+    
+    .season-selection .form-check:last-child {
+        border-bottom: none;
+    }
+    
+    .season-selection .form-check-input {
+        margin-top: 2px;
+    }
+
+    /* 导演和演员信息样式 */
+    .modal-credits {
+        margin-top: 20px;
+    }
+
+    .credits-section h5 {
+        margin-bottom: 15px;
+    }
+
+    .persons-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+    }
+
+    .person-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 70px; /* 稍微减小宽度 */
+        text-align: center;
+    }
+
+    .person-image {
+        width: 50px; /* 减小头像尺寸 */
+        height: 50px;
+        border-radius: 50%;
+        overflow: hidden;
+        margin-bottom: 8px;
+    }
+
+    .person-image img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .person-info {
+        font-size: 0.7rem; /* 减小整体字体大小 */
+        width: 100%;
+    }
+
+    .person-name {
+        font-weight: 600;
+        margin-bottom: 3px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        width: 100%;
+        font-size: 0.75rem; /* 调整名字字体大小 */
+    }
+
+    .person-role {
+        color: #666;
+        font-size: 0.65rem; /* 调整角色字体大小 */
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        width: 100%;
+    }
+
+    /* 小屏幕设备适配 */
+    @media (max-width: 768px) {
+        .person-card {
+            width: 60px;
         }
         
-        /* 进度条样式 */
-        .progress-bar {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 0%;
-            height: 100%;
-            background: #adb5bd; /* 进度条颜色 */
-            transition: width 0.3s linear; /* 平滑过渡效果 */
-        }
-
-        /* Carousel 容器样式 */
-        .carousel-container {
-            position: relative;
-            overflow: hidden;
-            white-space: nowrap; /* 防止内容换行 */
-        }
-
-        /* 滚动列表样式 */
-        .movie-list, .tv-list {
-            white-space: nowrap;
-            overflow-x: auto;
-            scroll-behavior: smooth;
-            padding: 8px; /* 内边距 */
-        }
-
-        /* 隐藏滚动条 */
-        .movie-list::-webkit-scrollbar, .tv-list::-webkit-scrollbar {
-            display: none;
-        }
-
-        /* 箭头按钮样式 */
-        .carousel-arrow {
-            position: absolute;
-            top: 50%;
-            transform: translateY(-50%);
-            color: rgba(0, 0, 0, 0.5);
-            border: none;
-            font-size: 30px;
-            cursor: pointer;
-            z-index: 10;
-        }
-
-        .carousel-arrow.prev {
-            left: 0px;
-            width: 40px; 
-            height: 100%;
-            background: linear-gradient(to right, #f9f9f9, rgba(249, 249, 249, 0)); /* 从浅灰色到透明 */
+        .person-image {
+            width: 45px;
+            height: 45px;
         }
         
-        .carousel-arrow.next {
-            right: 0px;
-            width: 40px;
-            height: 100%;
-            background: linear-gradient(to left, #f9f9f9, rgba(249, 249, 249, 0)); /* 从浅灰色到透明 */
+        .person-info {
+            font-size: 0.65rem;
         }
         
-        .carousel-arrow:hover {
-            font-size: 35px;
+        .person-name {
+            font-size: 0.7rem;
         }
-
-        /* 推荐列表样式 */
-        .movie-item, .tv-item {
-            display: inline-block; /* 确保水平排列 */
-            position: relative; /* 为评分和标题定位 */
-            width: 150px; /* 固定宽度 */
-            height: 225px; /* 固定高度 */
-            margin-right: 20px; /* 项目之间的间距 */
-            border-radius: 10px; /* 圆角效果 */
-            overflow: hidden; /* 隐藏溢出内容 */
-            background: #f0f0f0; /* 默认背景色 */
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* 浅色阴影 */
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        
+        .person-role {
+            font-size: 0.55rem;
         }
-    
-        .movie-item:hover, .tv-item:hover {
-            transform: scale(1.05); /* 鼠标悬停放大效果 */
-            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.2); /* 稍深的阴影 */
-        }
-    
-        .movie-item img, .tv-item img {
-            width: 100%; /* 图片宽度填充容器 */
-            height: 100%; /* 图片高度填充容器 */
-            object-fit: cover; /* 保持图片比例裁剪 */
-        }
-    
-        /* 评分显示在左上角 */
-        .movie-item .rating, .tv-item .rating, .banner-item .rating {
-            position: absolute;
-            top: 5px;
-            left: 5px; /* 左上角 */
-            background: rgba(0, 0, 0, 0.7); /* 半透明黑色背景 */
-            color: #fff; /* 白色文字 */
-            font-size: 14px;
-            border-radius: 5px; /* 圆角效果 */
-            display: block;
-        }
-    
-        /* 标题样式 */
-        .movie-item .title, .tv-item .title {
-            position: absolute;
-            bottom: 0;
-            width: 100%;
-            background: rgba(0, 0, 0, 0.7); /* 半透明黑灰色背景 */
-            color: #fff; /* 白色文字 */
-            font-size: 14px;
-            text-align: center;
-            padding: 5px 0;
-            box-sizing: border-box;
-        }
-
-        button.bi.bi-bookmark-star-fill {
-            color: #495057;
-            border: none;
-            margin: 5px 0;
-            font-size: 0.8em;
-            padding-left: 0;
-            background-color: unset;
-        }
-
-        button.bi.bi-search {
-            color: rgb(25, 135, 84);
-            border: none;
-            margin: 5px 0;
-            font-size: 0.8em;
-            padding-left: 0;
-            background-color: unset;
-        }
-
-        .search {
-            width: 100%;
-            max-width: 600px;
-            margin: 0 auto 0 auto;
-            display: flex;
-            justify-content: center;
-        }
-        .search form {
-            width: 100%;
-            display: flex;
+        
+        .persons-list {
             gap: 10px;
         }
-        .inner_search_wrapper {
-            flex: 1;
-        }
-        .k-input-inner {
-            width: 100%;
-            padding: 8px 12px;
-            border-radius: 30px;
-            border: 1px solid transparent;
-            font-size: 16px;
-            background-origin: border-box;
-            background-clip: padding-box, border-box;
-            background-image: linear-gradient(#fff, #fff), linear-gradient(to right,rgba(30,213,169,1) 0%,rgba(1,180,228,1) 100%);
-            /* 第一层白色，第二层为渐变边框 */
-        }
-        /* 保持输入时边框颜色不变 */
-        .k-input-inner:focus {
-            border-color: rgba(1,180,228,1);
-            outline: none;
-        }
-        .k-button {
-            padding: 8px 20px;
-            border-radius: 30px;
-            background: linear-gradient(to right,rgba(30,213,169,1) 0%,rgba(1,180,228,1) 100%);
-            color: #fff;
-            border: none;
-            font-size: 16px;
-            cursor: pointer;
-        }
-        .k-button:hover {
-            color: rgba(3,37,65);
-        }
-        .search-results-section {
-            margin-top: 30px;
-        }
-        .search-list {
-            display: grid;
-            grid-template-columns: repeat(6, 1fr);
-            gap: 20px 20px;
-            padding: 8px;
-            overflow-x: auto;
-            overflow-y: visible;
-            scroll-behavior: smooth;
-        }
-        .search-list::-webkit-scrollbar {
-            display: none;
-        }
-        .search-item {
-            display: inline-block;
-            position: relative;
-            width: 150px;
-            height: 225px;
-            margin-right: 20px;
-            border-radius: 10px;
-            overflow: hidden;
-            background: #f0f0f0;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            transition: transform 0.3s, box-shadow 0.3s;
-            vertical-align: top;
-        }
-        .search-item:hover {
-            transform: scale(1.05);
-            box-shadow: 0 6px 10px rgba(0,0,0,0.2);
-        }
-        .search-item img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-        .search-item .rating {
-            position: absolute;
-            top: 5px;
-            left: 5px;
-            background: rgba(0,0,0,0.7);
-            color: #fff;
-            font-size: 14px;
-            border-radius: 5px;
-            display: block;
-            padding: 2px 6px;
-        }
-        .search-item .title {
-            position: absolute;
-            bottom: 0;
-            width: 100%;
-            background: rgba(0,0,0,0.7);
-            color: #fff;
-            font-size: 14px;
-            text-align: center;
-            padding: 5px 0;
-            box-sizing: border-box;
-        }
-        @media (max-width: 1200px) {
-            .search-list {
-                grid-template-columns: repeat(4, 1fr);
-            }
-        }
-        @media (max-width: 768px) {
-            .search-list {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
-        /* 响应式设计 */
-        @media (max-width: 768px) {
-            .movie-item, .tv-item {
-                width: 150px; /* 在小屏幕上适当缩小宽度 */
-            }
+    }
 
-            .banner {
-                height: 300px; /* 减小高度 */
-            }
-
-            .banner-item {
-                padding: 10px; /* 减小内边距 */
-            }
-
-            .banner-item p.title {
-                font-size: 20px; /* 减小标题字体 */
-            }
-
-            .banner-item p.overview {
-                font-size: 14px; /* 减小简介字体 */
-            }
-            .modal-header {
-                flex-direction: column;
-            }
-        }
-
-        /* 加载动画 */
-        .loading {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(255, 255, 255, 0.9); /* 浅色背景 */
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-        }
-
-        .loading span {
-            font-size: 24px;
-            color: #333333; /* 深灰色文字 */
-            animation: blink 1s infinite;
-        }
-
-        .api-error {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            text-align: center;
-            padding: 50px 20px;
-            color: #dc3545;
-            font-size: clamp(12px, 1.2vw, 16px);
-            font-weight: bold;
-            width: 100%;
-            max-width: 600px;
-            background: rgba(255, 255, 255, 0.9);
-            z-index: 20;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            border-radius: 10px;
-        }
-
-        @keyframes blink {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        /* 季选择模态框样式 */
-        .season-selection {
-            max-height: 300px;
-            overflow-y: auto;
+    @media (max-width: 576px) {
+        .person-card {
+            width: 55px; /* 进一步减小宽度 */
         }
         
-        .season-selection .form-check {
-            margin-top: 10px;
-            margin-left: 10px;
-            border-bottom: 1px solid #eee;
+        .person-image {
+            width: 40px;
+            height: 40px;
         }
         
-        .season-selection .form-check:last-child {
-            border-bottom: none;
+        .person-info {
+            font-size: 0.6rem;
         }
         
-        .season-selection .form-check-input {
-            margin-top: 2px;
+        .person-name {
+            font-size: 0.65rem;
         }
-
-    </style>
+        
+        .person-role {
+            font-size: 0.5rem;
+        }
+        
+        .persons-list {
+            gap: 8px;
+        }
+    }
+</style>
 <main class="container mt-4">
     <div class="row fade-in">
         <!-- 加载动画 -->
@@ -515,7 +630,7 @@
         
         <!-- Modal -->
         <div id="mediaDetailsModal" class="modal fade" tabindex="-1" aria-labelledby="InfoCardLabel">
-            <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-dialog modal-dialog-centered modal-xl">
                 <div class="modal-content">
                     <div class="InfoCard-header d-flex justify-content-between align-items-center">
                         <h5 class="InfoCard-title" id="InfoCardLabel">影片简介</h5>
@@ -528,7 +643,7 @@
                             </div>
                             <div class="modal-details">
                                 <div class="d-flex align-items-center justify-content-between">
-                                    <h3 id="modalTitle" class="me-3"></h3> <!-- 标题 -->
+                                    <h3 id="modalTitle" class="me-3" style="font-weight: 600;"></h3> <!-- 标题 -->
                                 </div>
                                 <!-- 按钮位置调整 -->
                                 <div class="d-flex">
@@ -536,12 +651,15 @@
                                     <button type="button" class="bi bi-search" id="searchResourceButton">资源搜索</button>
                                 </div>
                                 <p id="modalRating" class="text-muted"></p> <!-- 评分 -->
+                                <p id="modalGenres"></p> <!-- 新增：类型信息 -->
                                 <p id="modalSeasons" style="display: none;"></p> <!-- 季数 -->
                                 <p id="modalEpisodeCount" style="display: none;"></p> <!-- 集数 -->
                                 <p id="modalYear"></p> <!-- 发行年份 -->
                                 <p id="modalOverview"></p> <!-- 剧情简介 -->
                             </div>
                         </div>
+                        <!-- 新增：导演和演员信息区域 -->
+                        <div class="modal-credits mt-3"></div>
                     </div>
                 </div>
             </div>
@@ -1247,7 +1365,7 @@
         }, 2000);
     }
 
-    // 详情模态框，优先显示默认图片，加载成功后再显示 TMDB 图片
+    // 详情模态框，优先显示默认图片，加载成功后再显示 TMDB 图片，添加类型、导演和演员信息
     function showMovieDetails(tmdbId, mediaType) {
         fetchMovieDetails(tmdbId, mediaType, tmdbApiKey).then(movieDetails => {
             if (movieDetails) {
@@ -1271,6 +1389,10 @@
                 document.getElementById('modalRating').textContent = movieDetails.vote_average 
                     ? `评分: ${movieDetails.vote_average.toFixed(1)}` 
                     : '评分: 暂无';
+
+                // 新增：填充类型信息
+                const genres = movieDetails.genres ? movieDetails.genres.map(g => g.name).join(', ') : '未知类型';
+                document.getElementById('modalGenres').textContent = `类型: ${genres}`;
 
                 // 根据 mediaType 动态显示内容
                 if (mediaType === 'movie') {
@@ -1297,6 +1419,9 @@
                 }
 
                 document.getElementById('modalOverview').textContent = movieDetails.overview || '暂无简介';
+
+                // 新增：获取并显示导演和演员信息
+                fetchAdditionalDetails(tmdbId, mediaType, tmdbApiKey);
 
                 // 设置订阅按钮的点击事件
                 const subscribeButton = document.getElementById('subscribeButton');
@@ -1399,7 +1524,7 @@
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
-                        },
+                            },
                         body: JSON.stringify(subscriptionData),
                     })
                     .then(response => response.json())
@@ -1480,6 +1605,124 @@
         }).catch(error => {
             console.error('获取影片详细信息时出错:', error);
         });
+    }
+
+    // 新增：获取额外的详细信息（类型、导演、演员）
+    function fetchAdditionalDetails(tmdbId, mediaType, apiKey) {
+        const url = `https://api.tmdb.org/3/${mediaType}/${tmdbId}?api_key=${apiKey}&language=zh-CN&append_to_response=credits`;
+        
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                // 显示导演和演员信息
+                displayCreditsInfo(data.credits);
+            })
+            .catch(error => {
+                console.error('获取额外详情信息时出错:', error);
+            });
+    }
+
+    // 新增：显示导演和演员信息
+    function displayCreditsInfo(credits) {
+        const creditsContainer = document.querySelector('.modal-credits');
+        creditsContainer.innerHTML = ''; // 清空之前的内容
+        
+        if (!credits) return;
+        
+        // 获取导演信息
+        const directors = credits.crew ? credits.crew.filter(person => person.job === "Director") : [];
+        
+        // 获取主要演员信息（按知名度排序，取前6个）
+        const mainCast = credits.cast ? 
+            credits.cast
+                .sort((a, b) => b.popularity - a.popularity)
+                .slice(0, 6) : [];
+        
+        let creditsHtml = '';
+        
+        // 添加导演信息
+        if (directors.length > 0) {
+            creditsHtml += `
+                <div class="credits-section mt-3">
+                    <h5>导演</h5>
+                    <div class="persons-list d-flex flex-wrap gap-3">
+            `;
+            
+            directors.forEach(director => {
+                // 处理过长的名字
+                const displayName = director.name.length > 10 ? 
+                    director.name.substring(0, 10) + '...' : director.name;
+                    
+                const displayRole = (director.job || '导演').length > 10 ? 
+                    (director.job || '导演').substring(0, 10) + '...' : (director.job || '导演');
+                
+                const profileUrl = director.profile_path ? 
+                    `https://image.tmdb.org/t/p/w185${director.profile_path}` : 
+                    '/static/img/avatar.png';
+                    
+                creditsHtml += `
+                    <div class="person-card text-center">
+                        <div class="person-image mx-auto mb-2">
+                            <img src="${profileUrl}" alt="${director.name}" class="rounded-circle" 
+                                style="width: 50px; height: 50px; object-fit: cover;"
+                                onerror="this.src='/static/img/avatar.png'">
+                        </div>
+                        <div class="person-info">
+                            <div class="person-name fw-bold" title="${director.name}">${displayName}</div>
+                            <div class="person-role text-muted small" title="${director.job || '导演'}">${displayRole}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            creditsHtml += `
+                    </div>
+                </div>
+            `;
+        }
+        
+        // 添加演员信息
+        if (mainCast.length > 0) {
+            creditsHtml += `
+                <div class="credits-section mt-3">
+                    <h5>主要演员</h5>
+                    <div class="persons-list d-flex flex-wrap gap-3">
+            `;
+            
+            mainCast.forEach(person => {
+                // 处理过长的名字
+                const displayName = person.name.length > 10 ? 
+                    person.name.substring(0, 10) + '...' : person.name;
+                    
+                const characterName = (person.character || '演员').length > 10 ? 
+                    (person.character || '演员').substring(0, 10) + '...' : (person.character || '演员');
+                
+                const profileUrl = person.profile_path ? 
+                    `https://image.tmdb.org/t/p/w185${person.profile_path}` : 
+                    '/static/img/avatar.png';
+                    
+                creditsHtml += `
+                    <div class="person-card text-center">
+                        <div class="person-image mx-auto mb-2">
+                            <img src="${profileUrl}" alt="${person.name}" class="rounded-circle" 
+                                style="width: 50px; height: 50px; object-fit: cover;"
+                                onerror="this.src='/static/img/avatar.png'">
+                        </div>
+                        <div class="person-info">
+                            <div class="person-name fw-bold" title="${person.name}">${displayName}</div>
+                            <div class="person-role text-muted small" title="${person.character || '演员'}">${characterName}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            creditsHtml += `
+                    </div>
+                </div>
+            `;
+        }
+        
+        creditsContainer.innerHTML = creditsHtml;
     }
 
     // 显示季搜索选择模态框
