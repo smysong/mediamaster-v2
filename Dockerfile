@@ -1,5 +1,4 @@
-# 使用 Alpine 最新版本作为基础镜像 
-FROM alpine:latest
+FROM --platform=$TARGETPLATFORM alpine:latest
 
 # 设置工作目录
 WORKDIR /app
@@ -12,8 +11,6 @@ RUN apk add --no-cache \
     python3 \
     python3-dev \
     py3-pip \
-    chromium \
-    chromium-chromedriver \
     tzdata \
     iproute2 \
     iputils \
@@ -25,6 +22,11 @@ RUN apk add --no-cache \
     gcc \
     musl-dev \
     linux-headers
+
+# 分开安装图形相关组件，避免在ARM64上的问题
+RUN apk add --no-cache \
+    chromium \
+    chromium-chromedriver
 
 # 设置时区为中国上海
 RUN cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
@@ -47,7 +49,6 @@ RUN git clone https://github.com/smysong/mediamaster-v2.git /app
 RUN python3 -m venv /app/venv
 
 # 激活虚拟环境并安装 Python 依赖
-# 在容器中永久设置 PATH 以优先使用虚拟环境中的 python 和 pip
 ENV VIRTUAL_ENV=/app/venv
 ENV PATH="/app/venv/bin:$PATH"
 
