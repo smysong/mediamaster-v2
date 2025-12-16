@@ -31,11 +31,26 @@ def load_config(db_path):
         exit(0)
 
 def subscribe_movies(cursor):
-    """订阅电影"""
-    cursor.execute('SELECT title, year, douban_id FROM RSS_MOVIES')
+    """订阅电影 - 根据状态决定是否订阅"""
+    cursor.execute('SELECT title, year, douban_id, status FROM RSS_MOVIES')
     rss_movies = cursor.fetchall()
 
-    for title, year, douban_id in rss_movies:
+    for title, year, douban_id, status in rss_movies:
+        # 如果状态是"看过"，则不应订阅，如果已在订阅中则应移除
+        if status == "看过":
+            # 检查是否在 MISS_MOVIES 中，如果在则移除
+            existing_in_miss = cursor.execute(
+                'SELECT 1 FROM MISS_MOVIES WHERE douban_id = ?', (douban_id,)
+            ).fetchone()
+            if existing_in_miss:
+                cursor.execute('DELETE FROM MISS_MOVIES WHERE douban_id = ?', (douban_id,))
+                logging.info(f"影片：{title}（{year}) 状态为'看过'，已从订阅列表中移除")
+                send_notification(f"影片：{title}（{year}) 状态为'看过'，已从订阅列表中移除")
+            else:
+                logging.info(f"影片：{title}（{year}) 状态为'看过'，未在订阅列表中")
+            continue
+        
+        # 对于"想看"和"在看"状态，执行原有订阅逻辑
         if not cursor.execute('SELECT 1 FROM LIB_MOVIES WHERE title = ? AND year = ?', (title, year)).fetchone():
             cursor.execute(
                 'INSERT OR IGNORE INTO MISS_MOVIES (title, year, douban_id) VALUES (?, ?, ?)',
@@ -50,11 +65,26 @@ def subscribe_movies(cursor):
             logging.info(f"影片：{title}（{year}) 已入库，无需下载订阅！")
 
 def subscribe_tvs(cursor):
-    """订阅电视剧 - 支持别名关联"""
-    cursor.execute('SELECT title, season, episode, year, douban_id FROM RSS_TVS')
+    """订阅电视剧 - 支持别名关联和状态检查"""
+    cursor.execute('SELECT title, season, episode, year, douban_id, status FROM RSS_TVS')
     rss_tvs = cursor.fetchall()
 
-    for title, season, total_episodes, year, douban_id in rss_tvs:
+    for title, season, total_episodes, year, douban_id, status in rss_tvs:
+        # 如果状态是"看过"，则不应订阅，如果已在订阅中则应移除
+        if status == "看过":
+            # 检查是否在 MISS_TVS 中，如果在则移除
+            existing_in_miss = cursor.execute(
+                'SELECT 1 FROM MISS_TVS WHERE douban_id = ?', (douban_id,)
+            ).fetchone()
+            if existing_in_miss:
+                cursor.execute('DELETE FROM MISS_TVS WHERE douban_id = ?', (douban_id,))
+                logging.info(f"电视剧：{title} 第{season}季 状态为'看过'，已从订阅列表中移除")
+                send_notification(f"电视剧：{title} 第{season}季 状态为'看过'，已从订阅列表中移除")
+            else:
+                logging.info(f"电视剧：{title} 第{season}季 状态为'看过'，未在订阅列表中")
+            continue
+            
+        # 对于"想看"和"在看"状态，继续处理
         if total_episodes is None:
             logging.warning(f"电视剧：{title} 第{season}季 缺少总集数信息，跳过处理！")
             continue

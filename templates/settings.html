@@ -921,7 +921,65 @@
                             </div>
                         </div>
                     </div>
-                                    
+
+                    <!-- tinyMediaManager 集成 -->
+                    <div class="col-12">
+                        <h5 class="section-title">TMM 集成</h5>
+                    </div>
+                    <div class="col-12">
+                        <div class="card shadow-sm">
+                            <div class="card-header text-white d-flex align-items-center">
+                                <i class="bi bi-tools me-2"></i>TMM 设置
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    {% for key, field in config['TMM设置'].items() %}
+                                    <div class="col-12">
+                                        <div class="mb-3 setting-item" id="form-group-{{ key }}">
+                                            {% if field.type == 'switch' %}
+                                            <div class="switch-container">
+                                                <label for="{{ key }}" class="form-label fw-medium">{{ field.label }}</label>
+                                                
+                                                <!-- 隐藏字段存储 ID -->
+                                                <input type="hidden" name="{{ key }}_id" value="{{ field.id }}">
+                                                
+                                                <label class="switch">
+                                                    <input type="checkbox" name="{{ key }}" id="{{ key }}" {% if field.value == 'True' %}checked{% endif %}>
+                                                    <span class="slider"></span>
+                                                </label>
+                                            </div>
+                                            {% else %}
+                                            <label for="{{ key }}" class="form-label fw-medium">{{ field.label }}</label>
+                                            
+                                            <!-- 隐藏字段存储 ID -->
+                                            <input type="hidden" name="{{ key }}_id" value="{{ field.id }}">
+                                            
+                                            {% if field.type == 'password' %}
+                                                <input type="password" class="form-control" name="{{ key }}" id="{{ key }}" value="{{ field.value }}">
+                                            {% else %}
+                                                <input type="text" class="form-control" name="{{ key }}" id="{{ key }}" value="{{ field.value }}">
+                                            {% endif %}
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                
+                                <div class="form-text">
+                                    <i class="bi bi-info-circle me-1"></i> 启用后，文件转移成功入库后会自动通知 TMM 进行刮削处理。（TMM需提前做好配置）
+                                </div>
+                                
+                                <!-- 添加TMM测试按钮 -->
+                                <div class="mt-3">
+                                    <button type="button" id="testTMMBtn" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-wifi"></i> 测试TMM连接
+                                    </button>
+                                    <span id="tmmTestResult" class="ms-2"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>     
+
                     <!-- TMDB & OCR 接口 -->
                     <div class="col-12">
                         <h5 class="section-title">外部接口</h5>
@@ -983,6 +1041,7 @@
                             </div>
                         </div>
                     </div>
+
                 </div>
             </form>
         </div>
@@ -1192,6 +1251,23 @@
             });
         }
 
+        // tinyMediaManager 集成开关控制显示/隐藏
+        function toggleTMMFields() {
+            var tmmEnabled = $('#tmm_enabled').is(':checked');
+            if (tmmEnabled) {
+                $('#form-group-tmm_api_url').show();
+                $('#form-group-tmm_api_key').show();
+                $('#testTMMBtn').parent().show();
+            } else {
+                $('#form-group-tmm_api_url').hide();
+                $('#form-group-tmm_api_key').hide();
+                $('#testTMMBtn').parent().hide();
+            }
+        }
+
+        // 绑定 tinyMediaManager 开关事件
+        $('#tmm_enabled').on('change', toggleTMMFields);
+
         // 绑定下拉框事件
         $('#download_type').on('change', toggleDownloaderFields);
         $('#download_mgmt').on('change', toggleDownloaderFields);
@@ -1202,6 +1278,7 @@
         // 页面加载时初始化
         toggleDownloaderFields();
         toggleScrapeFields();
+        toggleTMMFields();
 
         // 获取 Flask 传递的闪现消息
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -1219,7 +1296,47 @@
             {% endif %}
         {% endwith %}
 
-        // 添加测试下载器连接功能
+        // 测试TMM连接功能
+        $('#testTMMBtn').on('click', function() {
+            var tmmEnabled = $('#tmm_enabled').is(':checked');
+            var tmmApiUrl = $('#tmm_api_url').val();
+            var tmmApiKey = $('#tmm_api_key').val();
+            
+            if (!tmmEnabled) {
+                $('#tmmTestResult').html('<span class="text-warning"><i class="bi bi-exclamation-triangle"></i> TMM功能未启用</span>');
+                return;
+            }
+            
+            if (!tmmApiUrl || !tmmApiKey) {
+                $('#tmmTestResult').html('<span class="text-danger"><i class="bi bi-exclamation-circle"></i> 请填写TMM API URL和API Key</span>');
+                return;
+            }
+            
+            $('#tmmTestResult').html('<span class="text-info"><i class="bi bi-arrow-repeat"></i> 测试中...</span>');
+            
+            // 发送测试请求到后端
+            $.ajax({
+                url: '/test_tmm_connection',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    tmm_api_url: tmmApiUrl,
+                    tmm_api_key: tmmApiKey
+                }),
+                success: function(response) {
+                    if (response.success) {
+                        $('#tmmTestResult').html('<span class="text-success"><i class="bi bi-check-circle"></i> 连接成功！</span>');
+                    } else {
+                        $('#tmmTestResult').html('<span class="text-danger"><i class="bi bi-x-circle"></i> 连接失败：' + response.message + '</span>');
+                    }
+                },
+                error: function(xhr, status, error) {
+                    $('#tmmTestResult').html('<span class="text-danger"><i class="bi bi-x-circle"></i> 测试请求失败：' + error + '</span>');
+                }
+            });
+        });
+
+        // 测试下载器连接功能
         $('#testDownloaderBtn').on('click', function() {
             var downloader = $('#download_type').val();
             var host = $('#download_host').val();

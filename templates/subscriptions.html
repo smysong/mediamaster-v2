@@ -32,6 +32,32 @@
     max-width: 170px;
 }
 
+.status-badge {
+    font-size: 0.7rem;
+    padding: 0.25em 0.4em;
+}
+
+/* 修改：卡片右上角定位 */
+.card-status-badge {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    z-index: 10;
+}
+
+/* 新增：自定义状态颜色 */
+.want-status {
+    background-color: #23a2df !important;
+}
+
+.watching-status {
+    background-color: #44b549 !important;
+}
+
+.watched-status {
+    background-color: #6c757d !important;
+}
+
 @media (min-width: 768px) {
     .missing-episodes-badge {
         max-width: 700px;
@@ -286,7 +312,7 @@
     <div class="modal-dialog modal-xl">
         <div class="modal-content border-0 shadow-lg">
             <div class="modal-header">
-                <h5 class="modal-title" id="doubanSubscriptionsModalLabel">豆瓣想看/在看项目</h5>
+                <h5 class="modal-title" id="doubanSubscriptionsModalLabel">豆瓣兴趣</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-0">
@@ -1351,10 +1377,17 @@
                         const year = movie.YEAR || movie.year || '';
                         const doubanId = movie.DOUBAN_ID || movie.douban_id || '';
                         const url = movie.URL || movie.url || '#';
+                        // 获取状态并设置相应的徽章样式
+                        const status = movie.STATUS || movie.status || '想看';
+                        let statusClass = 'want-status'; // 默认蓝色(想看)
+                        if (status === '在看') statusClass = 'watching-status';
+                        if (status === '看过') statusClass = 'watched-status';
                         
                         html += `
                             <div class="col-lg-6 col-xl-4 mb-4">
                                 <div class="card h-100 border-0 shadow-sm hover-lift">
+                                    <!-- 状态徽章放在卡片右上角 -->
+                                    <span class="badge ${statusClass} text-white card-status-badge status-badge">${status}</span>
                                     <div class="card-body d-flex flex-column">
                                         <h6 class="card-title mb-1 text-truncate" title="${title}">
                                             <a href="${url}" target="_blank" class="text-decoration-none text-dark">${title}</a>
@@ -1375,7 +1408,7 @@
                     html += `
                         <div class="text-center py-5">
                             <i class="bi bi-film text-muted" style="font-size: 3rem;"></i>
-                            <p class="mt-3 text-muted">目前没有想看/在看的影片</p>
+                            <p class="mt-3 text-muted">目前没有影片数据</p>
                         </div>
                     `;
                 }
@@ -1401,10 +1434,17 @@
                         const episode = tv.EPISODE || tv.episode || '';
                         const doubanId = tv.DOUBAN_ID || tv.douban_id || '';
                         const url = tv.URL || tv.url || '#';
+                        // 获取状态并设置相应的徽章样式
+                        const status = tv.STATUS || tv.status || '想看';
+                        let statusClass = 'want-status'; // 默认蓝色(想看)
+                        if (status === '在看') statusClass = 'watching-status';
+                        if (status === '看过') statusClass = 'watched-status';
                         
                         html += `
                             <div class="col-lg-6 col-xl-4 mb-4">
                                 <div class="card h-100 border-0 shadow-sm hover-lift">
+                                    <!-- 状态徽章放在卡片右上角 -->
+                                    <span class="badge ${statusClass} text-white card-status-badge status-badge">${status}</span>
                                     <div class="card-body d-flex flex-column">
                                         <h6 class="card-title mb-1 text-truncate" title="${title}">
                                             <a href="${url}" target="_blank" class="text-decoration-none text-dark">${title}</a>
@@ -1431,7 +1471,7 @@
                     html += `
                         <div class="text-center py-5">
                             <i class="bi bi-tv text-muted" style="font-size: 3rem;"></i>
-                            <p class="mt-3 text-muted">目前没有想看/在看的剧集</p>
+                            <p class="mt-3 text-muted">目前没有剧集数据</p>
                         </div>
                     `;
                 }

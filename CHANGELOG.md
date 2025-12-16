@@ -2,6 +2,23 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.5.17] - 2025-12-16
+
+#### 订阅服务
+- 优化豆瓣兴趣，支持同步豆瓣标记状态到本地。（想看、在看、看过）
+- 优化订阅检查逻辑，豆瓣标记“看过”后，程序支持自动删除正在订阅列表中的订阅记录。
+
+#### 站点检测
+- 优化站点检测服务，添加超时机制避免某些情况下检测状态异常导致检测程序长时间运行无法正常结束的问题。
+
+#### 下载转移
+- 文件重命名模板增加{title_en}英文标题变量。
+- 新增TMM API接口调用，可以在文件转移入库后通知TMM进行刮削。（需提前配置好TMM配置项）
+
+#### WEB服务
+- 优化正在订阅功能后端WEB服务。
+- 优化部分页面UI。
+
 ## [2.5.16] - 2025-12-01
 
 ### ⚠️ 重要提示
@@ -852,3 +869,4 @@
 [2.5.14]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.14
 [2.5.15]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.15
 [2.5.16]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.16
+[2.5.17]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.17

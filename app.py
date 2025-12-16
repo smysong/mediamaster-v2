@@ -1083,18 +1083,40 @@ def delete_subscription(type, id):
 @app.route('/douban_subscriptions_json')
 @login_required
 def douban_subscriptions_json():
-    db = get_db()
-    rss_movies = db.execute('SELECT * FROM RSS_MOVIES').fetchall()
-    rss_tvs = db.execute('SELECT * FROM RSS_TVS').fetchall()
-    
-    # 将Row对象转换为字典列表
-    rss_movies_dict = [dict(row) for row in rss_movies]
-    rss_tvs_dict = [dict(row) for row in rss_tvs]
-    
-    return jsonify({
-        "rss_movies": rss_movies_dict,
-        "rss_tvs": rss_tvs_dict
-    })
+    """
+    以JSON格式返回豆瓣订阅数据，供前端调用
+    """
+    try:
+        db = get_db()
+        
+        # 获取电影订阅数据
+        rss_movies = db.execute('SELECT * FROM RSS_MOVIES').fetchall()
+        # 获取电视剧订阅数据
+        rss_tvs = db.execute('SELECT * FROM RSS_TVS').fetchall()
+        
+        # 转换为字典列表并添加状态字段
+        movies_data = []
+        for movie in rss_movies:
+            movie_dict = dict(movie)
+            # 确保包含 STATUS 字段，默认为 "想看"
+            movie_dict['STATUS'] = movie_dict.get('STATUS', '想看')
+            movies_data.append(movie_dict)
+            
+        tvs_data = []
+        for tv in rss_tvs:
+            tv_dict = dict(tv)
+            # 确保包含 STATUS 字段，默认为 "想看"
+            tv_dict['STATUS'] = tv_dict.get('STATUS', '想看')
+            tvs_data.append(tv_dict)
+        
+        # 返回JSON响应
+        return jsonify({
+            "rss_movies": movies_data,
+            "rss_tvs": tvs_data
+        })
+    except Exception as e:
+        logger.error(f"获取豆瓣订阅数据失败: {e}")
+        return jsonify({"error": "获取数据失败"}), 500
 
 # 获取剧集关联列表的JSON接口
 @app.route('/tv_alias_list_json')
@@ -1800,6 +1822,11 @@ GROUP_MAPPING = {
     "OCR接口": {
         "ocr_api_key": {"type": "password", "label": "OCR API密钥"}
     },
+    "TMM设置": {
+    "tmm_enabled": {"type": "switch", "label": "启用 TMM 集成"},
+    "tmm_api_url": {"type": "text", "label": "TMM API 地址"},
+    "tmm_api_key": {"type": "password", "label": "TMM API 密钥"}
+    },
     "下载器管理": {
         "download_mgmt": {"type": "switch", "label": "下载器管理"},
         "download_type": {"type": "downloader", "label": "下载器", "options": ["transmission", "qbittorrent", "xunlei"]},
@@ -2424,6 +2451,82 @@ def test_downloader_connection():
     except Exception as e:
         logger.error(f"下载器连接测试失败: {e}")
         return jsonify({"success": False, "message": str(e)}), 200
+
+@app.route('/test_tmm_connection', methods=['POST'])
+@login_required
+def test_tmm_connection():
+    """
+    测试TMM连接功能
+    """
+    try:
+        data = request.json
+        tmm_api_url = data.get('tmm_api_url')
+        tmm_api_key = data.get('tmm_api_key')
+        
+        if not tmm_api_url or not tmm_api_key:
+            return jsonify({"success": False, "message": "缺少必要的参数"}), 400
+            
+        # 确保URL以/结尾
+        if not tmm_api_url.endswith('/'):
+            tmm_api_url += '/'
+            
+        # 使用电影API端点进行测试
+        test_url = f"{tmm_api_url}api/movies"
+        
+        # 准备测试数据，使用minimal操作以减少资源消耗
+        test_payload = [
+            {"action": "update", "scope": {"name": "all"}}
+        ]
+        
+        # 发送请求测试连接
+        headers = {
+            'Content-Type': 'application/json',
+            'api-key': tmm_api_key
+        }
+        
+        # 发送POST请求测试连接
+        response = requests.post(test_url, json=test_payload, headers=headers, timeout=10)
+        
+        # 检查响应状态码来判断连接是否成功
+        if response.status_code in [200, 202, 204]:
+            return jsonify({
+                "success": True, 
+                "message": "连接成功"
+            })
+        elif response.status_code == 401:
+            return jsonify({
+                "success": False, 
+                "message": "认证失败，请检查API密钥是否正确"
+            }), 400
+        elif response.status_code == 404:
+            return jsonify({
+                "success": False, 
+                "message": "API端点未找到，请检查TMM API地址是否正确"
+            }), 400
+        else:
+            # 返回详细错误信息帮助调试
+            error_detail = response.text if response.text else f"HTTP状态码: {response.status_code}"
+            return jsonify({
+                "success": False, 
+                "message": f"连接失败: {error_detail}"
+            }), 400
+            
+    except requests.exceptions.Timeout:
+        return jsonify({
+            "success": False, 
+            "message": "连接超时，请检查网络和URL配置"
+        }), 400
+    except requests.exceptions.ConnectionError:
+        return jsonify({
+            "success": False, 
+            "message": "连接错误，请检查URL配置和网络连接"
+        }), 400
+    except Exception as e:
+        logger.error(f"TMM连接测试失败: {e}")
+        return jsonify({
+            "success": False, 
+            "message": f"测试过程中发生错误: {str(e)}"
+        }), 500
 
 def compare_versions(current, latest):
     """比较版本号，返回是否需要更新"""

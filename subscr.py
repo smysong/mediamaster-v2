@@ -118,13 +118,17 @@ class DouBanRSSParser:
                     douban_id = int(douban_id)  # 将豆瓣ID转换为int类型
 
                     # 检查项目状态：想看、在看、看过
+                    status = "想看"  # 默认状态
                     if title.startswith('看过'):
-                        logging.info(f"跳过已看过的项目: {title}（豆瓣ID: {douban_id}）")
-                        continue
+                        status = "看过"
+                        # 移除标题开头的"看过"
+                        title = title.replace('看过', '', 1)
                     elif title.startswith('想看'):
+                        status = "想看"
                         # 移除标题开头的"想看"
                         title = title.replace('想看', '', 1)
                     elif title.startswith('在看'):
+                        status = "在看"
                         # 移除标题开头的"在看"
                         title = title.replace('在看', '', 1)
                     else:
@@ -134,13 +138,13 @@ class DouBanRSSParser:
                     # 检查是否已经处理过这个豆瓣ID，避免重复
                     if douban_id not in seen_douban_ids:
                         seen_douban_ids.add(douban_id)
-                        all_parsed_items.append((title, douban_id))
+                        all_parsed_items.append((title, douban_id, status))
                     else:
-                        logging.info(f"多用户重复想看/在看: {title}（豆瓣ID: {douban_id}）将忽略并保留一份有效订阅")
+                        logging.info(f"多用户重复{status}: {title}（豆瓣ID: {douban_id}）将忽略并保留一份有效订阅")
                         
-                logging.info("成功解析豆瓣兴趣中的想看/在看项目")
+                logging.info("成功解析豆瓣兴趣项目")
             except ET.ParseError as e:
-                logging.error(f"解析豆瓣兴趣中的想看/在看项目时发生错误: {e}")
+                logging.error(f"解析豆瓣兴趣项目时发生错误: {e}")
         
         return all_parsed_items
 
@@ -152,10 +156,10 @@ class DouBanRSSParser:
         existing_tv_ids = {int(row[0]) for row in cursor.fetchall()}  # 将豆瓣ID转换为整数类型
         return existing_movie_ids.union(existing_tv_ids)
 
-    def fetch_movie_details(self, title, douban_id):
+    def fetch_movie_details(self, title, douban_id, status):
         # 去除常见标点符号和空白符
         cleaned_title = re.sub(r'[：:.，,！!？?“”‘’"\'（）()【】\[\]「」{}《》<>\u00B7\u2027]', '', title)
-        logging.info(f"正在获取标题为 {cleaned_title} 的详细信息，豆瓣ID: {douban_id}")
+        logging.info(f"正在获取标题为 {cleaned_title} 的详细信息，豆瓣ID: {douban_id}，状态: {status}")
         api_url = f'https://movie.douban.com/j/subject_suggest?q={cleaned_title}'
         try:
             response = requests.get(api_url, headers=self.pcheaders, timeout=10)
@@ -205,7 +209,8 @@ class DouBanRSSParser:
                                 'url': url,
                                 'sub_title': sub_title,
                                 'media_type': media_type,
-                                'season': season
+                                'season': season,
+                                'status': status  # 添加状态信息
                             }
                     logging.warning(f"未找到豆瓣ID为 {douban_id} 的信息")
                     return None
@@ -223,15 +228,18 @@ class DouBanRSSParser:
         cursor = self.db_connection.cursor()
         try:
             if movie_details['media_type'] == '电影':
-                cursor.execute('''INSERT INTO RSS_MOVIES (title, douban_id, year, url, sub_title)
-                                VALUES (?, ?, ?, ?, ?)''',
-                            (movie_details['title'], movie_details['douban_id'], movie_details['year'], movie_details['url'], movie_details['sub_title']))
+                cursor.execute('''INSERT INTO RSS_MOVIES (title, douban_id, year, url, sub_title, status)
+                                VALUES (?, ?, ?, ?, ?, ?)''',
+                            (movie_details['title'], movie_details['douban_id'], movie_details['year'], 
+                             movie_details['url'], movie_details['sub_title'], movie_details['status']))
             elif movie_details['media_type'] == '电视剧':
-                cursor.execute('''INSERT INTO RSS_TVS (title, douban_id, episode, year, url, sub_title, season)
-                                VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                            (movie_details['title'], movie_details['douban_id'], movie_details['episode'], movie_details['year'], movie_details['url'], movie_details['sub_title'], movie_details['season']))
+                cursor.execute('''INSERT INTO RSS_TVS (title, douban_id, episode, year, url, sub_title, season, status)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                            (movie_details['title'], movie_details['douban_id'], movie_details['episode'], 
+                             movie_details['year'], movie_details['url'], movie_details['sub_title'], 
+                             movie_details['season'], movie_details['status']))
             self.db_connection.commit()
-            logging.info(f"成功插入 {movie_details['title']} 到数据库")
+            logging.info(f"成功插入 {movie_details['title']} 到数据库，状态: {movie_details['status']}")
             logging.info("-" * 80)
         except sqlite3.IntegrityError:
             logging.warning(f"已存在相同的豆瓣ID {movie_details['douban_id']}，跳过插入")
@@ -391,18 +399,30 @@ class DouBanRSSParser:
             if items:
                 # 获取数据库中已存在的豆瓣ID
                 existing_douban_ids = self.fetch_existing_douban_ids()
-                new_douban_ids = {douban_id for _, douban_id in items}
+                new_douban_ids = {douban_id for _, douban_id, _ in items}
                 # 删除数据库中不在新RSS数据中的过时数据
                 self.delete_old_data(existing_douban_ids, new_douban_ids)
 
-                logging.info("开始处理豆瓣兴趣中的所有想看/在看项目")
-                for title, douban_id in items:
+                logging.info("开始处理豆瓣兴趣中的所有项目")
+                for title, douban_id, status in items:
                     # 检查数据库中是否已存在相同的豆瓣ID
                     if douban_id in existing_douban_ids:
-                        logging.info(f"跳过已存在的项目: 豆瓣ID {douban_id}")
+                        # 更新现有条目的状态
+                        cursor = self.db_connection.cursor()
+                        # 检查是电影还是电视剧
+                        cursor.execute('SELECT COUNT(*) FROM RSS_MOVIES WHERE douban_id = ?', (douban_id,))
+                        is_movie = cursor.fetchone()[0] > 0
+                        
+                        if is_movie:
+                            cursor.execute('UPDATE RSS_MOVIES SET status = ? WHERE douban_id = ?', (status, douban_id))
+                        else:
+                            cursor.execute('UPDATE RSS_TVS SET status = ? WHERE douban_id = ?', (status, douban_id))
+                        
+                        self.db_connection.commit()
+                        logging.info(f"更新了豆瓣ID {douban_id} 的状态为: {status}")
                         continue
 
-                    movie_details = self.fetch_movie_details(title, douban_id)  # 使用标题和豆瓣ID获取详细信息
+                    movie_details = self.fetch_movie_details(title, douban_id, status)  # 使用标题、豆瓣ID和状态获取详细信息
                     if movie_details:
                         logging.info("-" * 80)
                         logging.info(f"处理项目: {movie_details['title']}")
@@ -411,6 +431,7 @@ class DouBanRSSParser:
                         logging.info(f"集数: {movie_details['episode']}")
                         logging.info(f"年份: {movie_details['year']}")
                         logging.info(f"类型: {movie_details['media_type']}")
+                        logging.info(f"状态: {movie_details['status']}")
                         logging.info(f"图片URL: {movie_details['img']}")
                         logging.info(f"URL: {movie_details['url']}")
                         logging.info(f"副标题: {movie_details['sub_title']}")

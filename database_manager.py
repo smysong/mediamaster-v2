@@ -117,6 +117,7 @@ def create_tables():
             YEAR INTEGER,
             SUB_TITLE TEXT,
             URL TEXT,
+            STATUS TEXT DEFAULT '想看',
             UNIQUE(TITLE, YEAR)
         )
     ''')
@@ -132,6 +133,7 @@ def create_tables():
             SEASON INTEGER,
             EPISODE INTEGER,
             URL TEXT,
+            STATUS TEXT DEFAULT '想看',
             UNIQUE(TITLE, YEAR)
         )
     ''')
@@ -232,6 +234,9 @@ def create_tables():
         ("tmdb_base_url", "https://api.tmdb.org"),
         ("tmdb_api_key", "d3485673d99d293743c74df52fd70e28"),
         ("ocr_api_key", "your_ocr_api_key"),
+        ("tmm_enabled", "False"), 
+        ("tmm_api_url", "http://127.0.0.1:7878"), 
+        ("tmm_api_key", "19fa906a-5e4c-4d0b-beb7-7a65d8b0f3f6"), 
         ("download_mgmt", "False"),
         ("download_type", "transmission"),
         ("download_username", "username"),
@@ -273,6 +278,42 @@ def create_tables():
     conn.commit()
     conn.close()
     logging.info("数据库表结构及默认数据已创建。")
+
+def migrate_rss_tables_with_status():
+    """
+    迁移 RSS_MOVIES 和 RSS_TVS 表，添加 STATUS 字段
+    """
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # 检查 RSS_MOVIES 表是否已有 STATUS 字段
+    cursor.execute("PRAGMA table_info(RSS_MOVIES)")
+    columns = cursor.fetchall()
+    status_column_exists_in_movies = any(column[1] == 'STATUS' for column in columns)
+    
+    # 如果没有 STATUS 字段，添加它
+    if not status_column_exists_in_movies:
+        try:
+            cursor.execute("ALTER TABLE RSS_MOVIES ADD COLUMN STATUS TEXT DEFAULT '想看'")
+            logging.info("已向 RSS_MOVIES 表添加 STATUS 字段")
+        except sqlite3.OperationalError as e:
+            logging.warning(f"添加 STATUS 字段到 RSS_MOVIES 表时出错: {e}")
+    
+    # 检查 RSS_TVS 表是否已有 STATUS 字段
+    cursor.execute("PRAGMA table_info(RSS_TVS)")
+    columns = cursor.fetchall()
+    status_column_exists_in_tvs = any(column[1] == 'STATUS' for column in columns)
+    
+    # 如果没有 STATUS 字段，添加它
+    if not status_column_exists_in_tvs:
+        try:
+            cursor.execute("ALTER TABLE RSS_TVS ADD COLUMN STATUS TEXT DEFAULT '想看'")
+            logging.info("已向 RSS_TVS 表添加 STATUS 字段")
+        except sqlite3.OperationalError as e:
+            logging.warning(f"添加 STATUS 字段到 RSS_TVS 表时出错: {e}")
+    
+    conn.commit()
+    conn.close()
 
 def migrate_miss_tvs_table():
     """
@@ -439,6 +480,9 @@ def check_and_update_tables():
     
     # 迁移豆瓣配置项
     migrate_douban_config()
+    
+    # 添加 STATUS 字段到 RSS 表
+    migrate_rss_tables_with_status()
 
     conn.close()
 
@@ -496,6 +540,9 @@ def ensure_all_configs_exist():
         ("tmdb_base_url", "https://api.tmdb.org"),
         ("tmdb_api_key", "d3485673d99d293743c74df52fd70e28"),
         ("ocr_api_key", "your_ocr_api_key"),
+        ("tmm_enabled", "False"), 
+        ("tmm_api_url", "http://127.0.0.1:7878"), 
+        ("tmm_api_key", "19fa906a-5e4c-4d0b-beb7-7a65d8b0f3f6"), 
         ("download_mgmt", "False"),
         ("download_type", "transmission"),
         ("download_username", "username"),
@@ -578,6 +625,9 @@ def check_config_data():
         "tmdb_base_url": "https://api.tmdb.org",
         "tmdb_api_key": "d3485673d99d293743c74df52fd70e28",
         "ocr_api_key": "your_ocr_api_key",
+        "tmm_enabled": "False",
+        "tmm_api_url": "http://127.0.0.1:7878",
+        "tmm_api_key": "19fa906a-5e4c-4d0b-beb7-7a65d8b0f3f6",
         "dateadded": "False",
         "actor_nfo": "False",
         "scrape_metadata": "False",

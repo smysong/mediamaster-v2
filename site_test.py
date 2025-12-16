@@ -11,6 +11,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.common.action_chains import ActionChains
 import time
+import concurrent.futures
 
 # 导入新的验证码处理模块
 from captcha_handler import CaptchaHandler
@@ -197,6 +198,24 @@ class SiteTester:
             logging.error(f"站点 {site_name} 测试过程中发生未知错误: {e}")
             return False
 
+    def _test_site_with_timeout(self, site_name, site_config, timeout_seconds=180):
+        """带超时控制的站点测试包装函数"""
+        try:
+            # 创建一个新的线程来执行测试
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                # 提交测试任务
+                future = executor.submit(self.test_site, site_name, site_config)
+                
+                # 等待结果，最多等待指定的超时时间
+                result = future.result(timeout=timeout_seconds)
+                return result
+        except concurrent.futures.TimeoutError:
+            logging.error(f"站点 {site_name} 测试超时 ({timeout_seconds}秒)")
+            return False
+        except Exception as e:
+            logging.error(f"站点 {site_name} 测试过程中发生错误: {e}")
+            return False
+
     def run_tests(self):
         """运行所有站点测试"""
         results = {}
@@ -212,10 +231,10 @@ class SiteTester:
                 logging.error("未加载到任何站点配置")
                 return results
                 
-            # 测试每个站点
+            # 测试每个站点，设置3分钟(180秒)超时
             for site_name, site_config in self.sites.items():
                 try:
-                    result = self.test_site(site_name, site_config)
+                    result = self._test_site_with_timeout(site_name, site_config, timeout_seconds=180)
                     results[site_name] = result
                     # 添加短暂延迟避免请求过于频繁
                     time.sleep(2)

@@ -80,6 +80,7 @@ def apply_naming_format(format_string, media_info):
     # 定义可用的命名变量
     naming_vars = {
         'title': media_info.get('title', 'Unknown'),
+        'title_en': media_info.get('title_en', ''),  # 新增英文标题变量
         'year': media_info.get('year', ''),
         'resolution': media_info.get('resolution', ''),
         'season': media_info.get('season', '01'),
@@ -2043,6 +2044,7 @@ def process_file(file_path, processed_filenames):
                 # 创建媒体信息字典用于命名
                 media_info_for_naming = {
                     'title': title,
+                    'title_en': title_en,     # 新增英文标题
                     'year': year,
                     'resolution': result.get('视频质量', ''),
                     'season': str(result.get('季', '01')).zfill(2) if media_type == 'tv' else '',
@@ -2112,6 +2114,9 @@ def process_file(file_path, processed_filenames):
                     send_notification(new_filename)
                     logging.info(f"文件处理完成，刷新本地数据库")
                     refresh_media_library()
+
+                    # 通知 tinyMediaManager
+                    notify_tmm(classification)
 
                     # 保存已处理的文件列表
                     processed_filenames.add(filename)
@@ -2387,19 +2392,20 @@ def get_media_titles_with_language(tmdb_id, media_type):
         response.raise_for_status()
         data = response.json()
         
-        title_cn = data.get('title', '') if media_type == 'movie' else data.get('name', '')
-        
-        # 再获取英文标题
-        params['language'] = 'en-US'
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        
-        title_en = data.get('title', '') if media_type == 'movie' else data.get('name', '')
+        # 获取中文标题
+        title_cn = data.get('name') if media_type == 'tv' else data.get('title')
+        if not title_cn:
+            title_cn = data.get('original_name') if media_type == 'tv' else data.get('original_title')
+            
+        # 获取英文标题
+        title_en = data.get('original_name') if media_type == 'tv' else data.get('original_title')
+        if not title_en:
+            title_en = data.get('name') if media_type == 'tv' else data.get('title')
         
         return title_cn, title_en
+        
     except Exception as e:
-        logging.warning(f"获取媒体标题失败: {e}")
+        logging.error(f"获取媒体中英文标题失败: {e}")
         return None, None
 
 # 新增函数：根据TMDB ID获取剧集的指定语言名称
@@ -2422,7 +2428,53 @@ def get_tv_episode_name_with_language(tmdb_id, season_number, episode_number, la
     except Exception as e:
         logging.warning(f"获取剧集{language}名称失败: {e}")
         return ''
+
+def notify_tmm(media_type):
+    """
+    通知 tinyMediaManager 进行刮削
     
+    Args:
+        media_type: 媒体类型 ('movie' 或 'tv')
+    """
+    try:
+        # 检查是否启用了 TMM 功能
+        tmm_enabled = config.get("tmm_enabled", "")
+        if tmm_enabled.lower() != "true":
+            logging.info("tinyMediaManager 功能未启用，跳过通知。")
+            return
+            
+        # 获取 TMM 配置
+        tmm_api_url = config.get("tmm_api_url", "").rstrip('/')
+        tmm_api_key = config.get("tmm_api_key", "")
+        
+        if not tmm_api_url or not tmm_api_key:
+            logging.warning("TMM API URL 或 API 密钥未配置，无法通知 TMM。")
+            return
+            
+        # 构造 API 地址
+        api_endpoint = f"{tmm_api_url}/api/{'movies' if media_type == 'movie' else 'tvshows'}"
+        
+        # 准备请求数据
+        payload = [
+            {"action": "update", "scope": {"name": "all"}},
+            {"action": "scrape", "scope": {"name": "new"}},
+            {"action": "rename", "scope": {"name": "new"}}
+        ]
+        
+        # 发送请求
+        headers = {
+            'Content-Type': 'application/json',
+            'api-key': tmm_api_key
+        }
+        
+        response = requests.post(api_endpoint, json=payload, headers=headers, timeout=30)
+        response.raise_for_status()
+        
+        logging.info(f"已成功通知 tinyMediaManager 更新 {media_type} 数据: {response.text}")
+        
+    except Exception as e:
+        logging.error(f"通知 tinyMediaManager 失败: {e}")
+
 def send_notification(title_text):
     # 通知功能
     try:
