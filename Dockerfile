@@ -3,30 +3,15 @@ FROM --platform=$TARGETPLATFORM alpine:latest
 # 设置工作目录
 WORKDIR /app
 
-# 安装基础工具和依赖
-RUN apk add --no-cache \
-    bash \
-    curl \
-    unzip \
-    python3 \
-    python3-dev \
-    py3-pip \
-    tzdata \
-    iproute2 \
-    iputils \
-    bind-tools \
-    vim \
-    tini \
-    musl-locales \
-    musl-locales-lang \
-    gcc \
-    musl-dev \
-    linux-headers
+# 分层安装基础工具，减少 QEMU 仿真的复杂度
+RUN apk add --no-cache bash curl unzip
+RUN apk add --no-cache python3 python3-dev py3-pip
+RUN apk add --no-cache tzdata iproute2 iputils bind-tools
+RUN apk add --no-cache vim tini musl-locales musl-locales-lang
+RUN apk add --no-cache gcc musl-dev linux-headers
 
 # 分开安装图形相关组件，避免在ARM64上的问题
-RUN apk add --no-cache \
-    chromium \
-    chromium-chromedriver
+RUN apk add --no-cache chromium chromium-chromedriver
 
 # 设置时区为中国上海
 RUN cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
