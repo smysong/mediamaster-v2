@@ -1,5 +1,5 @@
-# 使用 Alpine 最新版本作为基础镜像 
-FROM alpine:latest
+# 使用 Alpine 3.20 版本作为基础镜像（更稳定）
+FROM alpine:3.20
 
 # 设置工作目录
 WORKDIR /app
@@ -51,11 +51,10 @@ RUN python3 -m venv /app/venv
 ENV VIRTUAL_ENV=/app/venv
 ENV PATH="/app/venv/bin:$PATH"
 
-# 安装 Python 依赖
-RUN pip install --no-cache-dir -r requirements.txt
-
-# 安装 schedule 库
-RUN pip install schedule
+# 升级 pip 并安装依赖
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install schedule
 
 # 确保 set_ulimits.sh 脚本具有执行权限
 RUN chmod +x /app/set_ulimits.sh
