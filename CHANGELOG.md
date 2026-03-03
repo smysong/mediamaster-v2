@@ -2,6 +2,16 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.5.18] - 2026-03-03
+
+### 各位用户元宵节快乐！
+- 年底和年初作者比较忙，平时有空的时候将继续完善功能以及优化更新，感谢所有反馈以及支持。
+
+#### 迅雷下载
+- 优化迅雷添加下载任务的相关逻辑。
+- 修复飞牛应用中心套件版迅雷无法切换目标下载目录的问题。
+- 目前仅验证飞牛应用中心套件版迅雷默认下载路径以及子目录。（由于飞牛迅雷BUG无法添加自定义下载目录，需等待飞牛官方修复后完善相关功能）
+
 ## [2.5.17] - 2025-12-16
 
 #### 订阅服务
@@ -870,3 +880,4 @@
 [2.5.15]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.15
 [2.5.16]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.16
 [2.5.17]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.17
+[2.5.18]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.18

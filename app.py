@@ -1860,6 +1860,7 @@ GROUP_MAPPING = {
         "gy_base_url": {"type": "text", "label": "观影"}
     }
 }
+
 @app.route('/settings')
 @login_required
 def settings_page():
@@ -2105,7 +2106,6 @@ def download_mgmt_page():
     return render_template(template_name, nickname=nickname, avatar_url=avatar_url, 
                          download_mgmt=download_mgmt_config, delete_with_files=delete_with_files,
                          auto_delete_completed_tasks=auto_delete_completed_tasks, version=APP_VERSION)
-
 
 # 获取下载器客户端
 def get_downloader_client():
