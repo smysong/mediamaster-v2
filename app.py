@@ -2092,6 +2092,12 @@ def download_mgmt_page():
     else:
         auto_delete_completed_tasks = auto_delete_completed_tasks_config['VALUE'] == 'True'
 
+    # 获取迅雷设备名称
+    xunlei_device_name = None
+    if download_type == 'xunlei':
+        xunlei_device_row = db.execute('SELECT VALUE FROM CONFIG WHERE OPTION = ?', ('xunlei_device_name',)).fetchone()
+        xunlei_device_name = xunlei_device_row['VALUE'] if xunlei_device_row else ''
+
     # 从会话中获取用户昵称和头像
     nickname = session.get('nickname')
     avatar_url = session.get('avatar_url')
@@ -2105,7 +2111,7 @@ def download_mgmt_page():
     # 将信息传递给模板
     return render_template(template_name, nickname=nickname, avatar_url=avatar_url, 
                          download_mgmt=download_mgmt_config, delete_with_files=delete_with_files,
-                         auto_delete_completed_tasks=auto_delete_completed_tasks, version=APP_VERSION)
+                         auto_delete_completed_tasks=auto_delete_completed_tasks, xunlei_device_name=xunlei_device_name, version=APP_VERSION)
 
 # 获取下载器客户端
 def get_downloader_client():

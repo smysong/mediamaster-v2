@@ -28,7 +28,6 @@ logging.basicConfig(
 
 class XunleiDownloader:
     TORRENT_DIR = "/Torrent"  # 定义种子文件目录为类属性
-    SHARES_PREFIX = "/var/apps/xunlei/shares"  # 飞牛应用套件版迅雷共享目录前缀
 
     def __init__(self, db_path='/config/data.db'):
         self.db_path = db_path
@@ -107,14 +106,20 @@ class XunleiDownloader:
             logging.error(f"数据库加载配置错误: {e}")
             exit(0)
 
-    def login_to_xunlei(self, username, password, max_retries=3):
+    def is_jikongjian_device(self, device_name):
+        """判断设备名是否以“极空间”开头"""
+        return device_name and device_name.startswith("极空间")
+
+    def login_to_xunlei(self, username, password, device_name, max_retries=3):
         """
         打开 迅雷-远程设备 页面并执行迅雷登录。
         在找不到 iframe 或点击登录按钮失败时刷新页面并重试。
         """
+        base_url = "https://pan.xunlei.com/yc/jkj/home/" if self.is_jikongjian_device(device_name) else "https://pan.xunlei.com/yc/home/"
+        
         for attempt in range(1, max_retries + 1):
-            self.driver.get(f"https://pan.xunlei.com/yc/home/")
-            logging.info("成功加载 迅雷-远程设备 页面")
+            self.driver.get(base_url)
+            logging.info(f"成功加载 迅雷-远程设备 页面: {base_url}")
             time.sleep(5)
 
             # 点击登录按钮前检查是否已登录
@@ -329,49 +334,34 @@ class XunleiDownloader:
     def check_download_directory(self, download_dir):
         """
         检查并切换迅雷的下载目录，兼容一级和多级目录。
-        自动忽略 /var/apps/xunlei/shares/ 前缀。
         :param download_dir: 下载目录路径
         :return: 成功返回 True，失败返回 False
         """
         try:
-            # 统一路径格式并拆分
+            # === 1. 标准化目标路径 ===
             normalized_input = download_dir.replace(os.path.sep, '/').strip('/')
             path_parts = [p for p in normalized_input.split('/') if p]
             if not path_parts:
                 return True
 
-            # 处理飞牛应用套件版迅雷前缀
-            prefix_parts = ['var', 'apps', 'xunlei', 'shares']
-            if len(path_parts) >= 4 and path_parts[:4] == prefix_parts:
-                # 记录原始路径用于日志
-                original_path = '/'.join(path_parts)
-                # 截取前缀之后的部分
-                path_parts = path_parts[4:]
-                if not path_parts:
-                    logging.info(f"目标目录为 {self.SHARES_PREFIX} 根目录，无需切换")
-                    return True
-                logging.info(f"忽略前缀 {self.SHARES_PREFIX}，实际切换路径：{'/'.join(path_parts)}")
+            target_parts = path_parts
+            target_full = '/' + '/'.join(target_parts)
 
-            # 获取当前页面显示的下载目录路径
+            # === 2. 检查当前已选路径是否已匹配 ===
             current_dir_element = WebDriverWait(self.driver, 5).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "div.file-upload__folder > span"))
             )
-            current_dir_text = current_dir_element.text.strip()
-
-            # 提取路径部分
-            if current_dir_text.startswith("下载到："):
-                current_path = current_dir_text[len("下载到："):]
+            current_text = current_dir_element.text.strip()
+            if current_text.startswith("下载到："):
+                current_path = current_text[len("下载到："):]
             else:
-                current_path = current_dir_text
+                current_path = current_text
 
-            normalized_current = [p for p in current_path.replace(os.path.sep, '/').split('/') if p]
-            normalized_target = path_parts
-
-            if normalized_current == normalized_target:
+            if current_path.strip('/') == '/'.join(target_parts):
                 logging.info(f"当前下载目录已是目标目录：{download_dir}")
                 return True
 
-            # 打开目录选择器
+            # === 3. 打开目录选择器 ===
             more_options_button = WebDriverWait(self.driver, 10).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, "i.qh-icon-more"))
             )
@@ -379,38 +369,109 @@ class XunleiDownloader:
             actions.move_to_element(more_options_button).click().perform()
             time.sleep(1)
 
-            # 进入每一级目录
-            current_level = 0
-            while current_level < len(normalized_target):
-                folder_name = normalized_target[current_level]
+            # === 4. 等待目录选择器加载 ===
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "div.download-dir__body"))
+            )
+
+            # === 5. 【关键】只在“全部磁盘目录”中查找最长匹配的顶级目录 ===
+            try:
+                all_disk_section = self.driver.find_element(By.XPATH, "//h2[text()='全部磁盘目录']/following-sibling::ul[@class='file-item']")
+                history_elements = all_disk_section.find_elements(By.CSS_SELECTOR, "p.history")
+            except Exception as e:
+                logging.error(f"未找到“全部磁盘目录”区域: {e}")
+                return False
+
+            best_match_elem = None
+            best_match_parts = []
+
+            for elem in history_elements:
+                text = elem.text.strip().rstrip('/')
+                if not text.startswith('/'):
+                    continue
+                parts = [p for p in text[1:].split('/') if p]
+                # 检查是否是 target_parts 的前缀
+                if len(parts) <= len(target_parts) and parts == target_parts[:len(parts)]:
+                    if len(parts) > len(best_match_parts):
+                        best_match_parts = parts
+                        best_match_elem = elem
+
+            if best_match_elem is None:
+                logging.error(f"在“全部磁盘目录”中未找到目标路径的任何前缀匹配项，目标: {target_full}")
+                return False
+
+            # === 6. 勾选并进入最佳匹配的顶级目录 ===
+            checkbox_span = best_match_elem.find_element(By.XPATH, "../span//span[contains(@class, 'nas-remote__checkbox')]")
+            if 'checked' not in checkbox_span.get_attribute('class'):
+                actions.move_to_element(checkbox_span).click().perform()
+                time.sleep(0.5)
+
+            # 如果最佳匹配就是完整路径，直接确认
+            if len(best_match_parts) == len(target_parts):
+                if not self._click_confirm_button():
+                    return False
+                logging.info(f"成功切换至下载目录：{download_dir}")
+                return True
+
+            # 否则，点击“进入”
+            enter_btn = best_match_elem.find_element(By.XPATH, "../div[contains(@class, 'enter')]")
+            actions.move_to_element(enter_btn).click().perform()
+            time.sleep(1.5)
+
+            # === 7. 现在进入子目录页面，navigation 可用 ===
+            try:
+                navigation_p = WebDriverWait(self.driver, 5).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "div.navigation > p"))
+                )
+                current_browsing = navigation_p.text.strip()
+                current_parts = [p for p in current_browsing.strip('/').split('/') if p]
+                logging.info(f"已进入目录: {current_browsing}")
+            except TimeoutException:
+                logging.error("进入子目录后未找到 navigation 路径")
+                return False
+
+            # 验证当前路径是否匹配 best_match_parts
+            if current_parts != best_match_parts:
+                logging.warning(f"路径不一致: 期望 {best_match_parts}, 实际 {current_parts}")
+
+            # === 8. 从 best_match_parts 的下一级开始继续进入 ===
+            start_level = len(best_match_parts)
+            for level in range(start_level, len(target_parts)):
+                folder_name = target_parts[level]
                 escaped_name = folder_name.replace("'", "\\'")
+
                 xpath = f"//p[contains(@class, 'history') and (text()='{escaped_name}' or text()='{escaped_name}/')]"
 
-                folder_element = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.XPATH, xpath))
-                )
+                try:
+                    folder_elem = WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.XPATH, xpath))
+                    )
+                except TimeoutException:
+                    logging.error(f"在当前目录下未找到子目录: {folder_name}")
+                    return False
 
                 # 勾选 checkbox
-                checkbox_container = folder_element.find_element(By.XPATH, "../span")
-                folder_checkbox = checkbox_container.find_element(
-                    By.XPATH,
-                    ".//span[contains(@class, 'nas-remote__checkbox')]"
-                )
-                if 'checked' not in folder_checkbox.get_attribute("class"):
-                    actions.move_to_element(folder_checkbox).click().perform()
+                checkbox_span = folder_elem.find_element(By.XPATH, "../span//span[contains(@class, 'nas-remote__checkbox')]")
+                if 'checked' not in checkbox_span.get_attribute('class'):
+                    actions.move_to_element(checkbox_span).click().perform()
                     time.sleep(0.5)
 
-                # 如果不是最后一级，进入目录
-                if current_level < len(normalized_target) - 1:
-                    enter_button = folder_element.find_element(By.XPATH, "../div[contains(@class, 'enter')]")
-                    actions.move_to_element(enter_button).click().perform()
-                    time.sleep(1)
-                else:
-                    # 最后一级，点击确认
-                    if not self._click_confirm_button():
-                        return False
+                # 如果不是最后一级，点击“进入”
+                if level < len(target_parts) - 1:
+                    enter_btn = folder_elem.find_element(By.XPATH, "../div[contains(@class, 'enter')]")
+                    actions.move_to_element(enter_btn).click().perform()
+                    time.sleep(1.5)
 
-                current_level += 1
+                    # 更新 navigation（可选）
+                    try:
+                        new_nav = self.driver.find_element(By.CSS_SELECTOR, "div.navigation > p")
+                        logging.info(f"已进入: {new_nav.text.strip()}")
+                    except:
+                        pass
+
+            # === 9. 最后一级，点击确认 ===
+            if not self._click_confirm_button():
+                return False
 
             logging.info(f"成功切换至下载目录：{download_dir}")
             return True
@@ -418,6 +479,7 @@ class XunleiDownloader:
         except Exception as e:
             logging.error(f"检查下载目录失败：{e}")
             return False
+
 
     def _click_confirm_button(self):
         """
@@ -568,9 +630,10 @@ class XunleiDownloader:
             try:
                 # 如果是第一次尝试，则打开新建任务弹窗
                 if attempt == 0:
-
-                    # 重新打开迅雷远程设备页面
-                    self.driver.get("https://pan.xunlei.com/yc/home/")
+                    # 获取设备名并决定 URL
+                    device_name = self.config.get("xunlei_device_name")
+                    base_url = "https://pan.xunlei.com/yc/jkj/home/" if self.is_jikongjian_device(device_name) else "https://pan.xunlei.com/yc/home/"
+                    self.driver.get(base_url)
                     time.sleep(3)
                     
                     # 等待页面加载完成
@@ -759,14 +822,16 @@ if __name__ == "__main__":
     username = config.get("download_username")
     password = config.get("download_password")
 
-    # 登录迅雷
-    if not downloader.login_to_xunlei(username, password):
+    # 获取设备名
+    xunlei_device_name = config.get("xunlei_device_name")
+
+    # 登录迅雷（传入设备名）
+    if not downloader.login_to_xunlei(username, password, xunlei_device_name):
         logging.error("登录失败")
         downloader.close_driver()
         exit(1)
 
     # 获取配置参数
-    xunlei_device_name = config.get("xunlei_device_name")
     xunlei_dir = config.get("xunlei_dir")
 
     # 在打开新建任务弹窗前检查设备

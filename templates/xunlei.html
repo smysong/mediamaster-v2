@@ -6,13 +6,27 @@
         <div class="card mb-4">
             <div class="card-header">迅雷-远程设备管理</div>
             <div class="card-body">
-                {% if download_mgmt %}
-                    <iframe src="https://pan.xunlei.com/yc" width="100%" height="780px" frameborder="0"></iframe>
-			</div>
-		</div>
-	</div>
-</main>	
-{% else %}
-<p>下载管理功能未启用，请在系统设置中启用下载管理并配置下载器相关参数</p>
-{% endif %}
+                {% if download_mgmt and download_mgmt.VALUE == 'True' %}
+                    <iframe id="xunlei-iframe" width="100%" height="780px" frameborder="0"></iframe>
+                    <script>
+                        // 从 Jinja2 获取设备名称（自动转义，安全）
+                        const deviceName = "{{ xunlei_device_name | e }}";
+                        let srcUrl;
+
+                        if (deviceName && deviceName.startsWith('极空间')) {
+                            srcUrl = 'https://pan.xunlei.com/yc/jkj/home/';
+                        } else {
+                            srcUrl = 'https://pan.xunlei.com/yc/home/';
+                        }
+
+                        document.getElementById('xunlei-iframe').src = srcUrl;
+                        console.log('加载迅雷页面:', srcUrl, '设备名:', deviceName);
+                    </script>
+                {% else %}
+                    <p>下载管理功能未启用，请在系统设置中启用下载管理并配置下载器相关参数</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</main>
 {% endblock %}

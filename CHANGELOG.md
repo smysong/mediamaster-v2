@@ -2,6 +2,16 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.5.19] - 2026-03-11
+
+#### 站点索引
+- 优化观影站点无法正确获取资源列表和解析失败的问题。
+
+#### 迅雷下载
+- 修复迅雷添加下载任务时，无法切换目标下载目录的问题。（飞牛1.0.3 已修复）
+- 修复极空间迅雷无法切换设备、设备列表为空的问题。
+- 修复使用迅雷下载时，下载管理页面无法显示极空间设备的问题。
+
 ## [2.5.18] - 2026-03-03
 
 ### 各位用户元宵节快乐！
@@ -881,3 +891,4 @@
 [2.5.16]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.16
 [2.5.17]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.17
 [2.5.18]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.18
+[2.5.19]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.19
