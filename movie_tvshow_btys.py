@@ -248,18 +248,20 @@ class MediaIndexer:
                             # 直接提取标题和年份
                             title_elem = card.find_element(By.CSS_SELECTOR, ".module-item-titlebox .module-item-title")
                             card_title = title_elem.get_attribute("title").strip()
-                            year_elem = card.find_element(By.CSS_SELECTOR, ".module-item-caption span")
-                            card_year = year_elem.text.strip()
+                            try:
+                                year_elem = card.find_element(By.CSS_SELECTOR, ".module-item-caption span")
+                                card_year = year_elem.text.strip()
+                            except:
+                                card_year = ""  # 无法提取年份
 
                             logging.debug(f"卡片提取的标题: {card_title}, 年份: {card_year}")
 
-                            # 检查标题和年份是否与搜索匹配
+                            # 情况1：年份存在且匹配
                             if self.is_title_match(item['标题'], card_title) and str(item['年份']) == card_year:
                                 logging.info(f"找到匹配的电影卡片: {card_title} ({card_year})")
-                                found_match = True  # 找到匹配的卡片
+                                found_match = True
                                 page_found_match = True
 
-                                # 点击进入详情页
                                 detail_link = title_elem.get_attribute("href")
                                 self.driver.execute_script("window.open(arguments[0]);", detail_link)
                                 WebDriverWait(self.driver, 15).until(
@@ -276,19 +278,75 @@ class MediaIndexer:
                                     logging.info("成功进入影片详细信息页面")
                                 except TimeoutException:
                                     logging.error("影片详细信息页面加载超时")
-                                    self.driver.close()  # 关闭新标签页
-                                    self.driver.switch_to.window(self.driver.window_handles[0])  # 切回原标签页
+                                    self.driver.close()
+                                    self.driver.switch_to.window(self.driver.window_handles[0])
                                     continue
 
+                            # 情况2：标题完全相等 + 年份缺失 → 进详情页验证上映年份
+                            elif card_title == item['标题'] and not card_year:
+                                logging.info(f"标题完全匹配但年份缺失，尝试进入详情页验证年份: {card_title}")
+                                
+                                detail_link = title_elem.get_attribute("href")
+                                self.driver.execute_script("window.open(arguments[0]);", detail_link)
+                                WebDriverWait(self.driver, 15).until(
+                                    lambda d: len(d.window_handles) > 1
+                                )
+                                self.driver.switch_to.window(self.driver.window_handles[-1])
+                                logging.debug("切换到新标签页")
+
+                                try:
+                                    WebDriverWait(self.driver, 15).until(
+                                        EC.presence_of_element_located((By.ID, "download-list"))
+                                    )
+                                    logging.info("成功进入影片详细信息页面")
+                                except TimeoutException:
+                                    logging.error("影片详细信息页面加载超时")
+                                    self.driver.close()
+                                    self.driver.switch_to.window(self.driver.window_handles[0])
+                                    continue
+
+                                # 从详情页提取上映年份
+                                extracted_year = None
+                                try:
+                                    info_items = self.driver.find_elements(By.CSS_SELECTOR, ".video-info-items")
+                                    for info_item in info_items:
+                                        try:
+                                            title_span = info_item.find_element(By.CSS_SELECTOR, ".video-info-itemtitle")
+                                            if "上映" in title_span.text:
+                                                date_text = info_item.find_element(By.CSS_SELECTOR, ".video-info-item").text
+                                                year_match = re.search(r'\b(19|20)\d{2}\b', date_text)
+                                                if year_match:
+                                                    extracted_year = year_match.group(0)
+                                                    logging.debug(f"从详情页提取上映年份: {extracted_year}")
+                                                    break
+                                        except:
+                                            continue
+                                except Exception as e:
+                                    logging.warning(f"提取上映年份时出错: {e}")
+
+                                if extracted_year == str(item['年份']):
+                                    logging.info(f"详情页上映年份匹配: {extracted_year}，继续采集")
+                                    found_match = True
+                                    page_found_match = True
+                                else:
+                                    logging.info(f"上映年份不匹配（期望 {item['年份']}，实际 {extracted_year}），跳过")
+                                    self.driver.close()
+                                    self.driver.switch_to.window(self.driver.window_handles[0])
+                                    continue
+
+                            else:
+                                # 不满足任一匹配条件，跳过此卡片
+                                continue
+
+                            # ========== 以下为共用的资源采集逻辑（情况1 和 情况2 成功后都执行） ==========
+                            try:
                                 # 检查资源类型标签
                                 try:
                                     category_element = self.driver.find_element(By.CSS_SELECTOR, ".video-tag-icon")
                                     category_text = category_element.text.strip()
                                     if category_text != "Movie":
                                         logging.info(f"资源类型不匹配，跳过采集: {category_text}")
-                                        self.driver.close()
-                                        self.driver.switch_to.window(self.driver.window_handles[0])
-                                        continue
+                                        raise ValueError("类型不符")
                                 except Exception as e:
                                     logging.warning("无法找到资源类型标签，默认继续采集")
 
@@ -327,7 +385,6 @@ class MediaIndexer:
                                             # 优先从 h4 标签获取标题，如果失败则回退到原来的 title 属性
                                             try:
                                                 h4_tag = info.find_element(By.CSS_SELECTOR, "h4")
-                                                # 获取h4标签的完整文本，包括子元素span中的文件大小信息
                                                 resource_title = h4_tag.get_attribute("textContent").strip()
                                             except:
                                                 resource_title = a_tag.get_attribute("title")
@@ -354,36 +411,21 @@ class MediaIndexer:
                                 for res in all_resources:
                                     details = self.extract_details_movie(res["title"])
                                     resolution = details["resolution"]
+                                    entry = {
+                                        "title": res["title"],
+                                        "link": res["link"],
+                                        "resolution": resolution,
+                                        "audio_tracks": details["audio_tracks"],
+                                        "subtitles": details["subtitles"],
+                                        "size": details.get("size", "未知大小"),
+                                        "popularity": res["popularity"]
+                                    }
                                     if resolution == preferred_resolution:
-                                        categorized_results["首选分辨率"].append({
-                                            "title": res["title"],
-                                            "link": res["link"],
-                                            "resolution": resolution,
-                                            "audio_tracks": details["audio_tracks"],
-                                            "subtitles": details["subtitles"],
-                                            "size": details.get("size", "未知大小"),
-                                            "popularity": res["popularity"]  # 添加热度数据
-                                        })
+                                        categorized_results["首选分辨率"].append(entry)
                                     elif resolution == fallback_resolution:
-                                        categorized_results["备选分辨率"].append({
-                                            "title": res["title"],
-                                            "link": res["link"],
-                                            "resolution": resolution,
-                                            "audio_tracks": details["audio_tracks"],
-                                            "subtitles": details["subtitles"],
-                                            "size": details.get("size", "未知大小"),
-                                            "popularity": res["popularity"]  # 添加热度数据
-                                        })
+                                        categorized_results["备选分辨率"].append(entry)
                                     else:
-                                        categorized_results["其他分辨率"].append({
-                                            "title": res["title"],
-                                            "link": res["link"],
-                                            "resolution": resolution,
-                                            "audio_tracks": details["audio_tracks"],
-                                            "subtitles": details["subtitles"],
-                                            "size": details.get("size", "未知大小"),
-                                            "popularity": res["popularity"]  # 添加热度数据
-                                        })
+                                        categorized_results["其他分辨率"].append(entry)
 
                                 # 保存结果到 JSON 文件
                                 logging.debug(f"分类结果: {categorized_results}")
@@ -393,10 +435,12 @@ class MediaIndexer:
                                     categorized_results=categorized_results
                                 )
 
+                            finally:
                                 # 关闭新标签页并切回原标签页
                                 self.driver.close()
                                 self.driver.switch_to.window(self.driver.window_handles[0])
                                 break  # 找到匹配的卡片后退出循环
+
                         except Exception as e:
                             logging.warning(f"解析影片信息时出错: {e}")
                     
@@ -448,20 +492,22 @@ class MediaIndexer:
                             # 直接提取标题和年份
                             title_elem = card.find_element(By.CSS_SELECTOR, ".module-item-titlebox .module-item-title")
                             card_title = title_elem.get_attribute("title").strip()
-                            year_elem = card.find_element(By.CSS_SELECTOR, ".module-item-caption span")
-                            card_year = year_elem.text.strip()
+                            try:
+                                year_elem = card.find_element(By.CSS_SELECTOR, ".module-item-caption span")
+                                card_year = year_elem.text.strip()
+                            except:
+                                card_year = ""  # 无法提取年份
 
                             # 清理电视节目标题，移除季相关字样
                             cleaned_card_title = self._clean_tv_title(card_title)
                             logging.debug(f"原始标题: {card_title}, 清理后标题: {cleaned_card_title}, 年份: {card_year}")
 
-                            # 检查标题和年份是否与搜索匹配
+                            # 情况1：年份存在且匹配
                             if self.is_title_match(item['剧集'], cleaned_card_title) and str(item['年份']) == card_year:
                                 logging.info(f"找到匹配的电视节目卡片: {card_title} ({card_year})")
-                                found_match = True  # 找到匹配的卡片
+                                found_match = True
                                 page_found_match = True
 
-                                # 点击进入详情页
                                 detail_link = title_elem.get_attribute("href")
                                 self.driver.execute_script("window.open(arguments[0]);", detail_link)
                                 WebDriverWait(self.driver, 15).until(
@@ -470,7 +516,6 @@ class MediaIndexer:
                                 self.driver.switch_to.window(self.driver.window_handles[-1])
                                 logging.debug("切换到新标签页")
 
-                                # 等待节目详细信息页面加载完成
                                 try:
                                     WebDriverWait(self.driver, 15).until(
                                         EC.presence_of_element_located((By.ID, "download-list"))
@@ -478,19 +523,75 @@ class MediaIndexer:
                                     logging.info("成功进入节目详细信息页面")
                                 except TimeoutException:
                                     logging.error("节目详细信息页面加载超时")
-                                    self.driver.close()  # 关闭新标签页
-                                    self.driver.switch_to.window(self.driver.window_handles[0])  # 切回原标签页
+                                    self.driver.close()
+                                    self.driver.switch_to.window(self.driver.window_handles[0])
                                     continue
 
+                            # 情况2：清理后标题完全相等 + 年份缺失 → 进详情页验证上映年份
+                            elif cleaned_card_title == item['剧集'] and not card_year:
+                                logging.info(f"清理后标题完全匹配但年份缺失，尝试进入详情页验证年份: {card_title}")
+                                
+                                detail_link = title_elem.get_attribute("href")
+                                self.driver.execute_script("window.open(arguments[0]);", detail_link)
+                                WebDriverWait(self.driver, 15).until(
+                                    lambda d: len(d.window_handles) > 1
+                                )
+                                self.driver.switch_to.window(self.driver.window_handles[-1])
+                                logging.debug("切换到新标签页")
+
+                                try:
+                                    WebDriverWait(self.driver, 15).until(
+                                        EC.presence_of_element_located((By.ID, "download-list"))
+                                    )
+                                    logging.info("成功进入节目详细信息页面")
+                                except TimeoutException:
+                                    logging.error("节目详细信息页面加载超时")
+                                    self.driver.close()
+                                    self.driver.switch_to.window(self.driver.window_handles[0])
+                                    continue
+
+                                # 从详情页提取上映年份（复用电影逻辑）
+                                extracted_year = None
+                                try:
+                                    info_items = self.driver.find_elements(By.CSS_SELECTOR, ".video-info-items")
+                                    for info_item in info_items:
+                                        try:
+                                            title_span = info_item.find_element(By.CSS_SELECTOR, ".video-info-itemtitle")
+                                            if "上映" in title_span.text:
+                                                date_text = info_item.find_element(By.CSS_SELECTOR, ".video-info-item").text
+                                                year_match = re.search(r'\b(19|20)\d{2}\b', date_text)
+                                                if year_match:
+                                                    extracted_year = year_match.group(0)
+                                                    logging.debug(f"从详情页提取上映年份: {extracted_year}")
+                                                    break
+                                        except:
+                                            continue
+                                except Exception as e:
+                                    logging.warning(f"提取上映年份时出错: {e}")
+
+                                if extracted_year == str(item['年份']):
+                                    logging.info(f"详情页上映年份匹配: {extracted_year}，继续采集")
+                                    found_match = True
+                                    page_found_match = True
+                                else:
+                                    logging.info(f"上映年份不匹配（期望 {item['年份']}，实际 {extracted_year}），跳过")
+                                    self.driver.close()
+                                    self.driver.switch_to.window(self.driver.window_handles[0])
+                                    continue
+
+                            else:
+                                # 不满足任一匹配条件，跳过此卡片
+                                continue
+
+                            # ========== 以下为共用的资源采集逻辑（情况1 和 情况2 成功后都执行） ==========
+                            try:
                                 # 检查资源类型标签
                                 try:
                                     category_element = self.driver.find_element(By.CSS_SELECTOR, ".video-tag-icon")
                                     category_text = category_element.text.strip()
                                     if category_text != "TV":
                                         logging.info(f"资源类型不匹配，跳过采集: {category_text}")
-                                        self.driver.close()
-                                        self.driver.switch_to.window(self.driver.window_handles[0])
-                                        continue
+                                        raise ValueError("类型不符")
                                 except Exception as e:
                                     logging.warning("无法找到资源类型标签，默认继续采集")
 
@@ -540,7 +641,6 @@ class MediaIndexer:
                                             # 优先从 h4 标签获取标题，如果失败则回退到原来的 title 属性
                                             try:
                                                 h4_tag = info.find_element(By.CSS_SELECTOR, "h4")
-                                                # 获取h4标签的完整文本，包括子元素span中的文件大小信息
                                                 resource_title = h4_tag.get_attribute("textContent").strip()
                                             except:
                                                 resource_title = a_tag.get_attribute("title")
@@ -571,36 +671,21 @@ class MediaIndexer:
                                     if episode_type == "未知集数":
                                         logging.debug(f"跳过未知集数的资源: {res['title']}")
                                         continue
+                                    entry = {
+                                        "title": res["title"],
+                                        "link": res["link"],
+                                        "resolution": resolution,
+                                        "start_episode": details["start_episode"],
+                                        "end_episode": details["end_episode"],
+                                        "size": details.get("size", "未知大小"),
+                                        "popularity": res["popularity"]
+                                    }
                                     if resolution == preferred_resolution:
-                                        categorized_results["首选分辨率"][episode_type].append({
-                                            "title": res["title"],
-                                            "link": res["link"],
-                                            "resolution": resolution,
-                                            "start_episode": details["start_episode"],
-                                            "end_episode": details["end_episode"],
-                                            "size": details.get("size", "未知大小"),
-                                            "popularity": res["popularity"]  # 添加热度数据
-                                        })
+                                        categorized_results["首选分辨率"][episode_type].append(entry)
                                     elif resolution == fallback_resolution:
-                                        categorized_results["备选分辨率"][episode_type].append({
-                                            "title": res["title"],
-                                            "link": res["link"],
-                                            "resolution": resolution,
-                                            "start_episode": details["start_episode"],
-                                            "end_episode": details["end_episode"],
-                                            "size": details.get("size", "未知大小"),
-                                            "popularity": res["popularity"]  # 添加热度数据
-                                        })
+                                        categorized_results["备选分辨率"][episode_type].append(entry)
                                     else:
-                                        categorized_results["其他分辨率"][episode_type].append({
-                                            "title": res["title"],
-                                            "link": res["link"],
-                                            "resolution": resolution,
-                                            "start_episode": details["start_episode"],
-                                            "end_episode": details["end_episode"],
-                                            "size": details.get("size", "未知大小"),
-                                            "popularity": res["popularity"]  # 添加热度数据
-                                        })
+                                        categorized_results["其他分辨率"][episode_type].append(entry)
 
                                 # 保存结果到 JSON 文件
                                 logging.debug(f"分类结果: {categorized_results}")
@@ -611,10 +696,12 @@ class MediaIndexer:
                                     season=item['季']
                                 )
 
+                            finally:
                                 # 关闭新标签页并切回原标签页
                                 self.driver.close()
                                 self.driver.switch_to.window(self.driver.window_handles[0])
                                 break  # 找到匹配的卡片后退出循环
+
                         except Exception as e:
                             logging.warning(f"解析节目信息时出错: {e}")
                     
