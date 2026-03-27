@@ -109,7 +109,7 @@ class SiteTester:
                     },
                     "GY": {
                         "url": "gy_base_url",
-                        "keyword": "观影"
+                        "keyword": "登录"
                     }
                 }
                 
