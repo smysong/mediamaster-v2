@@ -2,6 +2,11 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.5.21] - 2026-04-08
+
+#### 关于程序
+- 移除使用帮助、微信公众号链接。
+
 ## [2.5.20] - 2026-03-13
 
 #### 站点索引
@@ -898,3 +903,4 @@
 [2.5.18]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.18
 [2.5.19]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.19
 [2.5.20]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.20
+[2.5.21]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.21
