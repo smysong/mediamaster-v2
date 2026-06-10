@@ -18,8 +18,11 @@ from urllib.parse import quote
 
 # 导入 CaptchaHandler 类
 from captcha_handler import CaptchaHandler
+from pathlib import Path
+import shutil
 
 # 配置日志
+os.makedirs("/tmp/log", exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,  # 设置日志级别为 INFO
     format="%(asctime)s - %(levelname)s - %(message)s",  # 设置日志格式
@@ -30,11 +33,13 @@ logging.basicConfig(
 )
 
 class MediaIndexer:
-    def __init__(self, db_path='/config/data.db', instance_id=None):
+    def __init__(self, db_path=None, instance_id=None):
         self.db_path = db_path
         self.driver = None
         self.config = {}
         self.instance_id = instance_id
+        if not self.db_path:
+            self.db_path = os.environ.get("DB_PATH") or os.environ.get("DATABASE") or '/config/data.db'
         # 如果有实例ID，修改日志文件路径以避免冲突
         if instance_id:
             logging.getLogger().handlers.clear()
@@ -61,6 +66,11 @@ class MediaIndexer:
         options.add_argument('--disable-background-timer-throttling')  # 禁用后台定时器节流
         options.add_argument('--disable-renderer-backgrounding')       # 禁用渲染器后台运行
         options.add_argument('--disable-features=VizDisplayCompositor') # 禁用Viz显示合成器
+        # 更强的反检测措施
+        options.add_argument('--disable-blink-features=AutomationControlled')
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
+        options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.6943.90 Safari/537.36')
         # 忽略SSL证书错误
         options.add_argument('--ignore-certificate-errors')
         options.add_argument('--allow-insecure-localhost')
@@ -73,11 +83,19 @@ class MediaIndexer:
         user_data_dir = '/app/ChromeCache/user-data-dir'
         if self.instance_id:
             user_data_dir = f'/app/ChromeCache/user-data-dir-inst-{self.instance_id}'
+        try:
+            os.makedirs(user_data_dir, exist_ok=True)
+        except Exception:
+            pass
         options.add_argument(f'--user-data-dir={user_data_dir}')
         # 设置磁盘缓存目录，添加实例ID以避免冲突
         disk_cache_dir = "/app/ChromeCache/disk-cache-dir"
         if self.instance_id:
             disk_cache_dir = f"/app/ChromeCache/disk-cache-dir-inst-{self.instance_id}"
+        try:
+            os.makedirs(disk_cache_dir, exist_ok=True)
+        except Exception:
+            pass
         options.add_argument(f"--disk-cache-dir={disk_cache_dir}")
         
         # 设置默认下载目录
@@ -92,10 +110,36 @@ class MediaIndexer:
         options.add_experimental_option("prefs", prefs)
 
         # 指定 chromedriver 的路径
-        service = Service(executable_path='/usr/lib/chromium/chromedriver')
+        configured_driver_path = ""
+        try:
+            configured_driver_path = (self.config.get("chromedriver_path") or "").strip()
+        except Exception:
+            configured_driver_path = ""
+        driver_path = os.environ.get("CHROMEDRIVER_PATH") or configured_driver_path or "/usr/lib/chromium/chromedriver"
+        service = Service(executable_path=driver_path) if driver_path and os.path.exists(driver_path) else None
         
         try:
-            self.driver = webdriver.Chrome(service=service, options=options)
+            if service is not None:
+                self.driver = webdriver.Chrome(service=service, options=options)
+            else:
+                try:
+                    self.driver = webdriver.Chrome(options=options)
+                except Exception as e:
+                    msg = str(e)
+                    if ("only supports Chrome version" in msg) or ("error decoding response body" in msg) or ("Unable to obtain driver" in msg):
+                        try:
+                            cache_root = Path.home() / ".cache" / "selenium"
+                            shutil.rmtree(cache_root / "chromedriver", ignore_errors=True)
+                            try:
+                                (cache_root / "se-metadata.json").unlink(missing_ok=True)
+                            except Exception:
+                                pass
+                            self.driver = webdriver.Chrome(options=options)
+                        except Exception:
+                            logging.warning("Selenium Manager获取驱动失败，尝试使用PATH中的chromedriver")
+                            self.driver = webdriver.Chrome(service=Service(), options=options)
+                    else:
+                        raise
             logging.info("WebDriver初始化完成")
         except Exception as e:
             logging.error(f"WebDriver初始化失败: {e}")
@@ -450,7 +494,7 @@ class MediaIndexer:
                             # 等待影片详细信息页面加载完成
                             try:
                                 WebDriverWait(self.driver, 10).until(
-                                    EC.presence_of_element_located((By.CLASS_NAME, "movie-summary"))
+                                    EC.presence_of_element_located((By.CLASS_NAME, "movie-introduce"))
                                 )
                                 logging.info("成功进入影片详细信息页面")
                                 time.sleep(5)  # 等待页面稳定
@@ -478,7 +522,7 @@ class MediaIndexer:
                             for resource in resource_items:
                                 try:
                                     # 提取资源标题
-                                    title_element = resource.find_element(By.CSS_SELECTOR, "td a[title]")
+                                    title_element = resource.find_element(By.CSS_SELECTOR, "td a.torrent")
                                     resource_title = title_element.get_attribute("title")
                                     resource_link = resource.find_element(By.CSS_SELECTOR, "div a[target='_blank']").get_attribute("href")
                                     logging.debug(f"资源标题: {resource_title}, 链接: {resource_link}")
@@ -692,7 +736,7 @@ class MediaIndexer:
                     # 等待电视节目详细信息页面加载完成
                     try:
                         WebDriverWait(self.driver, 10).until(
-                            EC.presence_of_element_located((By.CLASS_NAME, "movie-summary"))
+                            EC.presence_of_element_located((By.CLASS_NAME, "movie-introduce"))
                         )
                         logging.info("成功进入电视节目详细信息页面")
                         time.sleep(5)  # 等待页面稳定

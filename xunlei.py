@@ -15,8 +15,11 @@ import hashlib
 import urllib.parse
 import bencodepy
 import base64
+from pathlib import Path
+import shutil
 
 # 配置日志
+os.makedirs("/tmp/log", exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,  # 设置日志级别为 INFO
     format="%(asctime)s - %(levelname)s - %(message)s",  # 设置日志格式
@@ -29,10 +32,12 @@ logging.basicConfig(
 class XunleiDownloader:
     TORRENT_DIR = "/Torrent"  # 定义种子文件目录为类属性
 
-    def __init__(self, db_path='/config/data.db'):
+    def __init__(self, db_path=None):
         self.db_path = db_path
         self.driver = None
         self.config = {}
+        if not self.db_path:
+            self.db_path = os.environ.get("DB_PATH") or os.environ.get("DATABASE") or '/config/data.db'
 
     def setup_webdriver(self, instance_id=11):
         if hasattr(self, 'driver') and self.driver is not None:
@@ -63,9 +68,17 @@ class XunleiDownloader:
         options.add_argument('--lang=zh-CN')
         # 设置用户配置文件缓存目录，使用固定instance-id 11作为该程序特有的id
         user_data_dir = f'/app/ChromeCache/user-data-dir-inst-{instance_id}'
+        try:
+            os.makedirs(user_data_dir, exist_ok=True)
+        except Exception:
+            pass
         options.add_argument(f'--user-data-dir={user_data_dir}')
         # 设置磁盘缓存目录，使用instance-id区分
         disk_cache_dir = f"/app/ChromeCache/disk-cache-dir-inst-{instance_id}"
+        try:
+            os.makedirs(disk_cache_dir, exist_ok=True)
+        except Exception:
+            pass
         options.add_argument(f"--disk-cache-dir={disk_cache_dir}")
         
         # 设置默认下载目录，使用instance-id区分
@@ -82,10 +95,36 @@ class XunleiDownloader:
         options.add_experimental_option("prefs", prefs)
 
         # 指定 chromedriver 的路径
-        service = Service(executable_path='/usr/lib/chromium/chromedriver')
+        configured_driver_path = ""
+        try:
+            configured_driver_path = (self.config.get("chromedriver_path") or "").strip()
+        except Exception:
+            configured_driver_path = ""
+        driver_path = os.environ.get("CHROMEDRIVER_PATH") or configured_driver_path or "/usr/lib/chromium/chromedriver"
+        service = Service(executable_path=driver_path) if driver_path and os.path.exists(driver_path) else None
         
         try:
-            self.driver = webdriver.Chrome(service=service, options=options)
+            if service is not None:
+                self.driver = webdriver.Chrome(service=service, options=options)
+            else:
+                try:
+                    self.driver = webdriver.Chrome(options=options)
+                except Exception as e:
+                    msg = str(e)
+                    if ("only supports Chrome version" in msg) or ("error decoding response body" in msg) or ("Unable to obtain driver" in msg):
+                        try:
+                            cache_root = Path.home() / ".cache" / "selenium"
+                            shutil.rmtree(cache_root / "chromedriver", ignore_errors=True)
+                            try:
+                                (cache_root / "se-metadata.json").unlink(missing_ok=True)
+                            except Exception:
+                                pass
+                            self.driver = webdriver.Chrome(options=options)
+                        except Exception:
+                            logging.warning("Selenium Manager获取驱动失败，尝试使用PATH中的chromedriver")
+                            self.driver = webdriver.Chrome(service=Service(), options=options)
+                    else:
+                        raise
             logging.info(f"WebDriver初始化完成 (Instance ID: {instance_id})")
         except Exception as e:
             logging.error(f"WebDriver初始化失败: {e}")
@@ -106,20 +145,14 @@ class XunleiDownloader:
             logging.error(f"数据库加载配置错误: {e}")
             exit(0)
 
-    def is_jikongjian_device(self, device_name):
-        """判断设备名是否以“极空间”开头"""
-        return device_name and device_name.startswith("极空间")
-
-    def login_to_xunlei(self, username, password, device_name, max_retries=3):
+    def login_to_xunlei(self, username, password, max_retries=3):
         """
         打开 迅雷-远程设备 页面并执行迅雷登录。
         在找不到 iframe 或点击登录按钮失败时刷新页面并重试。
         """
-        base_url = "https://pan.xunlei.com/yc/jkj/home/" if self.is_jikongjian_device(device_name) else "https://pan.xunlei.com/yc/home/"
-        
         for attempt in range(1, max_retries + 1):
-            self.driver.get(base_url)
-            logging.info(f"成功加载 迅雷-远程设备 页面: {base_url}")
+            self.driver.get(f"https://pan.xunlei.com/yc/home/")
+            logging.info("成功加载 迅雷-远程设备 页面")
             time.sleep(5)
 
             # 点击登录按钮前检查是否已登录
@@ -214,111 +247,32 @@ class XunleiDownloader:
     def check_device(self, device_name, max_retries=3):
         """
         检查并切换迅雷设备，增加刷新重试机制。
-        如果目标设备处于离线状态（通过 div.fail 提示检测），或设备根本不存在，则记录日志并停止任务。
         :param device_name: 配置中的设备名称
         :param max_retries: 最大重试次数
-        :return: 成功且设备在线返回 True，否则返回 False
+        :return: 成功返回 True，失败返回 False
         """
         for attempt in range(max_retries):
             try:
+                # 检查当前设备
                 time.sleep(5)
-
-                # 【关键】先检查是否有离线错误提示
-                try:
-                    fail_div = WebDriverWait(self.driver, 5).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, "div.fail"))
-                    )
-                    fail_text = fail_div.text
-                    if f"当前设备({device_name})已离线" in fail_text:
-                        logging.error(f"目标设备 '{device_name}' 当前处于离线状态，无法继续下载任务")
-                        return False
-                except TimeoutException:
-                    pass  # 无离线提示，继续正常流程
-
                 header_home = WebDriverWait(self.driver, 10).until(
                     EC.presence_of_element_located((By.XPATH, "//div[@class='header-home']"))
                 )
-                current_text = header_home.text.strip()
+                if header_home.text != device_name:
+                    logging.info(f"当前设备为 '{header_home.text}'，正在切换到 '{device_name}'")
+                    actions = ActionChains(self.driver)
+                    actions.move_to_element(header_home).click().perform()
+                    time.sleep(1)
 
-                # 情况1：当前已是目标设备（无论是否带离线）
-                if current_text == device_name or current_text == f"{device_name}(离线)":
-                    # 再次确认无离线提示（双重保险）
-                    try:
-                        self.driver.find_element(By.CSS_SELECTOR, "div.fail")
-                        logging.error(f"目标设备 '{device_name}' 页面显示离线错误，无法继续")
-                        return False
-                    except:
-                        pass
-
-                    if "(离线)" in current_text:
-                        logging.error(f"目标设备 '{device_name}' 当前处于离线状态（通过标题检测）")
-                        return False
-                    else:
-                        logging.info("已处于目标设备且在线")
-                        return True
-
-                # 情况2：需要切换设备
-                logging.info(f"当前设备为 '{current_text}'，正在切换到 '{device_name}'")
-                actions = ActionChains(self.driver)
-                actions.move_to_element(header_home).click().perform()
-                time.sleep(1)
-
-                # 【新增】获取所有设备选项，检查目标设备是否存在
-                try:
-                    all_device_spans = WebDriverWait(self.driver, 10).until(
-                        EC.presence_of_all_elements_located((By.XPATH, "//span[contains(@class, 'device')]"))
+                    device_option = WebDriverWait(self.driver, 10).until(
+                        EC.element_to_be_clickable((By.XPATH,
+                                                    f"//span[contains(@class, 'device') and (text()='{device_name}' or text()='{device_name}(离线)')]"))
                     )
-                    device_texts = [span.text.strip() for span in all_device_spans]
-                    expected_online = device_name
-                    expected_offline = f"{device_name}(离线)"
+                    actions.move_to_element(device_option).click().perform()
+                    time.sleep(3)
+                else:
+                    logging.info("已处于目标设备")
 
-                    # 检查目标设备是否在列表中（无论在线/离线）
-                    if expected_online not in device_texts and expected_offline not in device_texts:
-                        logging.error(f"设备列表中未找到目标设备 '{device_name}'，可用设备: {device_texts}")
-                        return False
-                except TimeoutException:
-                    logging.error("未能加载设备列表，无法确认目标设备是否存在")
-                    return False
-
-                # 查找目标设备选项（包括离线状态）
-                offline_device_text = f"{device_name}(离线)"
-                device_option = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((
-                        By.XPATH,
-                        f"//span[contains(@class, 'device') and (text()='{device_name}' or text()='{offline_device_text}')]"
-                    ))
-                )
-
-                option_text = device_option.text.strip()
-                if option_text == offline_device_text:
-                    logging.error(f"目标设备 '{device_name}' 在设备列表中显示为离线，无法使用")
-                    return False
-
-                # 执行切换
-                actions.move_to_element(device_option).click().perform()
-                time.sleep(3)
-
-                # 切换后，【关键】立即检查是否出现离线错误提示
-                try:
-                    fail_div = WebDriverWait(self.driver, 5).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, "div.fail"))
-                    )
-                    fail_text = fail_div.text
-                    if f"当前设备({device_name})已离线" in fail_text:
-                        logging.error(f"切换后检测到目标设备 '{device_name}' 处于离线状态，无法继续")
-                        return False
-                except TimeoutException:
-                    pass  # 无错误提示，继续
-
-                # 再次检查 header
-                new_header = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.XPATH, "//div[@class='header-home']"))
-                )
-                if "(离线)" in new_header.text:
-                    logging.error(f"切换后设备 '{new_header.text}' 仍处于离线状态")
-                    return False
-
-                logging.info(f"成功切换到设备: {device_name}")
                 return True
 
             except Exception as e:
@@ -338,27 +292,28 @@ class XunleiDownloader:
         :return: 成功返回 True，失败返回 False
         """
         try:
-            # === 1. 标准化目标路径 ===
-            normalized_input = download_dir.replace(os.path.sep, '/').strip('/')
-            path_parts = [p for p in normalized_input.split('/') if p]
+            # 统一路径格式并拆分
+            path_parts = [p for p in download_dir.replace(os.path.sep, '/').split('/') if p]
             if not path_parts:
                 return True
 
-            target_parts = path_parts
-            target_full = '/' + '/'.join(target_parts)
-
-            # === 2. 检查当前已选路径是否已匹配 ===
+            # 获取当前页面显示的下载目录路径
             current_dir_element = WebDriverWait(self.driver, 5).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "div.file-upload__folder > span"))
             )
-            current_text = current_dir_element.text.strip()
-            if current_text.startswith("下载到："):
-                current_path = current_text[len("下载到："):]
-            else:
-                current_path = current_text
+            current_dir_text = current_dir_element.text.strip()
 
-            if current_path.strip('/') == '/'.join(target_parts):
-                logging.info(f"当前下载目录已是目标目录：{download_dir}")
+            # 提取路径部分
+            if current_dir_text.startswith("下载到："):
+                current_path = current_dir_text[len("下载到："):]
+            else:
+                current_path = current_dir_text
+
+            normalized_current = [p for p in current_path.replace(os.path.sep, '/').split('/') if p]
+            normalized_target = path_parts
+
+            if normalized_current == normalized_target:
+                logging.info(f"当前下载目录已是目标目录: {download_dir}")
                 return True
 
             # === 3. 打开目录选择器 ===
@@ -369,117 +324,45 @@ class XunleiDownloader:
             actions.move_to_element(more_options_button).click().perform()
             time.sleep(1)
 
-            # === 4. 等待目录选择器加载 ===
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div.download-dir__body"))
-            )
-
-            # === 5. 【关键】只在“全部磁盘目录”中查找最长匹配的顶级目录 ===
-            try:
-                all_disk_section = self.driver.find_element(By.XPATH, "//h2[text()='全部磁盘目录']/following-sibling::ul[@class='file-item']")
-                history_elements = all_disk_section.find_elements(By.CSS_SELECTOR, "p.history")
-            except Exception as e:
-                logging.error(f"未找到“全部磁盘目录”区域: {e}")
-                return False
-
-            best_match_elem = None
-            best_match_parts = []
-
-            for elem in history_elements:
-                text = elem.text.strip().rstrip('/')
-                if not text.startswith('/'):
-                    continue
-                parts = [p for p in text[1:].split('/') if p]
-                # 检查是否是 target_parts 的前缀
-                if len(parts) <= len(target_parts) and parts == target_parts[:len(parts)]:
-                    if len(parts) > len(best_match_parts):
-                        best_match_parts = parts
-                        best_match_elem = elem
-
-            if best_match_elem is None:
-                logging.error(f"在“全部磁盘目录”中未找到目标路径的任何前缀匹配项，目标: {target_full}")
-                return False
-
-            # === 6. 勾选并进入最佳匹配的顶级目录 ===
-            checkbox_span = best_match_elem.find_element(By.XPATH, "../span//span[contains(@class, 'nas-remote__checkbox')]")
-            if 'checked' not in checkbox_span.get_attribute('class'):
-                actions.move_to_element(checkbox_span).click().perform()
-                time.sleep(0.5)
-
-            # 如果最佳匹配就是完整路径，直接确认
-            if len(best_match_parts) == len(target_parts):
-                if not self._click_confirm_button():
-                    return False
-                logging.info(f"成功切换至下载目录：{download_dir}")
-                return True
-
-            # 否则，点击“进入”
-            enter_btn = best_match_elem.find_element(By.XPATH, "../div[contains(@class, 'enter')]")
-            actions.move_to_element(enter_btn).click().perform()
-            time.sleep(1.5)
-
-            # === 7. 现在进入子目录页面，navigation 可用 ===
-            try:
-                navigation_p = WebDriverWait(self.driver, 5).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "div.navigation > p"))
-                )
-                current_browsing = navigation_p.text.strip()
-                current_parts = [p for p in current_browsing.strip('/').split('/') if p]
-                logging.info(f"已进入目录: {current_browsing}")
-            except TimeoutException:
-                logging.error("进入子目录后未找到 navigation 路径")
-                return False
-
-            # 验证当前路径是否匹配 best_match_parts
-            if current_parts != best_match_parts:
-                logging.warning(f"路径不一致: 期望 {best_match_parts}, 实际 {current_parts}")
-
-            # === 8. 从 best_match_parts 的下一级开始继续进入 ===
-            start_level = len(best_match_parts)
-            for level in range(start_level, len(target_parts)):
-                folder_name = target_parts[level]
+            # 进入每一级目录
+            current_level = 0
+            while current_level < len(normalized_target):
+                folder_name = normalized_target[current_level]
                 escaped_name = folder_name.replace("'", "\\'")
-
                 xpath = f"//p[contains(@class, 'history') and (text()='{escaped_name}' or text()='{escaped_name}/')]"
 
-                try:
-                    folder_elem = WebDriverWait(self.driver, 10).until(
-                        EC.presence_of_element_located((By.XPATH, xpath))
-                    )
-                except TimeoutException:
-                    logging.error(f"在当前目录下未找到子目录: {folder_name}")
-                    return False
+                folder_element = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, xpath))
+                )
 
                 # 勾选 checkbox
-                checkbox_span = folder_elem.find_element(By.XPATH, "../span//span[contains(@class, 'nas-remote__checkbox')]")
-                if 'checked' not in checkbox_span.get_attribute('class'):
-                    actions.move_to_element(checkbox_span).click().perform()
+                checkbox_container = folder_element.find_element(By.XPATH, "../span")
+                folder_checkbox = checkbox_container.find_element(
+                    By.XPATH,
+                    ".//span[contains(@class, 'nas-remote__checkbox')]"
+                )
+                if 'checked' not in folder_checkbox.get_attribute("class"):
+                    actions.move_to_element(folder_checkbox).click().perform()
                     time.sleep(0.5)
 
-                # 如果不是最后一级，点击“进入”
-                if level < len(target_parts) - 1:
-                    enter_btn = folder_elem.find_element(By.XPATH, "../div[contains(@class, 'enter')]")
-                    actions.move_to_element(enter_btn).click().perform()
-                    time.sleep(1.5)
+                # 如果不是最后一级，进入目录
+                if current_level < len(normalized_target) - 1:
+                    enter_button = folder_element.find_element(By.XPATH, "../div[contains(@class, 'enter')]")
+                    actions.move_to_element(enter_button).click().perform()
+                    time.sleep(1)
+                else:
+                    # 最后一级，点击确认
+                    if not self._click_confirm_button():
+                        return False
 
-                    # 更新 navigation（可选）
-                    try:
-                        new_nav = self.driver.find_element(By.CSS_SELECTOR, "div.navigation > p")
-                        logging.info(f"已进入: {new_nav.text.strip()}")
-                    except:
-                        pass
+                current_level += 1
 
-            # === 9. 最后一级，点击确认 ===
-            if not self._click_confirm_button():
-                return False
-
-            logging.info(f"成功切换至下载目录：{download_dir}")
+            logging.info(f"成功切换至下载目录: {download_dir}")
             return True
 
         except Exception as e:
-            logging.error(f"检查下载目录失败：{e}")
+            logging.error(f"检查下载目录失败: {e}")
             return False
-
 
     def _click_confirm_button(self):
         """
@@ -631,9 +514,8 @@ class XunleiDownloader:
                 # 如果是第一次尝试，则打开新建任务弹窗
                 if attempt == 0:
                     # 获取设备名并决定 URL
-                    device_name = self.config.get("xunlei_device_name")
-                    base_url = "https://pan.xunlei.com/yc/jkj/home/" if self.is_jikongjian_device(device_name) else "https://pan.xunlei.com/yc/home/"
-                    self.driver.get(base_url)
+                    # 重新打开迅雷远程设备页面
+                    self.driver.get("https://pan.xunlei.com/yc/home/")
                     time.sleep(3)
                     
                     # 等待页面加载完成
@@ -790,6 +672,13 @@ class XunleiDownloader:
             self.driver = None  # 重置 driver 变量
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="迅雷-添加下载任务")
+    parser.add_argument("--magnet", type=str, default="", help="直接添加指定磁力链接（可选）")
+    parser.add_argument("--label", type=str, default="", help="任务标签/标题（可选，仅用于日志）")
+    args = parser.parse_args()
+
     downloader = XunleiDownloader()
 
     # 加载配置
@@ -800,10 +689,37 @@ if __name__ == "__main__":
         logging.info(f"当前下载下载器为 {download_type}，无需执行迅雷-添加下载任务")
         exit(0)
 
-    # 检查 Torrent 目录是否有种子文件
+    # 初始化浏览器
+    downloader.setup_webdriver()
+
+    # 从配置中获取用户名和密码
+    username = config.get("download_username")
+    password = config.get("download_password")
+
+    # 登录迅雷
+    if not downloader.login_to_xunlei(username, password):
+        logging.error("登录失败")
+        downloader.close_driver()
+        exit(1)
+
+    # 设备切换（如果配置了）
+    xunlei_device_name = config.get("xunlei_device_name")
+    if xunlei_device_name and not downloader.check_device(xunlei_device_name):
+        logging.error("设备切换失败")
+        downloader.close_driver()
+        exit(1)
+
+    # 1) 直接添加 magnet 模式
+    if args.magnet:
+        ok = downloader._add_magnet_link(args.magnet, original_file_name=None)
+        downloader.close_driver()
+        exit(0 if ok else 1)
+
+    # 2) 兼容原有：检查 Torrent 目录是否有种子文件
     torrent_dir = XunleiDownloader.TORRENT_DIR
     if not os.path.exists(torrent_dir):
         logging.info(f"目录 {torrent_dir} 不存在，程序结束")
+        downloader.close_driver()
         exit(0)
 
     torrent_files = [
@@ -813,32 +729,8 @@ if __name__ == "__main__":
 
     if not torrent_files:
         logging.info("没有发现种子文件，程序结束")
+        downloader.close_driver()
         exit(0)
-
-    # 初始化浏览器
-    downloader.setup_webdriver()
-
-    # 从配置中获取用户名和密码
-    username = config.get("download_username")
-    password = config.get("download_password")
-
-    # 获取设备名
-    xunlei_device_name = config.get("xunlei_device_name")
-
-    # 登录迅雷（传入设备名）
-    if not downloader.login_to_xunlei(username, password, xunlei_device_name):
-        logging.error("登录失败")
-        downloader.close_driver()
-        exit(1)
-
-    # 获取配置参数
-    xunlei_dir = config.get("xunlei_dir")
-
-    # 在打开新建任务弹窗前检查设备
-    if not downloader.check_device(xunlei_device_name):
-        logging.error("设备切换失败")
-        downloader.close_driver()
-        exit(1)
 
     # 生成磁力链接
     magnet_links = []

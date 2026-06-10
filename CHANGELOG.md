@@ -2,6 +2,20 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.5.22] - 2026-06-10
+
+#### 说明
+- 部分功能已经测试并且能正常使用，Jackett未测试不保证可用，有需要的朋友可以自行测试。
+- 目前“观影”站点无法使用，暂时未从mediamaster-v2中移除。
+- BT之家（1LOU）需要在系统设置中配置名称叫做_ok1_的Cookie（可以不用登录），才能正常使用BT之家（1LOU）的索引功能。
+
+### 新增功能声明
+- 新增功能由Github社区贡献者 staysimpIe 开发，源自 [MediaMaster V2-change](https://github.com/staysimpIe/mediamaster-v2-change) 项目，并进行了部分修改。
+
+#### 站点索引
+- 新增 BT世界网、BT之家（1LOU）、Seedhub 三个 BT 网站索引支持
+- 新增 Jackett 统一索引配置及索引功能
+
 ## [2.5.21] - 2026-04-08
 
 #### 关于程序
@@ -904,3 +918,4 @@
 [2.5.19]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.19
 [2.5.20]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.20
 [2.5.21]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.21
+[2.5.22]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.22

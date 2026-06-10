@@ -947,7 +947,9 @@
                 'GY': '观影',
                 'BTYS': 'BT影视',
                 'BTHD': '高清影视之家',
-                'HDTV': '高清剧集网'
+                'HDTV': '高清剧集网',
+                'BTSJ6': 'BT世界网',
+                '1LOU': '1LOU'
             };
             
             // 标记是否已接收到有效数据
@@ -962,7 +964,9 @@
                 'GY': false,
                 'BTYS': false,
                 'BTHD': false,
-                'HDTV': false
+                'HDTV': false,
+                'BTSJ6': false,
+                '1LOU': false
             };
             
             let completedSites = 0;
@@ -1265,7 +1269,9 @@
                 'GY': '观影',
                 'BTYS': 'BT影视',
                 'BTHD': '高清影视之家',
-                'HDTV': '高清剧集网'
+                'HDTV': '高清剧集网',
+                'BTSJ6': 'BT世界网',
+                '1LOU': '1LOU'
             };
             
             sites.forEach(site => {
@@ -1340,7 +1346,7 @@
             row.innerHTML = `
                 <td class="search_titles" style="text-align:left;"><a href="${item.link}" target="_blank">${formatResourceTitle(item.title)}</a></td>
                 <td class="info-col">${sizeBadge}${popularityBadge}</td>
-                <td><button class="btn btn-sm btn-primary download-button" data-link="${item.link}" data-title="${item.title}" data-site="${item.site}">下载</button></td>
+                <td><button class="btn btn-sm btn-primary download-button" data-link="${item.link}" data-title="${item.title}" data-site="${item.site}" data-referer="${item.subject_url || item.referer || ''}">下载</button></td>
             `;
             resourceTbody.appendChild(row);
         });
@@ -1353,6 +1359,7 @@
                 const link = this.getAttribute('data-link');
                 const title = this.getAttribute('data-title');
                 const site = this.getAttribute('data-site');
+                const referer = this.getAttribute('data-referer');
 
                 fetch('/api/download_resource', {
                     method: 'POST',
@@ -1360,7 +1367,7 @@
                         'Content-Type': 'application/json',
                         'X-Requested-With': 'XMLHttpRequest'
                     },
-                    body: JSON.stringify({ site, title, link })
+                    body: JSON.stringify({ site, title, link, referer })
                 })
                 .then(response => {
                     // 检查响应是否为JSON格式

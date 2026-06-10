@@ -4,6 +4,7 @@ import logging
 import bcrypt
 import re
 
+os.makedirs("/tmp/log", exist_ok=True)
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,  # 设置日志级别为 INFO
@@ -15,7 +16,7 @@ logging.basicConfig(
 )
 
 # 数据库文件路径
-DB_PATH = "/config/data.db"
+DB_PATH = os.environ.get("DB_PATH") or os.environ.get("DATABASE") or "/config/data.db"
 
 # 定义状态码
 CONFIG_DEFAULT = 0
@@ -191,6 +192,7 @@ def create_tables():
     default_configs = [
         ("notification", "False"),
         ("notification_api_key", "your_api_key"),
+        ("chromedriver_path", ""),
         ("dateadded", "False"),
         ("actor_nfo", "False"),
         ("scrape_metadata", "False"),
@@ -260,13 +262,27 @@ def create_tables():
         ("bt_movie_base_url", "https://10001.baidubaidu.win"),
         ("bt_tv_base_url", "https://10002.baidubaidu.win"),
         ("bt0_base_url", "https://web2.mukaku.com"),
-        ("btys_base_url", "https://www.btbtla.com"),
+        ("btys_base_url", "https://www.btbtlb.com"),
         ("gy_base_url", "https://www.gyg.si"),
+        ("btsj6_base_url", "https://www.btsj6.com"),
+        ("1lou_base_url", "https://www.1lou.me"),
+        ("seedhub_base_url", "https://seeduck.cc"),
+        ("jackett_base_url", "http://127.0.0.1:9117"),
+        ("jackett_api_key", ""),
+        ("jackett_verify_ssl", "True"),
+        ("jackett_timeout_seconds", "90"),
+        ("jackett_retries", "2"),
         ("bthd_enabled", "False"),
         ("hdtv_enabled", "False"),
         ("bt0_enabled", "True"),
         ("btys_enabled", "True"),
-        ("gy_enabled", "True"),
+        ("gy_enabled", "False"),
+        ("btsj6_enabled", "True"),
+        ("1lou_enabled", "False"),
+        ("seedhub_enabled", "True"),
+        ("jackett_enabled", "False"),
+        ("1lou_ok1_cookie", "8PbJZYCzXpLlGOhwwVsn70gm69fg4y2vORAniXidCSBKzz3rKHibfdtHop4PVU9DTATcR7ifHfLbL3ZmriJIpDcjg8AbpYPeIoNGjzsgAEd3jZ5fAAQfU7N"),
+        ("1lou_max_hits", "8"),
         ("run_interval_hours", "6")
     ]
 
@@ -497,6 +513,7 @@ def ensure_all_configs_exist():
     default_configs = [
         ("notification", "False"),
         ("notification_api_key", "your_api_key"),
+        ("chromedriver_path", ""),
         ("dateadded", "False"),
         ("actor_nfo", "False"),
         ("scrape_metadata", "False"),
@@ -566,13 +583,27 @@ def ensure_all_configs_exist():
         ("bt_movie_base_url", "https://10001.baidubaidu.win"),
         ("bt_tv_base_url", "https://10002.baidubaidu.win"),
         ("bt0_base_url", "https://web2.mukaku.com"),
-        ("btys_base_url", "https://www.btbtla.com"),
+        ("btys_base_url", "https://www.btbtlb.com"),
         ("gy_base_url", "https://www.gyg.si"),
+        ("btsj6_base_url", "https://www.btsj6.com"),
+        ("1lou_base_url", "https://www.1lou.me"),
+        ("seedhub_base_url", "https://seeduck.cc"),
+        ("jackett_base_url", "http://127.0.0.1:9117"),
+        ("jackett_api_key", ""),
+        ("jackett_verify_ssl", "True"),
+        ("jackett_timeout_seconds", "90"),
+        ("jackett_retries", "2"),
         ("bthd_enabled", "False"),
         ("hdtv_enabled", "False"),
         ("bt0_enabled", "True"),
         ("btys_enabled", "True"),
-        ("gy_enabled", "True"),
+        ("gy_enabled", "False"),
+        ("btsj6_enabled", "True"),
+        ("1lou_enabled", "False"),
+        ("seedhub_enabled", "True"),
+        ("jackett_enabled", "False"),
+        ("1lou_max_hits", "8"),
+        ("1lou_ok1_cookie", "8PbJZYCzXpLlGOhwwVsn70gm69fg4y2vORAniXidCSBKzz3rKHibfdtHop4PVU9DTATcR7ifHfLbL3ZmriJIpDcjg8AbpYPeIoNGjzsgAEd3jZ5fAAQfU7N"),
         ("run_interval_hours", "6")
     ]
 
@@ -595,7 +626,23 @@ def check_config_data():
     cursor = conn.cursor()
 
     default_configs = {
+        "notification": "False",
         "notification_api_key": "your_api_key",
+        "chromedriver_path": "",
+        "dateadded": "False",
+        "actor_nfo": "False",
+        "scrape_metadata": "False",
+        "scrape_plot": "True",
+        "scrape_actors": "True",
+        "scrape_director": "True",
+        "scrape_actor_thumb": "True",
+        "scrape_ratings": "True",
+        "scrape_genres": "True",
+        "scrape_tags": "True",
+        "scrape_studios": "True",
+        "scrape_poster": "True",
+        "scrape_fanart": "True",
+        "scrape_clearlogo": "True",
         "nfo_exclude_dirs": "Season,Movie,Music,Unknown,backdrops,.actors,.deletedByTMM",
         "nfo_excluded_filenames": "season.nfo,video1.nfo",
         "nfo_excluded_subdir_keywords": "Season,Music,Unknown,backdrops,.actors,.deletedByTMM",
@@ -628,20 +675,6 @@ def check_config_data():
         "tmm_enabled": "False",
         "tmm_api_url": "http://127.0.0.1:7878",
         "tmm_api_key": "19fa906a-5e4c-4d0b-beb7-7a65d8b0f3f6",
-        "dateadded": "False",
-        "actor_nfo": "False",
-        "scrape_metadata": "False",
-        "scrape_plot": "True",
-        "scrape_actors": "True",
-        "scrape_director": "True",
-        "scrape_actor_thumb": "True",
-        "scrape_ratings": "True",
-        "scrape_genres": "True",
-        "scrape_studios": "True",
-        "scrape_tags": "True",
-        "scrape_poster": "True",
-        "scrape_fanart": "True",
-        "scrape_clearlogo": "True",
         "download_mgmt": "False",
         "download_type": "transmission",
         "download_username": "username",
@@ -665,13 +698,27 @@ def check_config_data():
         "bt_movie_base_url": "https://10001.baidubaidu.win",
         "bt_tv_base_url": "https://10002.baidubaidu.win",
         "bt0_base_url": "https://web2.mukaku.com",
-        "btys_base_url": "https://www.btbtla.com",
+        "btys_base_url": "https://www.btbtlb.com",
         "gy_base_url": "https://www.gyg.si",
+        "btsj6_base_url": "https://www.btsj6.com",
+        "1lou_base_url": "https://www.1lou.me",
+        "seedhub_base_url": "https://seeduck.cc",
+        "jackett_base_url": "http://127.0.0.1:9117",
+        "jackett_api_key": "",
+        "jackett_verify_ssl": "True",
+        "jackett_timeout_seconds": "90",
+        "jackett_retries": "2",
         "bthd_enabled": "False",
         "hdtv_enabled": "False",
         "bt0_enabled": "True",
         "btys_enabled": "True",
-        "gy_enabled": "True",
+        "gy_enabled": "False",
+        "btsj6_enabled": "True",
+        "1lou_enabled": "False",
+        "seedhub_enabled": "True",
+        "jackett_enabled": "False",
+        "1lou_ok1_cookie": "8PbJZYCzXpLlGOhwwVsn70gm69fg4y2vORAniXidCSBKzz3rKHibfdtHop4PVU9DTATcR7ifHfLbL3ZmriJIpDcjg8AbpYPeIoNGjzsgAEd3jZ5fAAQfU7N",
+        "1lou_max_hits": "8",
         "run_interval_hours": "6"
     }
 

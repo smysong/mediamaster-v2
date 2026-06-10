@@ -1042,6 +1042,57 @@
                         </div>
                     </div>
 
+                    {% if config.get('Jackett 设置') %}
+                    <div class="col-md-6">
+                        <div class="card h-100 shadow-sm">
+                            <div class="card-header text-white d-flex align-items-center">
+                                <i class="bi bi-plugin me-2"></i>Jackett
+                            </div>
+                            <div class="card-body">
+                                {% for key, field in config['Jackett 设置'].items() %}
+                                <div class="mb-3 setting-item" id="form-group-{{ key }}">
+                                    {% if field.type == 'switch' %}
+                                    <div class="switch-container">
+                                        <label for="{{ key }}" class="form-label fw-medium">{{ field.label }}</label>
+                                        <input type="hidden" name="{{ key }}_id" value="{{ field.id }}">
+                                        <label class="switch">
+                                            <input type="checkbox" name="{{ key }}" id="{{ key }}" {% if field.value == 'True' %}checked{% endif %}>
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
+                                    {% else %}
+                                    <label for="{{ key }}" class="form-label fw-medium">{{ field.label }}</label>
+
+                                    <!-- 隐藏字段存储 ID -->
+                                    <input type="hidden" name="{{ key }}_id" value="{{ field.id }}">
+
+                                    {% if field.type == 'password' %}
+                                        <input type="password" class="form-control" name="{{ key }}" id="{{ key }}" value="{{ field.value }}">
+                                    {% else %}
+                                        <input type="text" class="form-control" name="{{ key }}" id="{{ key }}" value="{{ field.value }}">
+                                    {% endif %}
+                                    {% endif %}
+
+                                    {% if key == 'jackett_api_key' %}
+                                    <div class="form-text">
+                                        <i class="bi bi-info-circle me-1"></i> Jackett 用于聚合多个索引器；本项目通过 Torznab API 拉取结果并生成 /tmp/index/*-JACKETT.json。
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+
+                                <!-- 添加 Jackett 测试按钮 -->
+                                <div class="mt-3">
+                                    <button type="button" id="testJackettBtn" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-wifi"></i> 测试 Jackett 连接
+                                    </button>
+                                    <span id="jackettTestResult" class="ms-2"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
                 </div>
             </form>
         </div>
@@ -1332,6 +1383,57 @@
                 },
                 error: function(xhr, status, error) {
                     $('#tmmTestResult').html('<span class="text-danger"><i class="bi bi-x-circle"></i> 测试请求失败：' + error + '</span>');
+                }
+            });
+        });
+
+        // 测试 Jackett 连接功能
+        $('#testJackettBtn').on('click', function() {
+            var jackettEnabledEl = $('#jackett_enabled');
+            if (jackettEnabledEl.length && !jackettEnabledEl.is(':checked')) {
+                $('#jackettTestResult').html('<span class="text-warning"><i class="bi bi-exclamation-triangle"></i> Jackett 未启用</span>');
+                return;
+            }
+
+            var baseUrl = $('#jackett_base_url').val();
+            var apiKey = $('#jackett_api_key').val();
+            var verifySslEl = $('#jackett_verify_ssl');
+            var verifySsl = verifySslEl.length ? verifySslEl.is(':checked') : true;
+            var timeoutSeconds = $('#jackett_timeout_seconds').val();
+            var retries = $('#jackett_retries').val();
+
+            if (!baseUrl || !apiKey) {
+                $('#jackettTestResult').html('<span class="text-danger"><i class="bi bi-exclamation-circle"></i> 请填写 Jackett 地址和 API Key</span>');
+                return;
+            }
+
+            $('#jackettTestResult').html('<span class="text-info"><i class="bi bi-arrow-repeat"></i> 测试中...</span>');
+
+            $.ajax({
+                url: '/test_jackett_connection',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    jackett_base_url: baseUrl,
+                    jackett_api_key: apiKey,
+                    jackett_verify_ssl: verifySsl,
+                    jackett_timeout_seconds: timeoutSeconds,
+                    jackett_retries: retries
+                }),
+                success: function(response) {
+                    var elapsed = (response.elapsed_ms !== undefined) ? ('（' + response.elapsed_ms + 'ms）') : '';
+                    if (response.success) {
+                        $('#jackettTestResult').html('<span class="text-success"><i class="bi bi-check-circle"></i> 连接成功！' + elapsed + '</span>');
+                    } else {
+                        $('#jackettTestResult').html('<span class="text-danger"><i class="bi bi-x-circle"></i> 连接失败：' + response.message + elapsed + '</span>');
+                    }
+                },
+                error: function(xhr, status, error) {
+                    var msg = error;
+                    if (xhr && xhr.responseJSON && xhr.responseJSON.message) {
+                        msg = xhr.responseJSON.message;
+                    }
+                    $('#jackettTestResult').html('<span class="text-danger"><i class="bi bi-x-circle"></i> 测试请求失败：' + msg + '</span>');
                 }
             });
         });

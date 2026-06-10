@@ -12,13 +12,24 @@ from selenium.webdriver.common.action_chains import ActionChains
 import logging
 import os
 import time
+import tempfile
 import sqlite3
 import requests
 import argparse 
 import glob
 from captcha_handler import CaptchaHandler
+from pathlib import Path
+import shutil
+from urllib.parse import urljoin
+import html as _html
+import re
+import base64
+
+from transmission_rpc import Client as TransmissionClient
+from qbittorrentapi import Client as QBittorrentClient, LoginFailed
 
 # 配置日志
+os.makedirs("/tmp/log", exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,  # 设置日志级别为 INFO
     format="%(asctime)s - %(levelname)s - %(message)s",  # 设置日志格式
@@ -28,15 +39,33 @@ logging.basicConfig(
     ]
 )
 
-def get_latest_torrent_file(download_dir="/Torrent"):
+def get_default_torrent_dir() -> str:
+    """获取默认种子目录。
+
+    - 若设置了环境变量 TORRENT_DIR，则使用该值
+    - Windows 下默认使用当前工作目录下的 Torrent 目录（避免写入磁盘根目录）
+    - 其他系统默认 /Torrent（兼容 Docker 镜像习惯）
+    """
+    env_dir = (os.environ.get("TORRENT_DIR") or "").strip()
+    if env_dir:
+        return env_dir
+    if os.name == "nt":
+        return os.path.join(os.getcwd(), "Torrent")
+    return "/Torrent"
+
+def get_latest_torrent_file(download_dir=None):
     """获取下载目录下最新的.torrent文件路径"""
+    if not download_dir:
+        download_dir = get_default_torrent_dir()
     torrent_files = glob.glob(os.path.join(download_dir, "*.torrent"))
     if not torrent_files:
         return None
     return max(torrent_files, key=os.path.getctime)
 
-def rename_torrent_file(old_path, new_name, download_dir="/Torrent"):
+def rename_torrent_file(old_path, new_name, download_dir=None):
     """重命名.torrent文件，失败时使用原始文件添加下载任务"""
+    if not download_dir:
+        download_dir = get_default_torrent_dir()
     new_path = os.path.join(download_dir, new_name)
     try:
         os.rename(old_path, new_path)
@@ -73,17 +102,20 @@ def run_task_adder(torrent_path):
         logging.error(f"添加下载任务时发生未知错误: {e}")
 
 class MediaDownloader:
-    def __init__(self, db_path='/config/data.db'):
+    def __init__(self, db_path=None):
         self.db_path = db_path
         self.driver = None
         self.config = {}
+        if not self.db_path:
+            self.db_path = os.environ.get("DB_PATH") or os.environ.get("DATABASE") or '/config/data.db'
 
-    def setup_webdriver(self, instance_id=10):
+    def setup_webdriver(self, instance_id=10, headless: bool = True):
         if hasattr(self, 'driver') and self.driver is not None:
             logging.info("WebDriver已经初始化，无需重复初始化")
             return
         options = Options()
-        options.add_argument('--headless=new')  # 使用新版无头模式
+        if headless:
+            options.add_argument('--headless=new')  # 使用新版无头模式
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('--window-size=1920x1080')
@@ -92,6 +124,11 @@ class MediaDownloader:
         options.add_argument('--disable-background-timer-throttling')  # 禁用后台定时器节流
         options.add_argument('--disable-renderer-backgrounding')       # 禁用渲染器后台运行
         options.add_argument('--disable-features=VizDisplayCompositor') # 禁用Viz显示合成器
+        # 更强的反检测措施
+        options.add_argument('--disable-blink-features=AutomationControlled')
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
+        options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.6943.90 Safari/537.36')
         # 忽略SSL证书错误
         options.add_argument('--ignore-certificate-errors')
         options.add_argument('--allow-insecure-localhost')
@@ -100,15 +137,34 @@ class MediaDownloader:
         options.page_load_strategy = 'eager'
         # 设置浏览器语言为中文
         options.add_argument('--lang=zh-CN')
-        # 设置用户配置文件缓存目录，使用固定instance-id 10作为该程序特有的id
-        user_data_dir = f'/app/ChromeCache/user-data-dir-inst-{instance_id}'
+        # 设置用户配置文件缓存目录（Windows 本地默认使用 LOCALAPPDATA/TEMP，避免 /app 不可写/冲突）
+        cache_base_dir = os.environ.get("CHROME_CACHE_DIR")
+        if not cache_base_dir:
+            if os.name == "nt":
+                cache_base_dir = os.path.join(
+                    os.environ.get("LOCALAPPDATA") or tempfile.gettempdir(),
+                    "MediaMaster",
+                    "ChromeCache",
+                )
+            else:
+                cache_base_dir = "/app/ChromeCache"
+
+        user_data_dir = os.path.join(cache_base_dir, f'user-data-dir-inst-{instance_id}')
+        try:
+            os.makedirs(user_data_dir, exist_ok=True)
+        except Exception:
+            pass
         options.add_argument(f'--user-data-dir={user_data_dir}')
         # 设置磁盘缓存目录，同样使用instance-id区分
-        disk_cache_dir = f"/app/ChromeCache/disk-cache-dir-inst-{instance_id}"
+        disk_cache_dir = os.path.join(cache_base_dir, f"disk-cache-dir-inst-{instance_id}")
+        try:
+            os.makedirs(disk_cache_dir, exist_ok=True)
+        except Exception:
+            pass
         options.add_argument(f"--disk-cache-dir={disk_cache_dir}")
         
-        # 设置默认下载目录，使用instance-id区分
-        download_dir = f"/Torrent"
+        # 设置默认下载目录
+        download_dir = get_default_torrent_dir()
         os.makedirs(download_dir, exist_ok=True)  # 确保下载目录存在
         prefs = {
             "download.default_directory": download_dir,
@@ -120,11 +176,50 @@ class MediaDownloader:
         }
         options.add_experimental_option("prefs", prefs)
 
-        # 指定 chromedriver 的路径
-        service = Service(executable_path='/usr/lib/chromium/chromedriver')
+        # 降低被识别为自动化的概率（一般不会影响现有站点）
+        try:
+            options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            options.add_experimental_option("useAutomationExtension", False)
+        except Exception:
+            pass
+
+        # 指定 chromedriver 的路径（优先环境变量/系统设置；Docker/Linux 再用默认路径）
+        configured_driver_path = ""
+        try:
+            configured_driver_path = (self.config.get("chromedriver_path") or "").strip()
+        except Exception:
+            configured_driver_path = ""
+        driver_path = os.environ.get("CHROMEDRIVER_PATH") or configured_driver_path or "/usr/lib/chromium/chromedriver"
+        service = Service(executable_path=driver_path) if driver_path and os.path.exists(driver_path) else None
         
         try:
-            self.driver = webdriver.Chrome(service=service, options=options)
+            if service is not None:
+                self.driver = webdriver.Chrome(service=service, options=options)
+            else:
+                try:
+                    self.driver = webdriver.Chrome(options=options)
+                except Exception as e:
+                    msg = str(e)
+                    if ("only supports Chrome version" in msg) or ("error decoding response body" in msg) or ("Unable to obtain driver" in msg):
+                        try:
+                            cache_root = Path.home() / ".cache" / "selenium"
+                            shutil.rmtree(cache_root / "chromedriver", ignore_errors=True)
+                            try:
+                                (cache_root / "se-metadata.json").unlink(missing_ok=True)
+                            except Exception:
+                                pass
+                            self.driver = webdriver.Chrome(options=options)
+                        except Exception:
+                            logging.warning("Selenium Manager获取驱动失败，尝试使用PATH中的chromedriver")
+                            self.driver = webdriver.Chrome(service=Service(), options=options)
+                    else:
+                        raise
+
+            try:
+                self.driver.set_page_load_timeout(30)
+                self.driver.set_script_timeout(30)
+            except Exception:
+                pass
             logging.info(f"WebDriver初始化完成 (Instance ID: {instance_id})")
         except Exception as e:
             logging.error(f"WebDriver初始化失败: {e}")
@@ -171,6 +266,811 @@ class MediaDownloader:
             logging.error(f"配置文件中缺少必要的键: {e}")
         except requests.RequestException as e:
             logging.error(f"网络请求出现错误: {e}")
+    def add_magnet_task(self, magnet_link: str, title_text: str) -> bool:
+        """将磁力链接直接添加到下载器（Transmission / qBittorrent）。"""
+        try:
+            if not magnet_link or not str(magnet_link).startswith("magnet:"):
+                logging.error("无效磁力链接，无法添加任务")
+                return False
+
+            download_mgmt = self.config.get('download_mgmt', 'False').lower() == 'true'
+            download_type = (self.config.get('download_type', 'transmission') or 'transmission').lower()
+            download_host = self.config.get('download_host', '127.0.0.1')
+            download_port = int(self.config.get('download_port', 9091))
+            download_username = self.config.get('download_username', '')
+            download_password = self.config.get('download_password', '')
+
+            if not download_mgmt:
+                logging.error("下载管理功能未启用，跳过添加磁力任务")
+                return False
+
+            label = title_text or "mediamaster"
+
+            if download_type == 'transmission':
+                client = TransmissionClient(
+                    host=download_host,
+                    port=download_port,
+                    username=download_username,
+                    password=download_password,
+                )
+                result = client.add_torrent(magnet_link)
+                torrent_id = getattr(result, 'id', None)
+                if torrent_id is None:
+                    try:
+                        torrent_id = result.get('id')
+                    except Exception:
+                        torrent_id = None
+                if torrent_id is not None:
+                    try:
+                        client.change_torrent(torrent_id, labels=[label])
+                    except Exception:
+                        pass
+                    try:
+                        client.change_torrent(torrent_id, group="mediamaster")
+                    except Exception:
+                        pass
+                logging.info(f"已添加磁力任务到 Transmission: {label}")
+                return True
+
+            if download_type == 'qbittorrent':
+                client = QBittorrentClient(
+                    host=f"http://{download_host}:{download_port}",
+                    username=download_username,
+                    password=download_password,
+                )
+                try:
+                    client.auth_log_in()
+                except LoginFailed as e:
+                    logging.error(f"qBittorrent 登录失败: {e}")
+                    return False
+                client.torrents_add(urls=magnet_link, tags=label, category="mediamaster")
+                logging.info(f"已添加磁力任务到 qBittorrent: {label}")
+                return True
+
+            if download_type == 'xunlei':
+                # 复用项目内的迅雷远程添加逻辑（Selenium）。
+                try:
+                    from xunlei import XunleiDownloader
+                except Exception as e:
+                    logging.error(f"导入迅雷下载器失败: {e}")
+                    return False
+
+                x = XunleiDownloader(db_path=self.db_path)
+                x.load_config()
+                x.setup_webdriver()
+
+                username = self.config.get('download_username', '')
+                password = self.config.get('download_password', '')
+                if not x.login_to_xunlei(username, password):
+                    logging.error("登录迅雷失败")
+                    x.close_driver()
+                    return False
+
+                xunlei_device_name = self.config.get('xunlei_device_name')
+                if xunlei_device_name and not x.check_device(xunlei_device_name):
+                    logging.error("迅雷设备切换失败")
+                    x.close_driver()
+                    return False
+
+                ok = x._add_magnet_link(magnet_link, original_file_name=None)
+                x.close_driver()
+                if ok:
+                    logging.info(f"已添加磁力任务到 迅雷: {label}")
+                return bool(ok)
+
+            logging.error(f"当前下载器类型 {download_type} 不支持直接添加磁力链接")
+            return False
+
+        except Exception as e:
+            logging.error(f"添加磁力任务失败: {e}")
+            return False
+
+    def jackett_download_torrent(self, result, title_text, referer: str | None = None, **_kwargs):
+        """Jackett：link 可能是 magnet 或 .torrent URL。"""
+        link = (result.get("link") or "").strip()
+        if not link:
+            raise Exception("Jackett 下载链接为空")
+
+        # Jackett/Indexer 通常会给 magneturl；优先走 magnet->torrent（便于本地落盘）并尝试直接添加磁力任务
+        if link.startswith("magnet:"):
+            torrent_path = self._save_torrent_from_magnet(link, title_text)
+            if torrent_path:
+                return
+            ok = self.add_magnet_task(link, title_text)
+            if ok:
+                return
+            raise Exception("Jackett 磁力链接添加失败")
+
+        # 其他情况：尝试按 .torrent 直链下载
+        torrent_path = self._download_torrent_via_http(link, title_text, referer=referer)
+        if torrent_path:
+            return
+
+        raise Exception("Jackett 种子下载失败")
+
+    def _extract_btih_from_magnet(self, magnet_link: str) -> str | None:
+        """从 magnet 链接提取 BTIH（返回 40 位 hex 字符串）。"""
+        try:
+            if not magnet_link or not str(magnet_link).startswith("magnet:"):
+                return None
+
+            import re
+            from urllib.parse import parse_qs, urlparse
+
+            qs = parse_qs(urlparse(magnet_link).query)
+            xt_list = qs.get("xt") or []
+            xt = next((x for x in xt_list if x.startswith("urn:btih:")), "")
+            if not xt:
+                return None
+            btih = xt.split("urn:btih:")[-1].strip()
+            if not btih:
+                return None
+
+            # hex 40
+            if re.fullmatch(r"[0-9a-fA-F]{40}", btih):
+                return btih.lower()
+
+            # base32 32 -> hex 40
+            if re.fullmatch(r"[A-Z2-7]{32}", btih.upper()):
+                import base64
+                raw = base64.b32decode(btih.upper())
+                return raw.hex()
+
+            return None
+        except Exception:
+            return None
+
+    def _save_torrent_from_magnet(self, magnet_link: str, title_text: str, download_dir: str | None = None) -> str | None:
+        """尝试将 magnet 转成 .torrent 并保存到下载目录。
+
+        说明：magnet 本身不包含种子文件内容，这里通过公共缓存源拉取对应 BTIH 的 .torrent。
+        若缓存源没有该 BTIH，则返回 None。
+        """
+        try:
+            btih = self._extract_btih_from_magnet(magnet_link)
+            if not btih:
+                return None
+
+            if not download_dir:
+                download_dir = get_default_torrent_dir()
+            os.makedirs(download_dir, exist_ok=True)
+
+            # 简单的文件名清洗（兼容 Windows）
+            safe_title = (title_text or "download").strip()
+            for ch in ['<', '>', ':', '"', '/', '\\', '|', '?', '*']:
+                safe_title = safe_title.replace(ch, '_')
+            if not safe_title:
+                safe_title = "download"
+
+            out_path = os.path.join(download_dir, f"{safe_title}.torrent")
+
+            session = requests.Session()
+            session.trust_env = False
+            session.headers.update({
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
+                "Accept": "application/x-bittorrent,application/octet-stream,*/*",
+            })
+
+            candidate_urls = [
+                f"https://itorrents.org/torrent/{btih.upper()}.torrent",
+                f"https://torrage.info/torrent.php?h={btih}",
+            ]
+
+            torrent_bytes = None
+            for u in candidate_urls:
+                try:
+                    r = session.get(u, timeout=20, allow_redirects=True)
+                    if r.status_code != 200:
+                        continue
+                    content = r.content or b""
+                    # .torrent 是 bencode 字典，通常以 'd' 开头
+                    if len(content) < 50 or not content.startswith(b"d"):
+                        continue
+                    torrent_bytes = content
+                    logging.info(f"已从缓存源获取种子文件: {u}")
+                    break
+                except Exception:
+                    continue
+
+            if not torrent_bytes:
+                return None
+
+            with open(out_path, "wb") as f:
+                f.write(torrent_bytes)
+
+            logging.info(f"已保存种子文件: {out_path}")
+            # 与其他站点行为保持一致：保存后自动推送到下载器
+            try:
+                run_task_adder(out_path)
+            except Exception:
+                pass
+            return out_path
+        except Exception as e:
+            logging.warning(f"magnet 转种子失败: {e}")
+            return None
+
+    def _download_torrent_via_http(self, url: str, title_text: str, referer: str | None = None, download_dir: str | None = None) -> str | None:
+        """直接通过 HTTP 下载 .torrent 文件并保存。
+
+        适用于论坛附件直链（如 1lou 的 attach-download-xxxx.htm）。
+        成功保存后会自动调用 run_task_adder。
+        """
+        try:
+            if not download_dir:
+                download_dir = get_default_torrent_dir()
+            os.makedirs(download_dir, exist_ok=True)
+
+            safe_title = (title_text or "download").strip()
+            for ch in ['<', '>', ':', '"', '/', '\\', '|', '?', '*']:
+                safe_title = safe_title.replace(ch, '_')
+            if not safe_title:
+                safe_title = "download"
+
+            out_path = os.path.join(download_dir, f"{safe_title}.torrent")
+
+            session = requests.Session()
+            session.trust_env = False
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
+                "Accept": "application/x-bittorrent,application/octet-stream,*/*",
+            }
+            if referer:
+                headers["Referer"] = referer
+
+            r = session.get(url, headers=headers, timeout=30, allow_redirects=True)
+            r.raise_for_status()
+
+            content = r.content or b""
+            # .torrent 通常是 bencode dict，以 'd' 开头
+            if len(content) < 50 or not content.startswith(b"d"):
+                snippet = (r.text or "").strip().replace("\n", " ")[:200]
+                logging.warning(f"下载到的内容不像种子文件，可能需要登录/防盗链: url={url} final={getattr(r,'url',url)} snippet={snippet}")
+                return None
+
+            with open(out_path, "wb") as f:
+                f.write(content)
+
+            logging.info(f"已保存种子文件: {out_path}")
+            try:
+                run_task_adder(out_path)
+            except Exception:
+                pass
+            return out_path
+        except Exception as e:
+            logging.warning(f"HTTP 下载种子失败: {e}")
+            return None
+
+    def _1lou_extract_first_attachment(self, thread_url: str) -> str | None:
+        try:
+            session = requests.Session()
+            session.trust_env = False
+            session.headers.update({
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
+            })
+            r = session.get(thread_url, headers={"Referer": "https://www.1lou.me/"}, timeout=30, allow_redirects=True)
+            r.raise_for_status()
+
+            html = r.text or ""
+            m = re.search(r"href=\"(https?://www\\.1lou\\.me/attach-download-[^\"\s]+)\"", html)
+            if m:
+                return m.group(1)
+            m2 = re.search(r"href=\"(/attach-download-[^\"\s]+)\"", html)
+            if m2:
+                return urljoin("https://www.1lou.me/", m2.group(1).lstrip("/"))
+            m3 = re.search(r"href=\"(attach-download-[^\"\s]+)\"", html)
+            if m3:
+                return urljoin("https://www.1lou.me/", m3.group(1).lstrip("/"))
+            return None
+        except Exception:
+            return None
+
+    def onelou_download_torrent(self, result, title_text, **_kwargs):
+        """1LOU：优先下载附件 .torrent；若提供 magnet 则尝试 magnet->torrent。"""
+        link = (result.get("link") or "").strip()
+        if not link:
+            raise Exception("缺少下载链接")
+
+        # 兼容索引器/前端传入相对路径
+        if not link.startswith("http"):
+            if link.startswith("attach-download-") or link.startswith("/attach-download-"):
+                link = urljoin("https://www.1lou.me/", link.lstrip("/"))
+            elif link.startswith("thread-") or link.startswith("/thread-"):
+                link = urljoin("https://www.1lou.me/", link.lstrip("/"))
+
+        referer = ((result.get("subject_url") or result.get("referer") or _kwargs.get("referer") or "").strip()) or None
+
+        if link.startswith("magnet:"):
+            torrent_path = self._save_torrent_from_magnet(link, title_text)
+            if torrent_path:
+                return
+            ok = self.add_magnet_task(link, title_text)
+            if not ok:
+                raise Exception("磁力已解析，但无法保存种子且添加磁力任务失败")
+            return
+
+        # 附件下载页
+        if "attach-download-" in link or link.lower().endswith(".torrent"):
+            torrent_path = self._download_torrent_via_http(link, title_text, referer=referer)
+            if torrent_path:
+                return
+            raise Exception("1LOU 附件下载失败（可能需要登录/防盗链）")
+
+        # 若传入的是 thread 详情页，则尝试从页面提取附件直链
+        if "/thread-" in link:
+            attachment = self._1lou_extract_first_attachment(link)
+            if attachment:
+                torrent_path = self._download_torrent_via_http(attachment, title_text, referer=link)
+                if torrent_path:
+                    return
+            raise Exception("1LOU 详情页未找到附件下载链接")
+
+        raise Exception("1LOU 下载链接不支持")
+
+    def _seedhub_resolve_magnet_via_selenium(self, url: str) -> str | None:
+        """用 Selenium 打开 SeedHub 的 link_start 页面并提取 magnet。"""
+        if not self.driver:
+            seedhub_headful = (os.environ.get("SEEDHUB_HEADFUL") or "").strip().lower() in {"1", "true", "yes", "on"}
+            self.setup_webdriver(headless=not seedhub_headful)
+        if not self.driver:
+            return None
+
+        try:
+            # 可能触发 Cloudflare，复用现有验证码处理
+            self.site_captcha(url)
+
+            # 等待 JS 生成 magnet 链接（SeedHub 常见“5 秒后加载”+ Cloudflare，保守等待更稳）
+            deadline = time.time() + 60
+            magnet = None
+            while time.time() < deadline and not magnet:
+                try:
+                    links = self.driver.find_elements(By.CSS_SELECTOR, "a[href^='magnet:']")
+                    for a in links:
+                        href = (a.get_attribute("href") or "").strip()
+                        if href.startswith("magnet:"):
+                            magnet = href
+                            break
+                except Exception:
+                    pass
+
+                if not magnet:
+                    try:
+                        # 有些页面把 magnet 放在 data-clipboard-text
+                        elems = self.driver.find_elements(By.CSS_SELECTOR, "[data-clipboard-text]")
+                        for el in elems:
+                            val = (el.get_attribute("data-clipboard-text") or "").strip()
+                            if val.startswith("magnet:"):
+                                magnet = val
+                                break
+                    except Exception:
+                        pass
+
+                if not magnet:
+                    try:
+                        # 或者放在 input/textarea 的 value/text
+                        fields = self.driver.find_elements(By.CSS_SELECTOR, "input, textarea")
+                        for f in fields:
+                            val = (f.get_attribute("value") or "").strip()
+                            if val.startswith("magnet:"):
+                                magnet = val
+                                break
+                            txt = (f.text or "").strip()
+                            if txt.startswith("magnet:"):
+                                magnet = txt
+                                break
+                    except Exception:
+                        pass
+
+                if not magnet:
+                    try:
+                        html = self.driver.page_source or ""
+                        m = re.search(r"(magnet:\?xt=urn:btih:[A-Za-z0-9]+[^\"'<>\s]*)", html, flags=re.IGNORECASE)
+                        if m:
+                            magnet = _html.unescape(m.group(1))
+                    except Exception:
+                        pass
+
+                if not magnet:
+                    try:
+                        # SeedHub 常见做法：在脚本里用 base64 存 magnet：const data = "bWF..."; window.atob(data)
+                        html = self.driver.page_source or ""
+                        m = re.search(r"\bconst\s+data\s*=\s*\"([A-Za-z0-9+/=]{20,})\"\s*;", html)
+                        if m:
+                            decoded = base64.b64decode(m.group(1)).decode("utf-8", errors="ignore").strip()
+                            if decoded.startswith("magnet:"):
+                                magnet = decoded
+                    except Exception:
+                        pass
+
+                if not magnet:
+                    time.sleep(1)
+
+            if magnet and magnet.startswith("magnet:"):
+                return magnet
+
+            # 失败时落盘 HTML，便于定位站点结构/脚本变更（写入工作区，方便直接查看）
+            try:
+                ts = time.strftime("%Y%m%d_%H%M%S")
+                dump_dir = os.path.join(os.getcwd(), "debug_dumps")
+                os.makedirs(dump_dir, exist_ok=True)
+                dump_path = os.path.join(dump_dir, f"seedhub_linkstart_failed_{ts}.html")
+                with open(dump_path, "w", encoding="utf-8") as f:
+                    f.write(self.driver.page_source or "")
+                logging.warning(f"SeedHub magnet 解析失败，已保存页面 HTML: {dump_path}")
+            except Exception:
+                pass
+
+            return None
+        except Exception:
+            return None
+
+    def seedhub_download_torrent(self, result, title_text, **_kwargs):
+        """SeedHub：索引器通常给 link_start 链接；此处解析为 magnet 再添加下载任务。"""
+        link = (result.get("link") or "").strip()
+        if not link:
+            raise Exception("缺少下载链接")
+
+        # 兼容相对路径
+        if not link.startswith("http"):
+            link = urljoin("https://www.seedhub.cc/", link.lstrip("/"))
+
+        if link.startswith("magnet:"):
+            torrent_path = self._save_torrent_from_magnet(link, title_text)
+            if torrent_path:
+                return
+            ok = self.add_magnet_task(link, title_text)
+            if not ok:
+                raise Exception("磁力添加失败")
+            return
+
+        # link_start 页面 -> magnet
+        magnet = self._seedhub_resolve_magnet_via_selenium(link)
+        if not magnet:
+            raise Exception("SeedHub 下载链接无法解析为 magnet（可能是 Cloudflare/站点结构变更）")
+
+        try:
+            logging.info(f"SeedHub 已解析 magnet: {magnet[:80]}")
+        except Exception:
+            pass
+
+        torrent_path = self._save_torrent_from_magnet(magnet, title_text)
+        if torrent_path:
+            return
+        ok = self.add_magnet_task(magnet, title_text)
+        if not ok:
+            raise Exception("已解析出磁力，但添加磁力任务失败")
+        return
+
+    def _btsj6_resolve_magnet(self, url: str, referer: str | None = None) -> str | None:
+        """从 BTSJ6 的 down.php 页面解析出 magnet（无需 Selenium）。"""
+        try:
+            import re
+
+            def _extract_magnet_from_html(page_html: str) -> str | None:
+                if not page_html:
+                    return None
+                # 常见：href="magnet:?xt=urn:btih:...&amp;dn=..."
+                m = re.search(r"(magnet:\?xt=urn:btih:[A-Za-z0-9]+[^\"'<>\s]*)", page_html, flags=re.IGNORECASE)
+                if not m:
+                    m = re.search(r"(magnet:\?[^\"'<>\s]+)", page_html, flags=re.IGNORECASE)
+                if not m:
+                    return None
+                magnet_raw = m.group(1)
+                magnet = _html.unescape(magnet_raw)
+                return magnet if magnet.startswith("magnet:") else None
+
+            # 有些环境下代理/系统设置会导致连接异常，禁用 trust_env
+            session = requests.Session()
+            session.trust_env = False
+            session.headers.update({
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
+            })
+
+            base_url = (self.config.get("btsj6_base_url") or "https://www.btsj6.com/").strip() or "https://www.btsj6.com/"
+            if not base_url.endswith('/'):
+                base_url += '/'
+
+            # 尽量模拟站点期望的导航路径：优先用 subject 作为 Referer（很多情况下不带 referer 会被跳回 subject）
+            inferred_subject: str | None = None
+            if not referer:
+                try:
+                    # 先用 base_url 作为 referer 访问一次 down.php，观察是否被跳转到 subject
+                    r0 = session.get(url, headers={"Referer": base_url}, timeout=30, allow_redirects=True)
+                    if r0.status_code == 200:
+                        # 如果页面直接给了 magnet，这里直接返回
+                        magnet0 = _extract_magnet_from_html(r0.text)
+                        if magnet0:
+                            return magnet0
+                        final0 = (getattr(r0, "url", "") or "").strip()
+                        if final0 and ("/subject/" in final0) and ("down.php" not in final0):
+                            inferred_subject = final0
+                except Exception:
+                    inferred_subject = None
+
+            referer_candidates: list[str] = []
+            if referer:
+                referer_candidates.append(referer)
+            if inferred_subject and inferred_subject not in referer_candidates:
+                referer_candidates.append(inferred_subject)
+            if base_url not in referer_candidates:
+                referer_candidates.append(base_url)
+
+            r = None
+            html = ""
+            for ref in referer_candidates:
+                try:
+                    # 建会话：先访问 referer 页面（subject/base）
+                    try:
+                        session.get(ref, headers={"Referer": base_url}, timeout=20, allow_redirects=True)
+                    except Exception:
+                        pass
+
+                    r_try = session.get(url, headers={"Referer": ref}, timeout=30, allow_redirects=True)
+                    r_try.raise_for_status()
+                    html_try = r_try.text or ""
+
+                    # 0) 页面直接给出 magnet（或 href 含 &amp;），直接返回
+                    magnet = _extract_magnet_from_html(html_try)
+                    if magnet:
+                        return magnet
+
+                    # 若仍被跳回 subject，则从最终页再解析一次 magnet
+                    final_url = (getattr(r_try, "url", "") or "").strip()
+                    if final_url and ("/subject/" in final_url) and ("down.php" not in final_url):
+                        try:
+                            r_final = session.get(final_url, headers={"Referer": base_url}, timeout=30, allow_redirects=True)
+                            if r_final.status_code == 200:
+                                magnet2 = _extract_magnet_from_html(r_final.text)
+                                if magnet2:
+                                    return magnet2
+                        except Exception:
+                            pass
+
+                    # 保留最后一次请求结果，供后续 file_id/fc 解析与 Selenium 兜底使用
+                    r = r_try
+                    html = html_try
+                except Exception:
+                    continue
+
+            if not r:
+                return None
+
+            # 0.1) 仍可兜底：如果 down.php 最终页等于 referer，则从 referer 再解析一次
+            if referer and getattr(r, "url", "") and r.url.rstrip("/") == referer.rstrip("/"):
+                try:
+                    r_ref = session.get(referer, headers={"Referer": base_url}, timeout=30, allow_redirects=True)
+                    if r_ref.status_code == 200:
+                        magnet2 = _extract_magnet_from_html(r_ref.text)
+                        if magnet2:
+                            return magnet2
+                except Exception:
+                    pass
+
+            # 1) 解析 file_id / fc（兼容 : 或 =，单/双引号）
+            file_id_match = (
+                re.search(r"file_id\s*[:=]\s*\"(\d+)\"", html)
+                or re.search(r"file_id\s*[:=]\s*'(\d+)'", html)
+                or re.search(r"file_id\s*[:=]\s*(\d+)", html)
+            )
+            fc_match = (
+                re.search(r"fc\s*[:=]\s*\"([^\"\\]+)\"", html)
+                or re.search(r"fc\s*[:=]\s*'([^'\\]+)'", html)
+                or re.search(r"fc\s*[:=]\s*([^,\s}]+)", html)
+            )
+            if not file_id_match or not fc_match:
+                logging.warning(
+                    f"BTSJ6 下载页未找到 file_id/fc（status={getattr(r,'status_code',None)} url={getattr(r,'url',url)}），可能需要 Referer/登录/站点结构变更"
+                )
+                # 尝试用 base_url 作为 Referer 再请求一次（部分站点会做防盗链）
+                try:
+                    r_retry = session.get(url, headers={"Referer": base_url}, timeout=30, allow_redirects=True)
+                    r_retry.raise_for_status()
+                    html2 = r_retry.text
+                    magnet_match2 = re.search(r"(magnet:\?[^\s\"']+)", html2)
+                    if magnet_match2:
+                        magnet = _html.unescape(magnet_match2.group(1))
+                        if magnet.startswith("magnet:"):
+                            return magnet
+
+                    file_id_match = (
+                        re.search(r"file_id\s*[:=]\s*\"(\d+)\"", html2)
+                        or re.search(r"file_id\s*[:=]\s*'(\d+)'", html2)
+                        or re.search(r"file_id\s*[:=]\s*(\d+)", html2)
+                    )
+                    fc_match = (
+                        re.search(r"fc\s*[:=]\s*\"([^\"\\]+)\"", html2)
+                        or re.search(r"fc\s*[:=]\s*'([^'\\]+)'", html2)
+                        or re.search(r"fc\s*[:=]\s*([^,\s}]+)", html2)
+                    )
+                    if not file_id_match or not fc_match:
+                        # 最后一层兜底：用 Selenium 打开页面执行 JS，再抓 magnet
+                        try:
+                            self.load_config()
+                        except Exception:
+                            pass
+                        try:
+                            # 站点可能对 headless 返回不同内容/强制跳转，这里使用有界面模式更贴近真实浏览器
+                            self.setup_webdriver(instance_id=12, headless=False)
+                            if referer:
+                                try:
+                                    self.driver.get(referer)
+                                except Exception:
+                                    pass
+
+                            # 关键点：一定要直接打开 down.php（不要用 requests 跳转后的 subject_url）
+                            self.driver.get(url)
+                            try:
+                                logging.info(f"BTSJ6(Selenium) current_url={self.driver.current_url} title={self.driver.title}")
+                            except Exception:
+                                pass
+
+                            # 如果站点仍然跳回了 subject，则再尝试打开最终页一次（兜底）
+                            try:
+                                final_url = getattr(r_retry, "url", "") or ""
+                                if final_url and self.driver.current_url.rstrip('/') != url.rstrip('/'):
+                                    if "subject/" in self.driver.current_url and "down.php" not in self.driver.current_url:
+                                        # 有些情况下 down.php 会被拦截跳转，尝试直接访问最终页再扫一次
+                                        self.driver.get(final_url)
+                            except Exception:
+                                pass
+
+                            # 先从 page_source 直接扫 magnet（有时元素被隐藏/动态插入，选择器抓不到）
+                            try:
+                                src = self.driver.page_source or ""
+                                magnet_src = _extract_magnet_from_html(src)
+                                if magnet_src:
+                                    return magnet_src
+                            except Exception:
+                                pass
+
+                            try:
+                                WebDriverWait(self.driver, 10).until(
+                                    EC.presence_of_element_located((By.CSS_SELECTOR, "a[href^='magnet:'],#down_a1"))
+                                )
+                            except Exception:
+                                pass
+
+                            elements = self.driver.find_elements(By.CSS_SELECTOR, "a[href^='magnet:']")
+                            if not elements:
+                                el = None
+                                try:
+                                    el = self.driver.find_element(By.ID, "down_a1")
+                                except Exception:
+                                    el = None
+                                if el is not None:
+                                    elements = [el]
+
+                            for el in elements:
+                                href = (el.get_attribute("href") or "").strip()
+                                href = _html.unescape(href)
+                                if href.startswith("magnet:"):
+                                    return href
+
+                            # 如果 #down_a1 初始不是 magnet，尝试点击触发 JS 设置 href/复制内容
+                            try:
+                                btn = None
+                                try:
+                                    btn = self.driver.find_element(By.ID, "down_a1")
+                                except Exception:
+                                    btn = None
+
+                                if btn is not None:
+                                    try:
+                                        btn.click()
+                                    except Exception:
+                                        try:
+                                            self.driver.execute_script("arguments[0].click();", btn)
+                                        except Exception:
+                                            pass
+
+                                    time.sleep(1.5)
+                                    href2 = _html.unescape((btn.get_attribute("href") or "").strip())
+                                    if href2.startswith("magnet:"):
+                                        return href2
+
+                                    # 有的站点把磁力放在 data-clipboard-text / data-href
+                                    for attr in ["data-clipboard-text", "data-href", "data-url"]:
+                                        v = _html.unescape((btn.get_attribute(attr) or "").strip())
+                                        if v.startswith("magnet:"):
+                                            return v
+
+                                    # 再扫一次 page_source
+                                    try:
+                                        src2 = self.driver.page_source or ""
+                                        magnet_src2 = _extract_magnet_from_html(src2)
+                                        if magnet_src2:
+                                            return magnet_src2
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                        except Exception:
+                            return None
+                        return None
+                    html = html2
+                    r = r_retry
+                except Exception:
+                    return None
+
+            file_id = file_id_match.group(1)
+            fc = fc_match.group(1)
+            api_url = urljoin(base_url, "callfile/callfile.php")
+
+            r2 = session.post(
+                api_url,
+                data={"file_id": file_id, "fc": fc},
+                headers={
+                    "Accept": "application/json, text/javascript, */*; q=0.01",
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Referer": r.url,
+                },
+                timeout=30,
+            )
+            r2.raise_for_status()
+            try:
+                data = r2.json()
+            except Exception:
+                logging.warning("BTSJ6 callfile 返回非 JSON，无法解析 magnet")
+                return None
+            if isinstance(data, dict) and data.get("error") == 0 and data.get("down"):
+                down = str(data.get("down"))
+                if down.startswith("magnet:"):
+                    return down
+            return None
+        except Exception as e:
+            logging.warning(f"BTSJ6 解析 magnet 失败: {e}")
+            return None
+
+    def btsj6_download_torrent(self, result, title_text, **_kwargs):
+        """BT世界网：优先解析磁力并直接添加下载任务（不依赖 Selenium 点击下载）。"""
+        link = (result.get("link") or "").strip()
+        if not link:
+            raise Exception("缺少下载链接")
+
+        referer = ((result.get("subject_url") or result.get("referer") or _kwargs.get("referer") or "").strip()) or None
+
+        # 1) 索引器若已给出 magnet，直接添加
+        if link.startswith("magnet:"):
+            torrent_path = self._save_torrent_from_magnet(link, title_text)
+            if torrent_path:
+                return
+            ok = self.add_magnet_task(link, title_text)
+            if not ok:
+                raise Exception("磁力已解析，但无法保存种子且添加磁力任务失败")
+            return
+
+        # 2) 传入的是 down.php / 下载页 URL，则尝试无头解析出 magnet 再添加
+        magnet = self._btsj6_resolve_magnet(link, referer=referer)
+        if magnet:
+            torrent_path = self._save_torrent_from_magnet(magnet, title_text)
+            if torrent_path:
+                return
+            ok = self.add_magnet_task(magnet, title_text)
+            if not ok:
+                raise Exception("已解析出磁力，但无法保存种子且添加磁力任务失败")
+            return
+
+        # 3) 兜底：提示用户该链接不是磁力且无法解析
+        raise Exception("BTSJ6 下载链接无法解析为磁力（可能站点结构变更/网络拦截）。")
 
     def site_captcha(self, url):
         """
@@ -932,7 +1832,11 @@ class MediaDownloader:
         all_movie_info = self.extract_movie_info()
 
         # 定义来源优先级
-        sources_priority = ["BTHD", "BT0", "BTYS", "GY"]
+        sources_priority = ["BTHD", "BT0", "BTYS", "GY", "SEEDHUB", "BTSJ6", "1LOU"]
+        if str(self.config.get("jackett_enabled", "False")).strip().lower() == "true":
+            # Jackett 作为聚合入口：默认放在 GY 后面、SEEDHUB 前面
+            if "JACKETT" not in sources_priority:
+                sources_priority.insert(4, "JACKETT")
         
         # 获取优先关键词配置
         prefer_keywords = self.config.get("resources_prefer_keywords", "")
@@ -1015,6 +1919,14 @@ class MediaDownloader:
                             self.bt0_download_torrent(selected_result, download_title, year=year, resolution=resolution, title=title)
                         elif source == "GY":
                             self.gy_download_torrent(selected_result, download_title, year=year, resolution=resolution, title=title)
+                        elif source == "SEEDHUB":
+                            self.seedhub_download_torrent(selected_result, download_title, year=year, resolution=resolution, title=title)
+                        elif source == "JACKETT":
+                            self.jackett_download_torrent(selected_result, download_title, referer=selected_result.get("referer") or selected_result.get("subject_url"))
+                        elif source == "BTSJ6":
+                            self.btsj6_download_torrent(selected_result, download_title, year=year, resolution=resolution, title=title)
+                        elif source == "1LOU":
+                            self.onelou_download_torrent(selected_result, download_title, year=year, resolution=resolution, title=title)
                         
                         # 下载成功
                         download_success = True
@@ -1056,7 +1968,10 @@ class MediaDownloader:
         all_tv_info = self.extract_tv_info()
 
         # 定义来源优先级
-        sources_priority = ["HDTV", "BT0", "BTYS", "GY"]
+        sources_priority = ["HDTV", "BT0", "BTYS", "GY", "SEEDHUB", "BTSJ6", "1LOU"]
+        if str(self.config.get("jackett_enabled", "False")).strip().lower() == "true":
+            if "JACKETT" not in sources_priority:
+                sources_priority.insert(4, "JACKETT")
         
         # 获取优先关键词配置
         prefer_keywords = self.config.get("resources_prefer_keywords", "")
@@ -1231,6 +2146,14 @@ class MediaDownloader:
                                 self.bt0_download_torrent(selected_result, selected_result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
                             elif source == "GY":
                                 self.gy_download_torrent(selected_result, selected_result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
+                            elif source == "SEEDHUB":
+                                self.seedhub_download_torrent(selected_result, selected_result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
+                            elif source == "JACKETT":
+                                self.jackett_download_torrent(selected_result, selected_result["title"], referer=selected_result.get("referer") or selected_result.get("subject_url"))
+                            elif source == "BTSJ6":
+                                self.btsj6_download_torrent(selected_result, selected_result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
+                            elif source == "1LOU":
+                                self.onelou_download_torrent(selected_result, selected_result["title"], year=year, season=season, episode_range=episode_range, resolution=resolution, title=title)
                             
                             # 下载成功
                             successfully_downloaded_episodes.extend(episode_nums)
@@ -1368,6 +2291,7 @@ if __name__ == "__main__":
     parser.add_argument("--site", type=str, help="下载站点名称，例如 BT0、BTHD、GY 等")
     parser.add_argument("--title", type=str, help="下载的标题")
     parser.add_argument("--link", type=str, help="下载链接")
+    parser.add_argument("--referer", type=str, default="", help="可选：下载链接的 Referer/来源页面（用于防盗链/解析）")
     args = parser.parse_args()
 
     downloader = MediaDownloader()
@@ -1376,29 +2300,44 @@ if __name__ == "__main__":
         # 如果提供了命令行参数，则手动运行下载功能
         try:
             downloader.load_config()
-            downloader.setup_webdriver()
+            site_upper = args.site.upper()
+            selenium_sites = {"BTHD", "BTYS", "BT0", "GY", "HDTV", "SEEDHUB"}
+            if site_upper in selenium_sites:
+                if site_upper == "SEEDHUB":
+                    seedhub_headful = (os.environ.get("SEEDHUB_HEADFUL") or "").strip().lower() in {"1", "true", "yes", "on"}
+                    downloader.setup_webdriver(headless=not seedhub_headful)
+                else:
+                    downloader.setup_webdriver()
 
             # 初始化相关 URL 属性
-            bt_movie_base_url = downloader.config.get("bt_movie_base_url", "")
-            downloader.movie_login_url = f"{bt_movie_base_url}/member.php?mod=logging&action=login"
-            bt_tv_base_url = downloader.config.get("bt_tv_base_url", "")
-            downloader.tv_login_url = f"{bt_tv_base_url}/member.php?mod=logging&action=login"
-            gy_base_url = downloader.config.get("gy_base_url", "")
-            downloader.gy_login_url = f"{gy_base_url}/user/login"
-            downloader.gy_user_info_url = f"{gy_base_url}/user/account"
+                bt_movie_base_url = downloader.config.get("bt_movie_base_url", "")
+                downloader.movie_login_url = f"{bt_movie_base_url}/member.php?mod=logging&action=login"
+                bt_tv_base_url = downloader.config.get("bt_tv_base_url", "")
+                downloader.tv_login_url = f"{bt_tv_base_url}/member.php?mod=logging&action=login"
+                gy_base_url = downloader.config.get("gy_base_url", "")
+                downloader.gy_login_url = f"{gy_base_url}/user/login"
+                downloader.gy_user_info_url = f"{gy_base_url}/user/account"
 
             logging.info(f"手动运行下载功能，站点: {args.site}, 标题: {args.title}, 链接: {args.link}")
             # 修改各下载函数调用，添加is_manual参数
-            if args.site.upper() == "BTHD":
+            if site_upper == "BTHD":
                 downloader.bthd_download_torrent({"link": args.link}, args.title, title=args.title)
-            elif args.site.upper() == "BTYS":
+            elif site_upper == "BTYS":
                 downloader.btys_download_torrent({"link": args.link}, args.title, title=args.title)
-            elif args.site.upper() == "BT0":
+            elif site_upper == "BT0":
                 downloader.bt0_download_torrent({"link": args.link}, args.title, title=args.title)
-            elif args.site.upper() == "GY":
+            elif site_upper == "GY":
                 downloader.gy_download_torrent({"link": args.link}, args.title, title=args.title)
-            elif args.site.upper() == "HDTV":
+            elif site_upper == "HDTV":
                 downloader.hdtv_download_torrent({"link": args.link}, args.title, title=args.title)
+            elif site_upper == "BTSJ6":
+                downloader.btsj6_download_torrent({"link": args.link, "referer": args.referer}, args.title, title=args.title, referer=args.referer)
+            elif site_upper == "1LOU":
+                downloader.onelou_download_torrent({"link": args.link, "referer": args.referer}, args.title, title=args.title, referer=args.referer)
+            elif site_upper == "SEEDHUB":
+                downloader.seedhub_download_torrent({"link": args.link, "referer": args.referer}, args.title, title=args.title, referer=args.referer)
+            elif site_upper == "JACKETT":
+                downloader.jackett_download_torrent({"link": args.link, "referer": args.referer}, args.title, referer=args.referer, title=args.title)
             else:
                 logging.error(f"未知的站点名称: {args.site}")
         except Exception as e:

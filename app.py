@@ -27,6 +27,9 @@ import threading
 import uuid
 from collections import deque
 
+# Ensure runtime directories exist (Windows maps '/tmp' to 'C:\\tmp')
+os.makedirs("/tmp/log", exist_ok=True)
+os.makedirs("/tmp/index", exist_ok=True)
 # 使用线程安全的字典存储下载进度
 download_progress_messages = {}
 # 使用锁确保线程安全
@@ -73,7 +76,16 @@ app.secret_key = 'mediamaster'  # 设置一个密钥，用于会话管理
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)  # 设置会话有效期为24小时
 app.config['SESSION_COOKIE_NAME'] = 'mediamaster'  # 设置会话 cookie 名称为 mediamaster
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # 设置会话 cookie 的 SameSite 属性
-DATABASE = '/config/data.db'
+
+# Database path: prefer env override; fall back to docker default; for local dev fall back to workspace data.db
+_db_from_env = os.environ.get('DATABASE') or os.environ.get('DB_PATH')
+_default_db = _db_from_env or '/config/data.db'
+if not os.path.exists(_default_db):
+    _local_db = os.path.join(os.path.dirname(__file__), 'data.db')
+    DATABASE = _local_db
+    logger.warning(f"未找到数据库文件: {_default_db}，将使用本地数据库: {DATABASE}")
+else:
+    DATABASE = _default_db
 
 # 存储进程ID的字典
 running_services = {}
@@ -103,16 +115,24 @@ def login_required(view):
     return wrapped_view
 
 def create_soft_link(src, dst):
-    # 确保源目录存在
-    os.makedirs(src, exist_ok=True)
-    # 确保目标目录存在
-    os.makedirs(os.path.dirname(dst), exist_ok=True)
-    # 创建软链接
-    if not os.path.exists(dst):
-        os.symlink(src, dst)
-        logger.info(f"软链接创建成功: {src} -> {dst}")
-    else:
-        logger.info(f"软链接已存在: {dst}")
+    try:
+        # 在 Windows 非管理员/未启用开发者模式时，创建软链接可能失败；这里做 best-effort
+        if os.name == 'nt':
+            logger.info("Windows 环境跳过头像目录软链接创建")
+            return
+
+        # 确保源目录存在
+        os.makedirs(src, exist_ok=True)
+        # 确保目标目录存在
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        # 创建软链接
+        if not os.path.exists(dst):
+            os.symlink(src, dst)
+            logger.info(f"软链接创建成功: {src} -> {dst}")
+        else:
+            logger.info(f"软链接已存在: {dst}")
+    except Exception as e:
+        logger.warning(f"软链接创建失败（已忽略）: {e}")
 
 @app.route('/login', methods=('GET', 'POST'))
 def login():
@@ -357,7 +377,28 @@ def dashboard():
 @login_required
 def system_resources():
     # 获取存储空间信息
-    disk_usage = psutil.disk_usage('/Media')
+    # 在 Docker 环境默认是 /Media；本地 Windows 环境可能不存在该路径，需要兜底
+    media_path = '/Media'
+    try:
+        db = get_db()
+        row = db.execute("SELECT VALUE FROM CONFIG WHERE OPTION = 'media_dir'").fetchone()
+        if row and row[0]:
+            media_path = str(row[0])
+    except Exception:
+        pass
+
+    if not os.path.exists(media_path):
+        if os.name == 'nt':
+            drive = os.path.splitdrive(os.getcwd())[0]
+            media_path = f"{drive}\\" if drive else os.getcwd()
+        else:
+            media_path = '/'
+
+    try:
+        disk_usage = psutil.disk_usage(media_path)
+    except Exception as e:
+        logger.warning(f"获取磁盘使用率失败: path={media_path}, err={e}")
+        disk_usage = psutil.disk_usage(os.getcwd())
     disk_total_gb = disk_usage.total / (1024 ** 3)  # 总容量，单位为GB
     disk_used_gb = disk_usage.used / (1024 ** 3)    # 已用容量，单位为GB
     disk_usage_percent = disk_usage.percent         # 使用百分比
@@ -1387,7 +1428,11 @@ def api_search_media():
                                 {"site": "HDTV"},
                                 {"site": "BTYS"},
                                 {"site": "BT0"},
-                                {"site": "GY"}
+                                {"site": "GY"},
+                                {"site": "BTSJ6"},
+                                {"site": "1LOU"},
+                                {"site": "SEEDHUB"},
+                                {"site": "JACKETT"}
                             ]
                             
                             for script_info in search_scripts:
@@ -1419,6 +1464,11 @@ def api_search_media():
                                                             "link": item.get("link"),
                                                             "resolution": item.get("resolution")
                                                         }
+                                                        # 透传 referer/subject_url（用于部分站点下载页反爬/会话校验）
+                                                        if "subject_url" in item:
+                                                            result_item["subject_url"] = item.get("subject_url")
+                                                        if "referer" in item:
+                                                            result_item["referer"] = item.get("referer")
                                                         # 添加热度数据（如果存在）
                                                         if "popularity" in item:
                                                             result_item["popularity"] = item.get("popularity")
@@ -1432,6 +1482,11 @@ def api_search_media():
                                                     "link": item.get("link"),
                                                     "resolution": item.get("resolution")
                                                 }
+                                                # 透传 referer/subject_url（用于部分站点下载页反爬/会话校验）
+                                                if "subject_url" in item:
+                                                    result_item["subject_url"] = item.get("subject_url")
+                                                if "referer" in item:
+                                                    result_item["referer"] = item.get("referer")
                                                 # 添加热度数据（如果存在）
                                                 if "popularity" in item:
                                                     result_item["popularity"] = item.get("popularity")
@@ -1478,6 +1533,26 @@ def api_search_media():
                     "script": "python movie_tvshow_gy.py --manual --type {type} --title \"{title}\" --year {year}",
                     "type": "both",
                     "site": "GY"
+                },
+                {
+                    "script": "python movie_tvshow_btsj6.py --manual --type {type} --title \"{title}\" --year {year}",
+                    "type": "both",
+                    "site": "BTSJ6"
+                },
+                {
+                    "script": "python movie_tvshow_1lou.py --manual --type {type} --title \"{title}\" --year {year}",
+                    "type": "both",
+                    "site": "1LOU"
+                },
+                {
+                    "script": "python movie_tvshow_seedhub.py --manual --type {type} --title \"{title}\" --year {year} --no-warmup" + (" --headful" if os.name == "nt" else ""),
+                    "type": "both",
+                    "site": "SEEDHUB"
+                },
+                {
+                    "script": "python movie_tvshow_jackett.py --manual --type {type} --title \"{title}\" --year {year}",
+                    "type": "both",
+                    "site": "JACKETT"
                 }
             ]
 
@@ -1600,6 +1675,11 @@ def api_search_media():
                                                             "link": item.get("link"),
                                                             "resolution": item.get("resolution")
                                                         }
+                                                        # 透传 referer/subject_url（用于部分站点下载页反爬/会话校验）
+                                                        if "subject_url" in item:
+                                                            result_item["subject_url"] = item.get("subject_url")
+                                                        if "referer" in item:
+                                                            result_item["referer"] = item.get("referer")
                                                         # 添加热度数据（如果存在）
                                                         if "popularity" in item:
                                                             result_item["popularity"] = item.get("popularity")
@@ -1613,6 +1693,11 @@ def api_search_media():
                                                     "link": item.get("link"),
                                                     "resolution": item.get("resolution")
                                                 }
+                                                # 透传 referer/subject_url（用于部分站点下载页反爬/会话校验）
+                                                if "subject_url" in item:
+                                                    result_item["subject_url"] = item.get("subject_url")
+                                                if "referer" in item:
+                                                    result_item["referer"] = item.get("referer")
                                                 # 添加热度数据（如果存在）
                                                 if "popularity" in item:
                                                     result_item["popularity"] = item.get("popularity")
@@ -1671,6 +1756,7 @@ def download_resource():
         site = data.get('site')  # 资源站点，例如 "BT0"
         title = data.get('title')  # 资源标题
         link = data.get('link')  # 资源下载链接
+        referer = data.get('referer') or data.get('subject_url')
 
         # 检查必要参数
         if not site or not title or not link:
@@ -1693,6 +1779,9 @@ def download_resource():
             '--title', str(title),
             '--link', str(link)
         ]
+
+        if referer:
+            command.extend(['--referer', str(referer)])
         
         logger.info(f"执行下载命令: {' '.join(command)}")
 
@@ -1749,6 +1838,9 @@ def download_resource():
         return jsonify({"error": str(e)}), 500
 
 GROUP_MAPPING = {
+    "浏览器驱动": {
+        "chromedriver_path": {"type": "text", "label": "ChromeDriver 路径（Windows 可填 chromedriver.exe）"}
+    },
     "定时任务": {
         "run_interval_hours": {"type": "text", "label": "自动化流程间隔"}
     },
@@ -1842,7 +1934,18 @@ GROUP_MAPPING = {
         "hdtv_enabled": {"type": "switch", "label": "高清剧集网"},
         "btys_enabled": {"type": "switch", "label": "BT影视"},
         "bt0_enabled": {"type": "switch", "label": "不太灵影视"},
-        "gy_enabled": {"type": "switch", "label": "观影"}
+        "gy_enabled": {"type": "switch", "label": "观影"},
+        "btsj6_enabled": {"type": "switch", "label": "BT世界网"},
+        "1lou_enabled": {"type": "switch", "label": "BT之家(1LOU)"},
+        "seedhub_enabled": {"type": "switch", "label": "SeedHub"},
+        "jackett_enabled": {"type": "switch", "label": "Jackett"}
+    },
+    "Jackett 设置": {
+        "jackett_base_url": {"type": "text", "label": "Jackett 地址（如 http://127.0.0.1:9117）"},
+        "jackett_api_key": {"type": "password", "label": "Jackett API Key"},
+        "jackett_verify_ssl": {"type": "switch", "label": "验证 SSL 证书（https，若反代证书异常可关闭）"},
+        "jackett_timeout_seconds": {"type": "text", "label": "Jackett 超时秒数（read timeout，建议 60-120）"},
+        "jackett_retries": {"type": "text", "label": "Jackett 重试次数（超时/错误时）"}
     },
     "私有资源站点设置": {
         "bt_login_username": {"type": "text", "label": "站点登录用户名"},
@@ -1857,7 +1960,12 @@ GROUP_MAPPING = {
         "gy_login_password": {"type": "password", "label": "观影登录密码"},
         "btys_base_url": {"type": "text", "label": "BT影视"},
         "bt0_base_url": {"type": "text", "label": "不太灵影视"},
-        "gy_base_url": {"type": "text", "label": "观影"}
+        "gy_base_url": {"type": "text", "label": "观影"},
+        "btsj6_base_url": {"type": "text", "label": "BT世界网"},
+        "1lou_base_url": {"type": "text", "label": "BT之家(1LOU)"},
+        "seedhub_base_url": {"type": "text", "label": "SeedHub"},
+        "1lou_ok1_cookie": {"type": "text", "label": "BT之家(1LOU)ok1_cookie"},
+        "1lou_max_hits": {"type": "text", "label": "BT之家(1LOU) 最多合并帖子数"}
     }
 }
 
@@ -2092,12 +2200,6 @@ def download_mgmt_page():
     else:
         auto_delete_completed_tasks = auto_delete_completed_tasks_config['VALUE'] == 'True'
 
-    # 获取迅雷设备名称
-    xunlei_device_name = None
-    if download_type == 'xunlei':
-        xunlei_device_row = db.execute('SELECT VALUE FROM CONFIG WHERE OPTION = ?', ('xunlei_device_name',)).fetchone()
-        xunlei_device_name = xunlei_device_row['VALUE'] if xunlei_device_row else ''
-
     # 从会话中获取用户昵称和头像
     nickname = session.get('nickname')
     avatar_url = session.get('avatar_url')
@@ -2111,7 +2213,7 @@ def download_mgmt_page():
     # 将信息传递给模板
     return render_template(template_name, nickname=nickname, avatar_url=avatar_url, 
                          download_mgmt=download_mgmt_config, delete_with_files=delete_with_files,
-                         auto_delete_completed_tasks=auto_delete_completed_tasks, xunlei_device_name=xunlei_device_name, version=APP_VERSION)
+                         auto_delete_completed_tasks=auto_delete_completed_tasks, version=APP_VERSION)
 
 # 获取下载器客户端
 def get_downloader_client():
@@ -2532,6 +2634,160 @@ def test_tmm_connection():
         return jsonify({
             "success": False, 
             "message": f"测试过程中发生错误: {str(e)}"
+        }), 500
+
+@app.route('/test_jackett_connection', methods=['POST'])
+@login_required
+def test_jackett_connection():
+    """
+    测试 Jackett 连接（Torznab API）
+
+    前端会传入 base_url/api_key/timeout_seconds/retries。
+    这里做最小化的 torznab 查询来验证：网络/证书/反代/密钥/响应格式。
+    """
+    try:
+        data = request.json or {}
+        base_url = (data.get('jackett_base_url') or '').strip()
+        api_key = (data.get('jackett_api_key') or '').strip()
+
+        try:
+            timeout_seconds = int(float(data.get('jackett_timeout_seconds') or 90))
+        except Exception:
+            timeout_seconds = 90
+
+        try:
+            retries = int(float(data.get('jackett_retries') or 2))
+        except Exception:
+            retries = 2
+
+        verify_ssl_raw = data.get('jackett_verify_ssl')
+        if isinstance(verify_ssl_raw, bool):
+            verify_ssl = verify_ssl_raw
+        else:
+            verify_ssl = str(verify_ssl_raw or 'True').strip().lower() == 'true'
+
+        timeout_seconds = max(5, min(timeout_seconds, 300))
+        retries = max(0, min(retries, 5))
+
+        if not base_url or not api_key:
+            return jsonify({"success": False, "message": "请填写 Jackett 地址和 API Key"}), 400
+
+        if not base_url.endswith('/'):
+            base_url += '/'
+
+        torznab_url = f"{base_url}api/v2.0/indexers/all/results/torznab/api"
+        params = {
+            'apikey': api_key,
+            't': 'search',
+            'q': 'mediamaster',
+            'limit': 1,
+        }
+
+        start = time.monotonic()
+        last_error = None
+        for attempt in range(retries + 1):
+            try:
+                response = requests.get(
+                    torznab_url,
+                    params=params,
+                    timeout=(10, timeout_seconds),
+                    verify=verify_ssl,
+                )
+                elapsed_ms = int((time.monotonic() - start) * 1000)
+
+                if response.status_code == 401:
+                    return jsonify({
+                        "success": False,
+                        "message": "认证失败（401），请检查 API Key 是否正确",
+                        "elapsed_ms": elapsed_ms,
+                    }), 400
+                if response.status_code == 404:
+                    return jsonify({
+                        "success": False,
+                        "message": "Torznab API 端点未找到（404），请检查 Jackett 地址/反代路径",
+                        "elapsed_ms": elapsed_ms,
+                    }), 400
+                if response.status_code >= 400:
+                    return jsonify({
+                        "success": False,
+                        "message": f"HTTP 错误：{response.status_code}",
+                        "elapsed_ms": elapsed_ms,
+                    }), 400
+
+                # 尝试解析 XML，确认不是 HTML 错误页
+                body = (response.text or '').strip()
+                if not body:
+                    return jsonify({
+                        "success": False,
+                        "message": "响应为空，请检查 Jackett 服务状态",
+                        "elapsed_ms": elapsed_ms,
+                    }), 400
+
+                try:
+                    import xml.etree.ElementTree as ET
+
+                    ET.fromstring(body)
+                except Exception:
+                    snippet = body[:200].replace('\n', ' ')
+                    return jsonify({
+                        "success": False,
+                        "message": f"响应不是有效的 XML（可能是反代/鉴权页/错误页）：{snippet}",
+                        "elapsed_ms": elapsed_ms,
+                    }), 400
+
+                return jsonify({
+                    "success": True,
+                    "message": "连接成功",
+                    "elapsed_ms": elapsed_ms,
+                })
+            except requests.exceptions.Timeout as e:
+                last_error = f"连接超时（read-timeout={timeout_seconds}s）"
+                if attempt < retries:
+                    time.sleep(min(2 ** attempt, 5))
+                    continue
+                elapsed_ms = int((time.monotonic() - start) * 1000)
+                return jsonify({
+                    "success": False,
+                    "message": last_error,
+                    "elapsed_ms": elapsed_ms,
+                }), 400
+            except requests.exceptions.ConnectionError as e:
+                last_error = "连接错误，请检查 Jackett 地址/网络/证书"
+                if attempt < retries:
+                    time.sleep(min(2 ** attempt, 5))
+                    continue
+                elapsed_ms = int((time.monotonic() - start) * 1000)
+                return jsonify({
+                    "success": False,
+                    "message": last_error,
+                    "elapsed_ms": elapsed_ms,
+                }), 400
+            except Exception as e:
+                last_error = f"测试过程中发生错误: {str(e)}"
+                if attempt < retries:
+                    time.sleep(min(2 ** attempt, 5))
+                    continue
+                elapsed_ms = int((time.monotonic() - start) * 1000)
+                logger.error(f"Jackett连接测试失败: {e}")
+                return jsonify({
+                    "success": False,
+                    "message": last_error,
+                    "elapsed_ms": elapsed_ms,
+                }), 500
+
+        # 理论不会到这里
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        return jsonify({
+            "success": False,
+            "message": last_error or "未知错误",
+            "elapsed_ms": elapsed_ms,
+        }), 400
+
+    except Exception as e:
+        logger.error(f"Jackett连接测试失败(outer): {e}")
+        return jsonify({
+            "success": False,
+            "message": f"测试过程中发生错误: {str(e)}",
         }), 500
 
 def compare_versions(current, latest):
@@ -3080,6 +3336,18 @@ def perform_update():
 
 if __name__ == '__main__':
     logger.info("程序已启动")
+
+    # Ensure DB schema exists for local/dev runs
+    try:
+        import database_manager
+
+        # Keep database_manager using the same DB path
+        os.environ['DB_PATH'] = DATABASE
+        os.environ['DATABASE'] = DATABASE
+        database_manager.initialize_database()
+    except Exception as e:
+        logger.warning(f"数据库初始化跳过/失败（可能影响登录/设置功能）: {e}")
+
     # 创建硬链接
     src_dir = '/config/avatars'
     dst_dir = '/app/static/uploads/avatars'

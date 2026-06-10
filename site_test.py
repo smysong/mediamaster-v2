@@ -2,6 +2,7 @@ import json
 import datetime
 import sqlite3
 import logging
+import os
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -12,11 +13,15 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.common.action_chains import ActionChains
 import time
 import concurrent.futures
+import os
+from pathlib import Path
+import shutil
 
 # 导入新的验证码处理模块
 from captcha_handler import CaptchaHandler
 
 # 配置日志
+os.makedirs("/tmp/log", exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,  # 设置日志级别为 INFO
     format="%(asctime)s - %(levelname)s - %(message)s",  # 设置日志格式
@@ -27,11 +32,14 @@ logging.basicConfig(
 )
 
 class SiteTester:
-    def __init__(self, db_path='/config/data.db'):
+    def __init__(self, db_path=None):
         self.db_path = db_path
         self.driver = None
         self.sites = {}
         self.captcha_handler = None
+        self.chromedriver_path = ""
+        if not self.db_path:
+            self.db_path = os.environ.get("DB_PATH") or os.environ.get("DATABASE") or '/config/data.db'
         
     def setup_webdriver(self, instance_id=12):
         if hasattr(self, 'driver') and self.driver is not None:
@@ -47,6 +55,11 @@ class SiteTester:
         options.add_argument('--disable-background-timer-throttling')  # 禁用后台定时器节流
         options.add_argument('--disable-renderer-backgrounding')       # 禁用渲染器后台运行
         options.add_argument('--disable-features=VizDisplayCompositor') # 禁用Viz显示合成器
+        # 更强的反检测措施
+        options.add_argument('--disable-blink-features=AutomationControlled')
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
+        options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.6943.90 Safari/537.36')
         # 忽略SSL证书错误
         options.add_argument('--ignore-certificate-errors')
         options.add_argument('--allow-insecure-localhost')
@@ -57,9 +70,17 @@ class SiteTester:
         options.add_argument('--lang=zh-CN')
         # 设置用户配置文件缓存目录，使用固定instance-id 12作为该程序特有的id
         user_data_dir = f'/app/ChromeCache/user-data-dir-inst-{instance_id}'
+        try:
+            os.makedirs(user_data_dir, exist_ok=True)
+        except Exception:
+            pass
         options.add_argument(f'--user-data-dir={user_data_dir}')
         # 设置磁盘缓存目录，同样使用instance-id区分
         disk_cache_dir = f"/app/ChromeCache/disk-cache-dir-inst-{instance_id}"
+        try:
+            os.makedirs(disk_cache_dir, exist_ok=True)
+        except Exception:
+            pass
         options.add_argument(f"--disk-cache-dir={disk_cache_dir}")
         
         prefs = {
@@ -71,11 +92,43 @@ class SiteTester:
         }
         options.add_experimental_option("prefs", prefs)
 
-        # 指定 chromedriver 的路径
-        service = Service(executable_path='/usr/lib/chromium/chromedriver')
+        # 指定 chromedriver 的路径（优先环境变量/系统设置；Docker/Linux 再用默认路径）
+        configured_driver_path = ""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT VALUE FROM CONFIG WHERE OPTION = ?', ('chromedriver_path',))
+                row = cursor.fetchone()
+                if row and row[0]:
+                    configured_driver_path = str(row[0]).strip()
+        except Exception:
+            configured_driver_path = ""
+
+        driver_path = os.environ.get("CHROMEDRIVER_PATH") or configured_driver_path or "/usr/lib/chromium/chromedriver"
+        service = Service(executable_path=driver_path) if driver_path and os.path.exists(driver_path) else None
         
         try:
-            self.driver = webdriver.Chrome(service=service, options=options)
+            if service is not None:
+                self.driver = webdriver.Chrome(service=service, options=options)
+            else:
+                try:
+                    self.driver = webdriver.Chrome(options=options)
+                except Exception as e:
+                    msg = str(e)
+                    if ("only supports Chrome version" in msg) or ("error decoding response body" in msg) or ("Unable to obtain driver" in msg):
+                        try:
+                            cache_root = Path.home() / ".cache" / "selenium"
+                            shutil.rmtree(cache_root / "chromedriver", ignore_errors=True)
+                            try:
+                                (cache_root / "se-metadata.json").unlink(missing_ok=True)
+                            except Exception:
+                                pass
+                            self.driver = webdriver.Chrome(options=options)
+                        except Exception:
+                            logging.warning("Selenium Manager获取驱动失败，尝试使用PATH中的chromedriver")
+                            self.driver = webdriver.Chrome(service=Service(), options=options)
+                    else:
+                        raise
             logging.info(f"WebDriver初始化完成 (Instance ID: {instance_id})")
         except Exception as e:
             logging.error(f"WebDriver初始化失败: {e}")
@@ -109,7 +162,19 @@ class SiteTester:
                     },
                     "GY": {
                         "url": "gy_base_url",
-                        "keyword": "登录"
+                        "keyword": "观影"
+                    },
+                    "BTSJ6": {
+                        "url": "btsj6_base_url",
+                        "keyword": "BT世界网"
+                    },
+                    "SeedHub": {
+                        "url": "seedhub_base_url",
+                        "keyword": "电影"
+                    },                    
+                    "1LOU": {
+                        "url": "1lou_base_url",
+                        "keyword": "Xiuno BBS"
                     }
                 }
                 
@@ -117,8 +182,8 @@ class SiteTester:
                 for site_name, config in sites_config.items():
                     cursor.execute('SELECT VALUE FROM CONFIG WHERE OPTION = ?', (config["url"],))
                     result = cursor.fetchone()
-                    if result and result[0]:
-                        base_url = result[0]
+                    base_url = (result[0] if (result and result[0]) else None) or config.get("default_base_url")
+                    if base_url:
                         site_info = {
                             "base_url": base_url,
                             "keyword": config["keyword"]

@@ -15,8 +15,11 @@ import os
 import re
 import argparse
 from captcha_handler import CaptchaHandler
+from pathlib import Path
+import shutil
 
 # 配置日志
+os.makedirs("/tmp/log", exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,  # 设置日志级别为 INFO
     format="%(asctime)s - %(levelname)s - %(message)s",  # 设置日志格式
@@ -27,11 +30,13 @@ logging.basicConfig(
 )
 
 class TvshowIndexer:
-    def __init__(self, db_path='/config/data.db', instance_id=None):
+    def __init__(self, db_path=None, instance_id=None):
         self.db_path = db_path
         self.driver = None
         self.config = {}
         self.instance_id = instance_id
+        if not self.db_path:
+            self.db_path = os.environ.get("DB_PATH") or os.environ.get("DATABASE") or '/config/data.db'
         # 如果有实例ID，修改日志文件路径以避免冲突
         if instance_id:
             logging.getLogger().handlers.clear()
@@ -70,11 +75,19 @@ class TvshowIndexer:
         user_data_dir = '/app/ChromeCache/user-data-dir'
         if self.instance_id:
             user_data_dir = f'/app/ChromeCache/user-data-dir-inst-{self.instance_id}'
+        try:
+            os.makedirs(user_data_dir, exist_ok=True)
+        except Exception:
+            pass
         options.add_argument(f'--user-data-dir={user_data_dir}')
         # 设置磁盘缓存目录，添加实例ID以避免冲突
         disk_cache_dir = "/app/ChromeCache/disk-cache-dir"
         if self.instance_id:
             disk_cache_dir = f"/app/ChromeCache/disk-cache-dir-inst-{self.instance_id}"
+        try:
+            os.makedirs(disk_cache_dir, exist_ok=True)
+        except Exception:
+            pass
         options.add_argument(f"--disk-cache-dir={disk_cache_dir}")
         
         # 设置默认下载目录
@@ -89,10 +102,36 @@ class TvshowIndexer:
         options.add_experimental_option("prefs", prefs)
 
         # 指定 chromedriver 的路径
-        service = Service(executable_path='/usr/lib/chromium/chromedriver')
+        configured_driver_path = ""
+        try:
+            configured_driver_path = (self.config.get("chromedriver_path") or "").strip()
+        except Exception:
+            configured_driver_path = ""
+        driver_path = os.environ.get("CHROMEDRIVER_PATH") or configured_driver_path or "/usr/lib/chromium/chromedriver"
+        service = Service(executable_path=driver_path) if driver_path and os.path.exists(driver_path) else None
         
         try:
-            self.driver = webdriver.Chrome(service=service, options=options)
+            if service is not None:
+                self.driver = webdriver.Chrome(service=service, options=options)
+            else:
+                try:
+                    self.driver = webdriver.Chrome(options=options)
+                except Exception as e:
+                    msg = str(e)
+                    if ("only supports Chrome version" in msg) or ("error decoding response body" in msg) or ("Unable to obtain driver" in msg):
+                        try:
+                            cache_root = Path.home() / ".cache" / "selenium"
+                            shutil.rmtree(cache_root / "chromedriver", ignore_errors=True)
+                            try:
+                                (cache_root / "se-metadata.json").unlink(missing_ok=True)
+                            except Exception:
+                                pass
+                            self.driver = webdriver.Chrome(options=options)
+                        except Exception:
+                            logging.warning("Selenium Manager获取驱动失败，尝试使用PATH中的chromedriver")
+                            self.driver = webdriver.Chrome(service=Service(), options=options)
+                    else:
+                        raise
             logging.info("WebDriver初始化完成")
         except Exception as e:
             logging.error(f"WebDriver初始化失败: {e}")
