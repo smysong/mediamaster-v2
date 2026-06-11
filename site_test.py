@@ -158,11 +158,11 @@ class SiteTester:
                     },
                     "BTYS": {
                         "url": "btys_base_url",
-                        "keyword": "BT影视"
+                        "keyword": "影视"
                     },
                     "GY": {
                         "url": "gy_base_url",
-                        "keyword": "观影"
+                        "keyword": "首页"
                     },
                     "BTSJ6": {
                         "url": "btsj6_base_url",

@@ -204,6 +204,10 @@
     color: #c62828;
 }
 
+.status-unknown {
+    color: #ff7507;
+}
+
 .status-indicator::before {
     content: "";
     display: inline-block;
@@ -220,6 +224,11 @@
 .status-stopped::before {
     background-color: #f44336;
 }
+
+.status-unknown::before {
+    background-color: #ff7507;
+}
+
 /* 站点URL样式 */
 #site-status-content table a {
     color: #000000 !important;
@@ -545,6 +554,8 @@ $(document).ready(function() {
         'BTHD': '高清影视之家',
         'HDTV': '高清剧集网',
         'BTSJ6': 'BT世界网',
+        'SeedHub': 'SeedHub',
+        'Jackett': 'Jackett',
         '1LOU': 'BT之家(1LOU)'
     };
 
@@ -725,6 +736,10 @@ $(document).ready(function() {
                     'movie_tvshow_btys.py': 'BT影视 索引程序',
                     'movie_tvshow_bt0.py': '不太灵影视 索引程序',
                     'movie_tvshow_gy.py': '观影 索引程序',
+                    'movie_tvshow_btsj6.py': 'BT世界网 索引程序',
+                    'movie_tvshow_1lou.py': 'BT之家(1LOU) 索引程序',
+                    'movie_tvshow_seedhub.py': 'SeedHub 索引程序',
+                    'movie_tvshow_jackett.py': 'Jackett 索引程序',
                     'download_task_adder.py': '添加下载任务',
                     'xunlei.py': '迅雷-添加下载任务',
                     'xunlei_torrent.py': '迅雷-种子监听服务',
@@ -803,7 +818,7 @@ $(document).ready(function() {
                 <table class="table">
                     <thead>
                         <tr>
-                            <th>站点名称</th>
+                            <th>站点</th>
                             <th>状态</th>
                             <th>启用</th>
                             <th>URL</th>
@@ -820,19 +835,19 @@ $(document).ready(function() {
                 const status = data.status && data.status.hasOwnProperty(site.name) ? 
                     data.status[site.name] : null;
                 
-                // 状态显示样式
+                // 站点状态显示样式
                 let statusHtml = '';
                 if (status === true) {
-                    statusHtml = '<span class="status-indicator status-running">正常</span>';
+                    statusHtml = '<span class="status-indicator status-running"></span>';
                 } else if (status === false) {
-                    statusHtml = '<span class="status-indicator status-stopped">异常</span>';
+                    statusHtml = '<span class="status-indicator status-stopped"></span>';
                 } else {
-                    statusHtml = '<span class="status-indicator status-stopped">未知</span>';
+                    statusHtml = '<span class="status-indicator status-unknown"></span>';
                 }
 
                 const enabledHtml = site.enabled ? 
-                    '<span class="status-indicator status-running">是</span>' : 
-                    '<span class="status-indicator status-stopped">否</span>';
+                    '<span class="status-indicator status-running"></span>' : 
+                    '<span class="status-indicator status-stopped"></span>';
 
                 html += `
                     <tr>

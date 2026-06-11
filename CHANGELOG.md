@@ -2,6 +2,17 @@
 
 所有显著的变更都会记录在此文档中。此项目遵循 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
 
+## [2.5.23] - 2026-06-11
+
+#### 站点索引
+- 优化站点索引程序，修复部分站点索引功能无法正常使用的问题。
+
+#### 站点检测
+- 优化站点检测程序，修复部分站点检测功能无法正常使用的问题。
+
+#### 其他
+- 修复部分已知问题以及一些其他优化、修改等。
+
 ## [2.5.22] - 2026-06-10
 
 #### 说明
@@ -919,3 +930,4 @@
 [2.5.20]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.20
 [2.5.21]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.21
 [2.5.22]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.22
+[2.5.23]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.5.23

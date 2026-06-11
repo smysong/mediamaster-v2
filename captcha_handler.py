@@ -373,10 +373,10 @@ class CaptchaHandler:
         try:
             page_source = self.driver.page_source
             
-            # 检查页面是否包含"影视"、"剧集"或"观影"关键词中的任意一个
+            # 检查页面是否包含"影视"、"剧集"或"首页"关键词中的任意一个
             return ("影视" in page_source or 
                     "剧集" in page_source or 
-                    "观影" in page_source)
+                    "首页" in page_source)
         except:
             return False
 

@@ -494,7 +494,7 @@ class MediaIndexer:
                             # 等待影片详细信息页面加载完成
                             try:
                                 WebDriverWait(self.driver, 10).until(
-                                    EC.presence_of_element_located((By.CLASS_NAME, "movie-introduce"))
+                                    EC.presence_of_element_located((By.CLASS_NAME, "movie-summary"))
                                 )
                                 logging.info("成功进入影片详细信息页面")
                                 time.sleep(5)  # 等待页面稳定
@@ -522,7 +522,7 @@ class MediaIndexer:
                             for resource in resource_items:
                                 try:
                                     # 提取资源标题
-                                    title_element = resource.find_element(By.CSS_SELECTOR, "td a.torrent")
+                                    title_element = resource.find_element(By.CSS_SELECTOR, "td a[title]")
                                     resource_title = title_element.get_attribute("title")
                                     resource_link = resource.find_element(By.CSS_SELECTOR, "div a[target='_blank']").get_attribute("href")
                                     logging.debug(f"资源标题: {resource_title}, 链接: {resource_link}")
@@ -736,7 +736,7 @@ class MediaIndexer:
                     # 等待电视节目详细信息页面加载完成
                     try:
                         WebDriverWait(self.driver, 10).until(
-                            EC.presence_of_element_located((By.CLASS_NAME, "movie-introduce"))
+                            EC.presence_of_element_located((By.CLASS_NAME, "movie-summary"))
                         )
                         logging.info("成功进入电视节目详细信息页面")
                         time.sleep(5)  # 等待页面稳定
@@ -1076,7 +1076,7 @@ class MediaIndexer:
 
         # 获取基础 URL
         gy_base_url = self.config.get("gy_base_url", "")
-        search_url = f"{gy_base_url}/s/1---1/"
+        search_url = f"{gy_base_url}/search?q="
         self.gy_login_url = f"{gy_base_url}/user/login"
         self.gy_user_info_url = f"{gy_base_url}/user/account"
 
@@ -1134,7 +1134,7 @@ if __name__ == "__main__":
     
         # 获取基础 URL
         gy_base_url = indexer.config.get("gy_base_url", "")
-        search_url = f"{gy_base_url}/s/1---1/"
+        search_url = f"{gy_base_url}/search?q="
         indexer.gy_login_url = f"{gy_base_url}/user/login"
         indexer.gy_user_info_url = f"{gy_base_url}/user/account"
 
