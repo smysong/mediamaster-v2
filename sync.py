@@ -1395,14 +1395,19 @@ def is_same_media_content(file1_path, file2_path):
     
     # 提取核心标识（电影名或剧集标识）
     # 对于剧集：提取 SxxExx 部分
-    episode_pattern = r'(S\d{1,2}E\d{1,2})'
+    # 注意：集号必须支持 1-4 位。此前使用 \d{1,2} 会把 3 位及以上集号截断为前两位
+    # （例如 S01E194 被当成 S01E19），导致新集被误判为与已存在的两位数集同内容而被跳过转移。
+    episode_pattern = r'S(\d{1,2})E(\d{1,4})'
     episode_match1 = re.search(episode_pattern, name1, re.IGNORECASE)
     episode_match2 = re.search(episode_pattern, name2, re.IGNORECASE)
     
     if episode_match1 and episode_match2:
         # 如果都是剧集，比较剧集标识
-        result = episode_match1.group(1).upper() == episode_match2.group(1).upper()
-        logging.debug(f"剧集比较结果: {result}")
+        # 统一转为整数比较，兼容位数差异与补零差异（如 S01E7 / S01E07 / S01E194）
+        season1, episode1 = int(episode_match1.group(1)), int(episode_match1.group(2))
+        season2, episode2 = int(episode_match2.group(1)), int(episode_match2.group(2))
+        result = (season1, episode1) == (season2, episode2)
+        logging.debug(f"剧集比较: S{season1}E{episode1} vs S{season2}E{episode2}, 结果: {result}")
         return result
     
     # 对于电影：使用更宽松的比较方式
