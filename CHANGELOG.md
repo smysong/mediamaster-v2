@@ -969,3 +969,4 @@
 [2.6.0]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.6.0
 [2.6.1]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.6.1
 [2.6.2]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.6.2
+[2.6.3]: https://github.com/smysong/mediamaster-v2/releases/tag/v2.6.3
